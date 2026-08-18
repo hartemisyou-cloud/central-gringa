@@ -160,10 +160,37 @@ export interface OrderStatusDTO {
   items?: Array<{ name: string; quantity: number; totalCents: number }>;
 }
 
+interface CentralOrderStatus {
+  order: {
+    order_number: string;
+    status: string;
+    currency: string;
+    total_cents: number;
+    created_at: string;
+    order_items?: Array<{ product_name: string; quantity: number; total_cents: number }> | null;
+  };
+  paymentStatus: string | null;
+}
+
 export const getStorefrontOrderStatus = createServerFn({ method: "GET" })
   .inputValidator((input: { publicToken: string }) =>
     z.object({ publicToken: z.string().trim().min(10).max(120) }).parse(input),
   )
-  .handler(async ({ data }) =>
-    callCentralApi<OrderStatusDTO>(`/orders/status/${encodeURIComponent(data.publicToken)}`),
-  );
+  .handler(async ({ data }): Promise<OrderStatusDTO> => {
+    const result = await callCentralApi<CentralOrderStatus>(
+      `/orders/status/${encodeURIComponent(data.publicToken)}`,
+    );
+    return {
+      orderNumber: result.order.order_number,
+      status: result.order.status,
+      currency: result.order.currency,
+      totalCents: result.order.total_cents,
+      createdAt: result.order.created_at,
+      items: (result.order.order_items ?? []).map((item) => ({
+        name: item.product_name,
+        quantity: item.quantity,
+        totalCents: item.total_cents,
+      })),
+    };
+  });
+
