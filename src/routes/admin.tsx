@@ -473,17 +473,20 @@ const DONATION_TIERS = [
   { usd: 500, sku: "CU-DON-500" },
 ];
 
-function DonationTiersDocs() {
+function DonationTiersDocs({ slug }: { slug: string }) {
   return (
     <section className="space-y-4 rounded-lg border bg-background p-4">
       <div className="space-y-1">
         <h3 className="font-medium">6. Doações por valor (US$)</h3>
         <p className="text-sm text-muted-foreground">
-          Uma única credencial atende todos os valores. Guarde-a no backend da loja como{" "}
-          <code className="rounded bg-muted px-1">STORE_API_KEY</code>. O que define o valor cobrado
-          é o SKU enviado no pedido, conforme o ticket escolhido pelo doador.
+          Uma única credencial atende todos os valores e todas as lojas (Corações Unidos, Loja 2,
+          Loja 3 e Loja 4). Guarde-a no backend da loja como{" "}
+          <code className="rounded bg-muted px-1">STORE_API_KEY</code>. O ticket escolhido pelo
+          doador define o SKU enviado no pedido, e o header{" "}
+          <code className="rounded bg-muted px-1">x-store-slug</code> define a loja.
         </p>
       </div>
+
 
       <Table>
         <TableHeader>
