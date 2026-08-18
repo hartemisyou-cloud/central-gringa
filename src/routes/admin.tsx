@@ -409,6 +409,7 @@ function IntegrationDocs({ stores }: { stores: Array<{ name: string; slug: strin
           <h3 className="font-medium">2. Endpoints da central</h3>
           <CodeBlock>{`Base: ${API_BASE}
 Header obrigatório: x-store-api-key: <STORE_API_KEY>
+Header opcional:    x-store-slug: <slug da loja>   (chave unificada multi-loja)
 
 GET  /products                         lista o catálogo e o estoque disponível
 POST /quote                            calcula subtotal, frete e total
@@ -424,6 +425,7 @@ GET  /orders/status/:publicToken       consulta o status do pedido`}</CodeBlock>
   headers: {
     "content-type": "application/json",
     "x-store-api-key": process.env.STORE_API_KEY,
+    "x-store-slug": "${store?.slug ?? "loja-2"}",
   },
   body: JSON.stringify({
     items: [{ sku: "SKU-001", quantity: 1 }],
@@ -432,6 +434,7 @@ GET  /orders/status/:publicToken       consulta o status do pedido`}</CodeBlock>
 });
 const { data, error } = await res.json();`}</CodeBlock>
         </section>
+
 
         <section className="space-y-2">
           <h3 className="font-medium">4. Fluxo de pagamento</h3>
@@ -452,7 +455,10 @@ const { data, error } = await res.json();`}</CodeBlock>
 Limites: 20 pedidos/min e 20 pagamentos/min por loja.`}</CodeBlock>
         </section>
 
-        {store?.slug === "coracoes-unidos" && <DonationTiersDocs />}
+        {["coracoes-unidos", "loja-2", "loja-3", "loja-4"].includes(store?.slug ?? "") && (
+          <DonationTiersDocs slug={store?.slug ?? "loja-2"} />
+        )}
+
       </CardContent>
     </Card>
   );
@@ -467,17 +473,20 @@ const DONATION_TIERS = [
   { usd: 500, sku: "CU-DON-500" },
 ];
 
-function DonationTiersDocs() {
+function DonationTiersDocs({ slug }: { slug: string }) {
   return (
     <section className="space-y-4 rounded-lg border bg-background p-4">
       <div className="space-y-1">
         <h3 className="font-medium">6. Doações por valor (US$)</h3>
         <p className="text-sm text-muted-foreground">
-          Uma única credencial atende todos os valores. Guarde-a no backend da loja como{" "}
-          <code className="rounded bg-muted px-1">STORE_API_KEY</code>. O que define o valor cobrado
-          é o SKU enviado no pedido, conforme o ticket escolhido pelo doador.
+          Uma única credencial atende todos os valores e todas as lojas (Corações Unidos, Loja 2,
+          Loja 3 e Loja 4). Guarde-a no backend da loja como{" "}
+          <code className="rounded bg-muted px-1">STORE_API_KEY</code>. O ticket escolhido pelo
+          doador define o SKU enviado no pedido, e o header{" "}
+          <code className="rounded bg-muted px-1">x-store-slug</code> define a loja.
         </p>
       </div>
+
 
       <Table>
         <TableHeader>
@@ -496,7 +505,7 @@ function DonationTiersDocs() {
         </TableBody>
       </Table>
 
-      <CodeBlock>{`// backend da loja — uma única chave para todos os tickets
+      <CodeBlock>{`// backend da loja — uma única chave para todos os tickets e lojas
 const SKUS = { 20: "CU-DON-020", 30: "CU-DON-030", 50: "CU-DON-050",
                100: "CU-DON-100", 250: "CU-DON-250", 500: "CU-DON-500" };
 
@@ -504,7 +513,9 @@ async function criarDoacao(valorUsd, doador) {
   const headers = {
     "content-type": "application/json",
     "x-store-api-key": process.env.STORE_API_KEY,
+    "x-store-slug": "${slug}",
   };
+
 
   const order = await fetch("${API_BASE}/orders", {
     method: "POST", headers,

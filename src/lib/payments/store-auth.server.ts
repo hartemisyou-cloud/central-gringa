@@ -40,15 +40,44 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
     throw new PaymentError("UNAUTHORIZED", "Credencial da loja inválida ou revogada.");
   }
 
+  // Uma credencial pode atender várias lojas (chave unificada). A loja padrão é
+  // a dona da chave; para as demais, a loja é escolhida via `x-store-slug`
+  // e só é aceita se estiver no escopo autorizado da credencial.
+  const requestedSlug = request.headers.get("x-store-slug")?.trim().toLowerCase() || null;
+  let storeId = keyRow.store_id;
+
+  if (requestedSlug) {
+    const { data: requested } = await supabaseAdmin
+      .from("stores")
+      .select("id")
+      .eq("slug", requestedSlug)
+      .maybeSingle();
+    if (!requested) throw new PaymentError("NOT_FOUND", "Loja informada não existe.");
+
+    if (requested.id !== keyRow.store_id) {
+      const { data: scope } = await supabaseAdmin
+        .from("store_api_key_scopes")
+        .select("id")
+        .eq("api_key_id", keyRow.id)
+        .eq("store_id", requested.id)
+        .maybeSingle();
+      if (!scope) {
+        throw new PaymentError("FORBIDDEN", "Credencial não autorizada para esta loja.");
+      }
+    }
+    storeId = requested.id;
+  }
+
   const { data: store } = await supabaseAdmin
     .from("stores")
     .select("*")
-    .eq("id", keyRow.store_id)
+    .eq("id", storeId)
     .maybeSingle();
 
   if (!store || store.status !== "ACTIVE") {
     throw new PaymentError("FORBIDDEN", "Loja inativa.");
   }
+
 
   await supabaseAdmin
     .from("store_api_keys")
@@ -90,7 +119,7 @@ export function corsHeaders(store: StoreRow | null, origin: string | null): Reco
   const allowed = store?.allowed_origins ?? [];
   const headers: Record<string, string> = {
     Vary: "Origin",
-    "Access-Control-Allow-Headers": "content-type, x-store-api-key, authorization",
+    "Access-Control-Allow-Headers": "content-type, x-store-api-key, x-store-slug, authorization",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   };
   if (origin && allowed.includes(origin)) {
