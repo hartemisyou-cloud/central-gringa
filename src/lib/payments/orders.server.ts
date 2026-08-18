@@ -51,7 +51,10 @@ export async function quoteCart(input: {
   const priced = priceItems(input.items, products);
 
   let shippingOptions: Awaited<ReturnType<ReturnType<typeof resolveShippingService>["quote"]>> = [];
-  if (input.postalCode) {
+  if (priced.totalWeightGrams === 0) {
+    // Pedido sem entrega física (doações/itens digitais): frete não se aplica.
+    shippingOptions = [NO_SHIPPING_OPTION];
+  } else if (input.postalCode) {
     shippingOptions = await resolveShippingService().quote({
       postalCode: normalizePostalCode(input.postalCode),
       totalWeightGrams: priced.totalWeightGrams,
