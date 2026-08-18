@@ -505,7 +505,7 @@ function DonationTiersDocs({ slug }: { slug: string }) {
         </TableBody>
       </Table>
 
-      <CodeBlock>{`// backend da loja — uma única chave para todos os tickets
+      <CodeBlock>{`// backend da loja — uma única chave para todos os tickets e lojas
 const SKUS = { 20: "CU-DON-020", 30: "CU-DON-030", 50: "CU-DON-050",
                100: "CU-DON-100", 250: "CU-DON-250", 500: "CU-DON-500" };
 
@@ -513,7 +513,9 @@ async function criarDoacao(valorUsd, doador) {
   const headers = {
     "content-type": "application/json",
     "x-store-api-key": process.env.STORE_API_KEY,
+    "x-store-slug": "${slug}",
   };
+
 
   const order = await fetch("${API_BASE}/orders", {
     method: "POST", headers,
