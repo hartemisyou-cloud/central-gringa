@@ -705,6 +705,42 @@ export type Database = {
           },
         ]
       }
+      store_api_key_scopes: {
+        Row: {
+          api_key_id: string
+          created_at: string
+          id: string
+          store_id: string
+        }
+        Insert: {
+          api_key_id: string
+          created_at?: string
+          id?: string
+          store_id: string
+        }
+        Update: {
+          api_key_id?: string
+          created_at?: string
+          id?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_api_key_scopes_api_key_id_fkey"
+            columns: ["api_key_id"]
+            isOneToOne: false
+            referencedRelation: "store_api_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "store_api_key_scopes_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_api_keys: {
         Row: {
           created_at: string
