@@ -451,7 +451,81 @@ const { data, error } = await res.json();`}</CodeBlock>
 
 Limites: 20 pedidos/min e 20 pagamentos/min por loja.`}</CodeBlock>
         </section>
+
+        {store?.slug === "coracoes-unidos" && <DonationTiersDocs />}
       </CardContent>
     </Card>
   );
 }
+
+const DONATION_TIERS = [
+  { usd: 20, sku: "CU-DON-020", label: "doacao-usd-20" },
+  { usd: 30, sku: "CU-DON-030", label: "doacao-usd-30" },
+  { usd: 50, sku: "CU-DON-050", label: "doacao-usd-50" },
+  { usd: 100, sku: "CU-DON-100", label: "doacao-usd-100" },
+  { usd: 250, sku: "CU-DON-250", label: "doacao-usd-250" },
+  { usd: 500, sku: "CU-DON-500", label: "doacao-usd-500" },
+];
+
+function DonationTiersDocs() {
+  return (
+    <section className="space-y-4 rounded-lg border bg-background p-4">
+      <div className="space-y-1">
+        <h3 className="font-medium">6. Doações por valor (US$)</h3>
+        <p className="text-sm text-muted-foreground">
+          Cada valor tem um SKU próprio na central e uma credencial dedicada (identificação abaixo).
+          Guarde cada chave como segredo do backend, por exemplo{" "}
+          <code className="rounded bg-muted px-1">STORE_API_KEY_20</code>.
+        </p>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Valor</TableHead>
+            <TableHead>SKU</TableHead>
+            <TableHead>Credencial (identificação)</TableHead>
+            <TableHead>Segredo sugerido</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {DONATION_TIERS.map((tier) => (
+            <TableRow key={tier.sku}>
+              <TableCell>US$ {tier.usd}</TableCell>
+              <TableCell className="font-mono text-xs">{tier.sku}</TableCell>
+              <TableCell className="font-mono text-xs">{tier.label}</TableCell>
+              <TableCell className="font-mono text-xs">STORE_API_KEY_{tier.usd}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <CodeBlock>{`// backend da loja — doação de US$ 50
+const KEYS = { 20: process.env.STORE_API_KEY_20, 30: process.env.STORE_API_KEY_30,
+               50: process.env.STORE_API_KEY_50, 100: process.env.STORE_API_KEY_100,
+               250: process.env.STORE_API_KEY_250, 500: process.env.STORE_API_KEY_500 };
+const SKUS = { 20: "CU-DON-020", 30: "CU-DON-030", 50: "CU-DON-050",
+               100: "CU-DON-100", 250: "CU-DON-250", 500: "CU-DON-500" };
+
+async function criarDoacao(valorUsd, doador) {
+  const headers = { "content-type": "application/json", "x-store-api-key": KEYS[valorUsd] };
+
+  const order = await fetch("${API_BASE}/orders", {
+    method: "POST", headers,
+    body: JSON.stringify({
+      items: [{ sku: SKUS[valorUsd], quantity: 1 }],
+      customer: { email: doador.email, firstName: doador.nome },
+      shippingAddress: doador.endereco, // exigido pela central
+    }),
+  }).then((r) => r.json());
+
+  const pay = await fetch(\`${API_BASE}/orders/\${order.data.orderId}/payment\`, {
+    method: "POST", headers,
+  }).then((r) => r.json());
+
+  return { publicToken: order.data.publicToken, ...pay.data }; // clientSecret p/ Stripe Elements
+}`}</CodeBlock>
+    </section>
+  );
+}
+
