@@ -16,24 +16,29 @@ function apiBaseUrl(): string {
 }
 
 /**
- * Chama a API central em nome da Loja 1.
- * A credencial da loja (`STORE1_API_KEY`) nunca sai do servidor.
+ * Chama a API central em nome da loja configurada.
+ * A credencial (`STORE_API_KEY`, com fallback para `STORE1_API_KEY`) e o slug
+ * (`STORE_SLUG`) nunca saem do servidor.
  */
 export async function callCentralApi<T>(
   path: string,
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
-  const apiKey = process.env["STORE1_API_KEY"];
+  const apiKey = process.env["STORE_API_KEY"] ?? process.env["STORE1_API_KEY"];
   if (!apiKey) throw new Error("Credencial da loja não configurada no servidor.");
+
+  const slug = process.env["STORE_SLUG"]?.trim().toLowerCase();
 
   const response = await fetch(`${apiBaseUrl()}/api/public/v1${path}`, {
     method: init?.method ?? "GET",
     headers: {
       "content-type": "application/json",
       "x-store-api-key": apiKey,
+      ...(slug ? { "x-store-slug": slug } : {}),
     },
     ...(init?.body ? { body: JSON.stringify(init.body) } : {}),
   });
+
 
   const payload = (await response.json().catch(() => null)) as
     | { data?: T; error?: { code?: string; message?: string } }
