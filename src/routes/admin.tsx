@@ -409,6 +409,7 @@ function IntegrationDocs({ stores }: { stores: Array<{ name: string; slug: strin
           <h3 className="font-medium">2. Endpoints da central</h3>
           <CodeBlock>{`Base: ${API_BASE}
 Header obrigatório: x-store-api-key: <STORE_API_KEY>
+Header opcional:    x-store-slug: <slug da loja>   (chave unificada multi-loja)
 
 GET  /products                         lista o catálogo e o estoque disponível
 POST /quote                            calcula subtotal, frete e total
@@ -424,6 +425,7 @@ GET  /orders/status/:publicToken       consulta o status do pedido`}</CodeBlock>
   headers: {
     "content-type": "application/json",
     "x-store-api-key": process.env.STORE_API_KEY,
+    "x-store-slug": "${store?.slug ?? "loja-2"}",
   },
   body: JSON.stringify({
     items: [{ sku: "SKU-001", quantity: 1 }],
@@ -432,6 +434,7 @@ GET  /orders/status/:publicToken       consulta o status do pedido`}</CodeBlock>
 });
 const { data, error } = await res.json();`}</CodeBlock>
         </section>
+
 
         <section className="space-y-2">
           <h3 className="font-medium">4. Fluxo de pagamento</h3>
