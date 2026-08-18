@@ -455,7 +455,10 @@ const { data, error } = await res.json();`}</CodeBlock>
 Limites: 20 pedidos/min e 20 pagamentos/min por loja.`}</CodeBlock>
         </section>
 
-        {store?.slug === "coracoes-unidos" && <DonationTiersDocs />}
+        {["coracoes-unidos", "loja-2", "loja-3", "loja-4"].includes(store?.slug ?? "") && (
+          <DonationTiersDocs slug={store?.slug ?? "loja-2"} />
+        )}
+
       </CardContent>
     </Card>
   );
