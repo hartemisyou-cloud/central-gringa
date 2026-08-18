@@ -92,8 +92,8 @@ A confirmação definitiva vem do webhook da Stripe recebido pela central.
 const API = "https://central-spark-pay.lovable.app/api/public/v1";
 const headers = {
   "content-type": "application/json",
-  "x-store-api-key": process.env.STORE_API_KEY!,
-  "x-store-slug": "loja-2",
+  "x-store-api-key": process.env.STORE_API_KEY!, // <STORE_API_KEY>
+  "x-store-slug": "<slug da loja>", // ex.: loja-2
 };
 
 const order = await fetch(`${API}/orders`, {
