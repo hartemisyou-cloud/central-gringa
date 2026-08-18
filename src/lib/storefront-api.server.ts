@@ -1,7 +1,14 @@
 import { getRequest } from "@tanstack/react-start/server";
 
 function apiBaseUrl(): string {
-  const origin = new URL(getRequest().url).origin;
+  let origin = new URL(getRequest().url).origin;
+
+  // O domínio `id-preview--<id>.lovable.app` fica atrás do login da Lovable e
+  // redireciona (302) até as rotas públicas, o que quebraria o SSR. O domínio
+  // estável de preview serve o mesmo build sem esse gate.
+  const previewMatch = origin.match(/^https:\/\/id-preview--([^.]+)\.lovable\.app$/i);
+  if (previewMatch) origin = `https://project--${previewMatch[1]}-dev.lovable.app`;
+
   const configured = process.env["PAYMENTS_API_BASE_URL"]?.trim().replace(/\/$/, "");
 
   // Só usamos a base configurada se ela fizer sentido para o ambiente atual.
@@ -14,6 +21,7 @@ function apiBaseUrl(): string {
 
   return origin;
 }
+
 
 /**
  * Chama a API central em nome da loja configurada.
