@@ -29,7 +29,7 @@ export async function listStores(): Promise<AdminStore[]> {
     .from("stores")
     .select("id, name, slug, environment, status")
     .order("created_at", { ascending: true });
-  if (error) throw new PaymentError("INTERNAL_ERROR", "Não foi possível carregar as lojas.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível carregar as lojas.");
 
   const { data: keys } = await supabaseAdmin
     .from("store_api_keys")
@@ -50,7 +50,7 @@ export async function listApiKeys(): Promise<AdminApiKey[]> {
     .from("store_api_keys")
     .select("id, store_id, label, key_prefix, status, last_used_at, revoked_at, created_at, stores(name)")
     .order("created_at", { ascending: false });
-  if (error) throw new PaymentError("INTERNAL_ERROR", "Não foi possível carregar as credenciais.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível carregar as credenciais.");
 
   return (data ?? []).map((row) => ({
     id: row.id,
@@ -91,7 +91,7 @@ export async function createApiKey(input: { storeId: string; label: string }): P
     key_hash: keyHash,
     status: "ACTIVE",
   });
-  if (error) throw new PaymentError("INTERNAL_ERROR", "Não foi possível criar a credencial.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível criar a credencial.");
 
   await recordAudit({
     actorEmail: "admin-panel",
@@ -109,7 +109,7 @@ export async function revokeApiKey(keyId: string): Promise<void> {
     .from("store_api_keys")
     .update({ status: "REVOKED", revoked_at: new Date().toISOString() })
     .eq("id", keyId);
-  if (error) throw new PaymentError("INTERNAL_ERROR", "Não foi possível revogar a credencial.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível revogar a credencial.");
 
   await recordAudit({
     actorEmail: "admin-panel",
