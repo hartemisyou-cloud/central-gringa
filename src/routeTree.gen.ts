@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quote'
+import { Route as ApiPublicWebhooksStripeIntegrationIdRouteImport } from './routes/api/public/webhooks/stripe.$integrationId'
 import { Route as ApiPublicV1OrdersOrderIdPaymentRouteImport } from './routes/api/public/v1/orders.$orderId.payment'
 import { Route as ApiPublicV1OrdersStatusPublicTokenRouteImport } from './routes/api/public/v1/orders.status.$publicToken'
 
@@ -30,6 +31,12 @@ const ApiPublicV1QuoteRoute = ApiPublicV1QuoteRouteImport.update({
   path: '/api/public/v1/quote',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicWebhooksStripeIntegrationIdRoute =
+  ApiPublicWebhooksStripeIntegrationIdRouteImport.update({
+    id: '/api/public/webhooks/stripe/$integrationId',
+    path: '/api/public/webhooks/stripe/$integrationId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicV1OrdersOrderIdPaymentRoute =
   ApiPublicV1OrdersOrderIdPaymentRouteImport.update({
     id: '/$orderId/payment',
@@ -47,6 +54,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
+  '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
 }
@@ -54,6 +62,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
+  '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
 }
@@ -62,6 +71,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
+  '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
 }
@@ -71,6 +81,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/public/v1/orders'
     | '/api/public/v1/quote'
+    | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/status/$publicToken'
   fileRoutesByTo: FileRoutesByTo
@@ -78,6 +89,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/public/v1/orders'
     | '/api/public/v1/quote'
+    | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/status/$publicToken'
   id:
@@ -85,6 +97,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/public/v1/orders'
     | '/api/public/v1/quote'
+    | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/status/$publicToken'
   fileRoutesById: FileRoutesById
@@ -93,6 +106,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1QuoteRoute: typeof ApiPublicV1QuoteRoute
+  ApiPublicWebhooksStripeIntegrationIdRoute: typeof ApiPublicWebhooksStripeIntegrationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +130,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/v1/quote'
       fullPath: '/api/public/v1/quote'
       preLoaderRoute: typeof ApiPublicV1QuoteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/webhooks/stripe/$integrationId': {
+      id: '/api/public/webhooks/stripe/$integrationId'
+      path: '/api/public/webhooks/stripe/$integrationId'
+      fullPath: '/api/public/webhooks/stripe/$integrationId'
+      preLoaderRoute: typeof ApiPublicWebhooksStripeIntegrationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/orders/$orderId/payment': {
@@ -153,6 +174,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1QuoteRoute: ApiPublicV1QuoteRoute,
+  ApiPublicWebhooksStripeIntegrationIdRoute:
+    ApiPublicWebhooksStripeIntegrationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
