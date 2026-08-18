@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quote'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1OrdersRoute = ApiPublicV1OrdersRouteImport.update({
+  id: '/api/public/v1/orders',
+  path: '/api/public/v1/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicV1QuoteRoute = ApiPublicV1QuoteRouteImport.update({
@@ -25,27 +31,31 @@ const ApiPublicV1QuoteRoute = ApiPublicV1QuoteRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/public/v1/orders': typeof ApiPublicV1OrdersRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/public/v1/orders': typeof ApiPublicV1OrdersRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/public/v1/orders': typeof ApiPublicV1OrdersRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/public/v1/quote'
+  fullPaths: '/' | '/api/public/v1/orders' | '/api/public/v1/quote'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/v1/quote'
-  id: '__root__' | '/' | '/api/public/v1/quote'
+  to: '/' | '/api/public/v1/orders' | '/api/public/v1/quote'
+  id: '__root__' | '/' | '/api/public/v1/orders' | '/api/public/v1/quote'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRoute
   ApiPublicV1QuoteRoute: typeof ApiPublicV1QuoteRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/orders': {
+      id: '/api/public/v1/orders'
+      path: '/api/public/v1/orders'
+      fullPath: '/api/public/v1/orders'
+      preLoaderRoute: typeof ApiPublicV1OrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/quote': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiPublicV1OrdersRoute: ApiPublicV1OrdersRoute,
   ApiPublicV1QuoteRoute: ApiPublicV1QuoteRoute,
 }
 export const routeTree = rootRouteImport

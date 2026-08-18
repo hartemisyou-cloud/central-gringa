@@ -20,11 +20,11 @@ export interface AddressInput {
   postalCode: string;
   street: string;
   number: string;
-  complement?: string;
+  complement?: string | undefined;
   district: string;
   city: string;
   state: string;
-  country?: string;
+  country?: string | undefined;
 }
 
 async function loadProducts(storeId: string, productIds: string[]): Promise<PriceableProduct[]> {
