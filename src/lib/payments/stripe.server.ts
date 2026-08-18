@@ -106,7 +106,7 @@ export class StripeService {
 
     let response: Response;
     try {
-      response = await fetch(url, { method, headers, body });
+      response = await fetch(url, { method, headers, ...(body === undefined ? {} : { body }) });
     } catch {
       throw new PaymentError("PROVIDER_ERROR", "Não foi possível contatar o provedor de pagamento.");
     }
