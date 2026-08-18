@@ -37,6 +37,15 @@ async function loadProducts(storeId: string, productIds: string[]): Promise<Pric
   return data ?? [];
 }
 
+/** Opção usada quando não há entrega física (doações, itens digitais). */
+const NO_SHIPPING_OPTION = {
+  id: "no-shipping",
+  label: "Sem entrega física",
+  amountCents: 0,
+  estimatedDays: 0,
+  provider: "NONE",
+};
+
 function uniqueIds(items: RequestedItem[]): string[] {
   return [...new Set(items.map((item) => item.productId))];
 }
@@ -51,7 +60,10 @@ export async function quoteCart(input: {
   const priced = priceItems(input.items, products);
 
   let shippingOptions: Awaited<ReturnType<ReturnType<typeof resolveShippingService>["quote"]>> = [];
-  if (input.postalCode) {
+  if (priced.totalWeightGrams === 0) {
+    // Pedido sem entrega física (doações/itens digitais): frete não se aplica.
+    shippingOptions = [NO_SHIPPING_OPTION];
+  } else if (input.postalCode) {
     shippingOptions = await resolveShippingService().quote({
       postalCode: normalizePostalCode(input.postalCode),
       totalWeightGrams: priced.totalWeightGrams,
@@ -80,12 +92,15 @@ export async function createOrder(input: {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
-  const options = await resolveShippingService().quote({
-    postalCode: normalizePostalCode(input.address.postalCode),
-    totalWeightGrams: priced.totalWeightGrams,
-    subtotalCents: priced.subtotalCents,
-    currency: priced.currency,
-  });
+  const options =
+    priced.totalWeightGrams === 0
+      ? [NO_SHIPPING_OPTION]
+      : await resolveShippingService().quote({
+          postalCode: normalizePostalCode(input.address.postalCode),
+          totalWeightGrams: priced.totalWeightGrams,
+          subtotalCents: priced.subtotalCents,
+          currency: priced.currency,
+        });
   const option = options.find((entry) => entry.id === input.shippingOptionId);
   if (!option) throw new PaymentError("INVALID_INPUT", "Opção de frete inválida.");
 
