@@ -119,7 +119,7 @@ export function corsHeaders(store: StoreRow | null, origin: string | null): Reco
   const allowed = store?.allowed_origins ?? [];
   const headers: Record<string, string> = {
     Vary: "Origin",
-    "Access-Control-Allow-Headers": "content-type, x-store-api-key, authorization",
+    "Access-Control-Allow-Headers": "content-type, x-store-api-key, x-store-slug, authorization",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   };
   if (origin && allowed.includes(origin)) {
