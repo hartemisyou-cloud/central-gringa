@@ -1,9 +1,18 @@
 import { getRequest } from "@tanstack/react-start/server";
 
 function apiBaseUrl(): string {
-  const configured = process.env["PAYMENTS_API_BASE_URL"];
-  if (configured) return configured.replace(/\/$/, "");
-  return new URL(getRequest().url).origin;
+  const origin = new URL(getRequest().url).origin;
+  const configured = process.env["PAYMENTS_API_BASE_URL"]?.trim().replace(/\/$/, "");
+
+  // Só usamos a base configurada se ela fizer sentido para o ambiente atual.
+  // Um valor de desenvolvimento (localhost) em produção quebraria o site inteiro.
+  if (configured) {
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(configured);
+    const originIsLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(origin);
+    if (!isLocal || originIsLocal) return configured;
+  }
+
+  return origin;
 }
 
 /**
