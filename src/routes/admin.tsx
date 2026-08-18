@@ -1,0 +1,339 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Copy, KeyRound, Loader2, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+
+import {
+  adminCreateApiKey,
+  adminListApiKeys,
+  adminListStores,
+  adminLogin,
+  adminLogout,
+  adminRevokeApiKey,
+  adminStatus,
+} from "@/lib/admin.functions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+export const Route = createFileRoute("/admin")({
+  head: () => ({
+    meta: [
+      { title: "Painel administrativo — Credenciais de API" },
+      {
+        name: "description",
+        content:
+          "Painel interno para geração, listagem e revogação de credenciais de API das lojas integradas.",
+      },
+      { property: "og:title", content: "Painel administrativo — Credenciais de API" },
+      {
+        property: "og:description",
+        content: "Gestão interna de credenciais de API das lojas integradas.",
+      },
+      { name: "robots", content: "noindex, nofollow" },
+    ],
+  }),
+  component: AdminPage,
+});
+
+function AdminPage() {
+  const status = useQuery({ queryKey: ["admin", "status"], queryFn: () => adminStatus() });
+
+  if (status.isLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </main>
+    );
+  }
+
+  return status.data?.unlocked ? <AdminDashboard /> : <AdminLogin />;
+}
+
+function AdminLogin() {
+  const queryClient = useQueryClient();
+  const login = useServerFn(adminLogin);
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    try {
+      const result = await login({ data: { password } });
+      if (result.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      } else {
+        toast.error("Senha incorreta.");
+      }
+    } catch {
+      toast.error("Não foi possível entrar. Tente novamente.");
+    } finally {
+      setPending(false);
+      setPassword("");
+    }
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="space-y-2 text-center">
+          <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-primary/10">
+            <ShieldCheck className="size-5 text-primary" />
+          </div>
+          <CardTitle>Painel administrativo</CardTitle>
+          <CardDescription>Área restrita. Informe a senha de acesso.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="password">Senha</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={pending}>
+              {pending ? <Loader2 className="size-4 animate-spin" /> : "Entrar"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
+
+function AdminDashboard() {
+  const queryClient = useQueryClient();
+  const logout = useServerFn(adminLogout);
+  const createKey = useServerFn(adminCreateApiKey);
+  const revokeKey = useServerFn(adminRevokeApiKey);
+
+  const stores = useQuery({ queryKey: ["admin", "stores"], queryFn: () => adminListStores() });
+  const keys = useQuery({ queryKey: ["admin", "keys"], queryFn: () => adminListApiKeys() });
+
+  const [storeId, setStoreId] = useState<string>("");
+  const [label, setLabel] = useState("default");
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+
+  const createMutation = useMutation({
+    mutationFn: () => createKey({ data: { storeId, label } }),
+    onSuccess: async (result) => {
+      setFreshKey(result.fullKey);
+      setLabel("default");
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      toast.success("Credencial gerada. Copie agora — ela não será exibida novamente.");
+    },
+    onError: () => toast.error("Não foi possível gerar a credencial."),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (keyId: string) => revokeKey({ data: { keyId } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      toast.success("Credencial revogada.");
+    },
+    onError: () => toast.error("Não foi possível revogar a credencial."),
+  });
+
+  return (
+    <main className="min-h-screen bg-muted/40">
+      <header className="border-b bg-background">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
+          <div className="flex items-center gap-2">
+            <KeyRound className="size-5 text-primary" />
+            <h1 className="text-lg font-semibold">Painel administrativo</h1>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              await logout();
+              queryClient.clear();
+              await queryClient.invalidateQueries({ queryKey: ["admin"] });
+            }}
+          >
+            <LogOut className="size-4" /> Sair
+          </Button>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Lojas integradas</CardTitle>
+            <CardDescription>Ambiente e credenciais ativas por loja.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            {(stores.data ?? []).map((store) => (
+              <div key={store.id} className="rounded-lg border bg-background p-4">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium">{store.name}</p>
+                  <Badge variant={store.environment === "live" ? "default" : "secondary"}>
+                    {store.environment}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">/{store.slug}</p>
+                <p className="mt-2 text-sm">
+                  {store.activeKeys} credencial(is) ativa(s) · status {store.status}
+                </p>
+              </div>
+            ))}
+            {stores.isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Gerar nova credencial</CardTitle>
+            <CardDescription>
+              O valor completo aparece uma única vez. O banco guarda apenas o hash.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <div className="space-y-2">
+                <Label>Loja</Label>
+                <Select value={storeId} onValueChange={setStoreId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a loja" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(stores.data ?? []).map((store) => (
+                      <SelectItem key={store.id} value={store.id}>
+                        {store.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="label">Identificação</Label>
+                <Input
+                  id="label"
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                  placeholder="ex.: bff-produção"
+                />
+              </div>
+              <Button
+                disabled={!storeId || createMutation.isPending}
+                onClick={() => createMutation.mutate()}
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  "Gerar chave"
+                )}
+              </Button>
+            </div>
+
+            {freshKey && (
+              <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-4">
+                <p className="text-sm font-medium">
+                  Copie e guarde agora — não será exibida novamente.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto rounded bg-background px-3 py-2 text-xs">
+                    {freshKey}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(freshKey);
+                      toast.success("Credencial copiada.");
+                    }}
+                  >
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Credenciais</CardTitle>
+            <CardDescription>Somente o prefixo público é armazenado em claro.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Loja</TableHead>
+                  <TableHead>Identificação</TableHead>
+                  <TableHead>Prefixo</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Último uso</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(keys.data ?? []).map((key) => (
+                  <TableRow key={key.id}>
+                    <TableCell>{key.storeName}</TableCell>
+                    <TableCell>{key.label}</TableCell>
+                    <TableCell className="font-mono text-xs">{key.keyPrefix}…</TableCell>
+                    <TableCell>
+                      <Badge variant={key.status === "ACTIVE" ? "default" : "secondary"}>
+                        {key.status === "ACTIVE" ? "ativa" : "revogada"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString("pt-BR") : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {key.status === "ACTIVE" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={revokeMutation.isPending}
+                          onClick={() => revokeMutation.mutate(key.id)}
+                        >
+                          <Trash2 className="size-4" /> Revogar
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!keys.isLoading && (keys.data ?? []).length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      Nenhuma credencial cadastrada.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </main>
+  );
+}
