@@ -7,10 +7,11 @@ import type { Database } from "@/integrations/supabase/types";
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 
 async function markOrder(orderId: string, status: Database["public"]["Enums"]["order_status"]) {
-  const patch: Record<string, unknown> = { status };
-  if (status === "PAID") patch["paid_at"] = new Date().toISOString();
+  const patch: Database["public"]["Tables"]["orders"]["Update"] = { status };
+  if (status === "PAID") patch.paid_at = new Date().toISOString();
   await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
 }
+
 
 async function logEvent(payment: PaymentRow, type: string, message: string) {
   await supabaseAdmin.from("payment_events").insert({
