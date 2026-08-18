@@ -333,7 +333,10 @@ function AdminDashboard() {
             </Table>
           </CardContent>
         </Card>
+
+        <IntegrationDocs stores={(stores.data ?? []).map((s) => ({ name: s.name, slug: s.slug }))} />
       </div>
+
     </main>
   );
 }
