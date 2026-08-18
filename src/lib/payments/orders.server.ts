@@ -92,12 +92,15 @@ export async function createOrder(input: {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
-  const options = await resolveShippingService().quote({
-    postalCode: normalizePostalCode(input.address.postalCode),
-    totalWeightGrams: priced.totalWeightGrams,
-    subtotalCents: priced.subtotalCents,
-    currency: priced.currency,
-  });
+  const options =
+    priced.totalWeightGrams === 0
+      ? [NO_SHIPPING_OPTION]
+      : await resolveShippingService().quote({
+          postalCode: normalizePostalCode(input.address.postalCode),
+          totalWeightGrams: priced.totalWeightGrams,
+          subtotalCents: priced.subtotalCents,
+          currency: priced.currency,
+        });
   const option = options.find((entry) => entry.id === input.shippingOptionId);
   if (!option) throw new PaymentError("INVALID_INPUT", "Opção de frete inválida.");
 
