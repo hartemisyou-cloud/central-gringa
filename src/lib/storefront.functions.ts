@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 import { callCentralApi } from "./storefront-api.server";
+import {
+  storefrontCheckoutSchema,
+  storefrontQuoteSchema,
+  storefrontTokenSchema,
+} from "./storefront-schemas";
 
 /**
  * BFF da Loja 1.
@@ -28,11 +32,6 @@ export const getStorefrontProducts = createServerFn({ method: "GET" }).handler(a
   return data.products;
 });
 
-const itemsSchema = z
-  .array(z.object({ productId: z.string().uuid(), quantity: z.number().int().min(1).max(20) }))
-  .min(1)
-  .max(30);
-
 export interface ShippingOptionDTO {
   id: string;
   label: string;
@@ -52,33 +51,11 @@ export interface QuoteDTO {
 
 export const quoteStorefrontCart = createServerFn({ method: "POST" })
   .inputValidator((input: { items: unknown; postalCode?: string }) =>
-    z
-      .object({ items: itemsSchema, postalCode: z.string().trim().min(8).max(9).optional() })
-      .parse(input),
+    storefrontQuoteSchema.parse(input),
   )
   .handler(async ({ data }) =>
     callCentralApi<QuoteDTO>("/quote", { method: "POST", body: data }),
   );
-
-const checkoutSchema = z.object({
-  items: itemsSchema,
-  customer: z.object({
-    firstName: z.string().trim().min(2).max(80),
-    lastName: z.string().trim().min(1).max(80),
-    email: z.string().trim().email().max(160),
-    phone: z.string().trim().min(8).max(20),
-  }),
-  address: z.object({
-    postalCode: z.string().trim().min(8).max(9),
-    street: z.string().trim().min(2).max(160),
-    number: z.string().trim().min(1).max(20),
-    complement: z.string().trim().max(80).optional(),
-    district: z.string().trim().min(2).max(80),
-    city: z.string().trim().min(2).max(80),
-    state: z.string().trim().length(2),
-  }),
-  shippingOptionId: z.string().trim().min(1).max(40),
-});
 
 export interface CheckoutDTO {
   orderId: string;
@@ -92,7 +69,7 @@ export interface CheckoutDTO {
 
 /** Cria o pedido (com reserva de estoque) e já inicia o pagamento. */
 export const startStorefrontCheckout = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => checkoutSchema.parse(input))
+  .inputValidator((input: unknown) => storefrontCheckoutSchema.parse(input))
   .handler(async ({ data }): Promise<CheckoutDTO> => {
     const order = await callCentralApi<{
       orderId: string;
@@ -142,7 +119,7 @@ interface CentralOrderStatus {
 
 export const getStorefrontOrderStatus = createServerFn({ method: "GET" })
   .inputValidator((input: { publicToken: string }) =>
-    z.object({ publicToken: z.string().trim().min(10).max(120) }).parse(input),
+    storefrontTokenSchema.parse(input),
   )
   .handler(async ({ data }): Promise<OrderStatusDTO> => {
     const result = await callCentralApi<CentralOrderStatus>(
