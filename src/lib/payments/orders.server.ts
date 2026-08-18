@@ -37,6 +37,15 @@ async function loadProducts(storeId: string, productIds: string[]): Promise<Pric
   return data ?? [];
 }
 
+/** Opção usada quando não há entrega física (doações, itens digitais). */
+const NO_SHIPPING_OPTION = {
+  id: "no-shipping",
+  label: "Sem entrega física",
+  amountCents: 0,
+  estimatedDays: 0,
+  provider: "NONE",
+};
+
 function uniqueIds(items: RequestedItem[]): string[] {
   return [...new Set(items.map((item) => item.productId))];
 }
