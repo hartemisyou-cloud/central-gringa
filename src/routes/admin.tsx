@@ -340,3 +340,118 @@ function AdminDashboard() {
     </main>
   );
 }
+
+const API_BASE = "https://central-spark-pay.lovable.app/api/public/v1";
+
+function CodeBlock({ children }: { children: string }) {
+  return (
+    <div className="relative">
+      <pre className="overflow-x-auto rounded-lg border bg-background p-4 text-xs leading-relaxed">
+        <code>{children}</code>
+      </pre>
+      <Button
+        variant="outline"
+        size="sm"
+        className="absolute right-2 top-2"
+        onClick={() => {
+          navigator.clipboard.writeText(children);
+          toast.success("Copiado.");
+        }}
+      >
+        <Copy className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
+function IntegrationDocs({ stores }: { stores: Array<{ name: string; slug: string }> }) {
+  const [slug, setSlug] = useState(stores[0]?.slug ?? "loja-1");
+  const store = stores.find((s) => s.slug === slug) ?? stores[0];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Documentação de conexão</CardTitle>
+        <CardDescription>
+          Como conectar a loja {store?.name ?? ""} à central de pagamentos. A credencial só pode ser
+          usada no servidor (BFF) — nunca no navegador.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {stores.length > 1 && (
+          <div className="max-w-xs space-y-2">
+            <Label>Loja</Label>
+            <Select value={slug} onValueChange={setSlug}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {stores.map((s) => (
+                  <SelectItem key={s.slug} value={s.slug}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <section className="space-y-2">
+          <h3 className="font-medium">1. Guardar a credencial na loja</h3>
+          <p className="text-sm text-muted-foreground">
+            No projeto da loja, salve a chave gerada aqui como segredo do backend com o nome{" "}
+            <code className="rounded bg-muted px-1">STORE_API_KEY</code>. Ela nunca deve aparecer no
+            código do frontend.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">2. Endpoints da central</h3>
+          <CodeBlock>{`Base: ${API_BASE}
+Header obrigatório: x-store-api-key: <STORE_API_KEY>
+
+GET  /products                         lista o catálogo e o estoque disponível
+POST /quote                            calcula subtotal, frete e total
+POST /orders                           cria o pedido e reserva o estoque
+POST /orders/:orderId/payment          cria o pagamento (retorna clientSecret Stripe)
+GET  /orders/status/:publicToken       consulta o status do pedido`}</CodeBlock>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">3. Exemplo de chamada (servidor)</h3>
+          <CodeBlock>{`const res = await fetch("${API_BASE}/quote", {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    "x-store-api-key": process.env.STORE_API_KEY,
+  },
+  body: JSON.stringify({
+    items: [{ sku: "SKU-001", quantity: 1 }],
+    postalCode: "01310-100",
+  }),
+});
+const { data, error } = await res.json();`}</CodeBlock>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">4. Fluxo de pagamento</h3>
+          <CodeBlock>{`1. POST /orders  -> { orderId, orderNumber, publicToken, totals }
+2. POST /orders/{orderId}/payment -> { clientSecret, publishableKey, amountCents }
+3. No navegador: Stripe Elements com publishableKey + clientSecret
+   npm i @stripe/stripe-js @stripe/react-stripe-js
+   stripe.confirmPayment({ elements, confirmParams: { return_url } })
+4. A central recebe o webhook da Stripe, confirma o pagamento e baixa o estoque
+5. GET /orders/status/{publicToken} -> acompanha PENDING_PAYMENT -> PAID`}</CodeBlock>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">5. Erros</h3>
+          <CodeBlock>{`{ "error": { "code": "UNAUTHORIZED" | "VALIDATION_ERROR" | "OUT_OF_STOCK"
+              | "RATE_LIMITED" | "NOT_FOUND" | "CONFIG_ERROR", "message": "..." } }
+
+Limites: 20 pedidos/min e 20 pagamentos/min por loja.`}</CodeBlock>
+        </section>
+      </CardContent>
+    </Card>
+  );
+}
