@@ -20,7 +20,10 @@ export interface HostedPaymentSession {
  * (token aleatório e não enumerável). Não expõe dados internos da Stripe além
  * do client_secret do PaymentIntent do próprio pedido.
  */
-export async function getHostedPaymentSession(publicToken: string): Promise<HostedPaymentSession> {
+export async function getHostedPaymentSession(
+  publicToken: string,
+  options?: { storeId?: string },
+): Promise<HostedPaymentSession> {
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
