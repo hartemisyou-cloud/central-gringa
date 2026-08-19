@@ -32,6 +32,9 @@ export async function getHostedPaymentSession(
     .eq("public_token", publicToken)
     .maybeSingle();
   if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  if (options?.storeId && order.store_id !== options.storeId) {
+    throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  }
   if (!["PENDING_PAYMENT", "PAYMENT_PROCESSING"].includes(order.status)) {
     throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
   }
