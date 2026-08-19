@@ -20,7 +20,10 @@ export interface HostedPaymentSession {
  * (token aleatório e não enumerável). Não expõe dados internos da Stripe além
  * do client_secret do PaymentIntent do próprio pedido.
  */
-export async function getHostedPaymentSession(publicToken: string): Promise<HostedPaymentSession> {
+export async function getHostedPaymentSession(
+  publicToken: string,
+  options?: { storeId?: string },
+): Promise<HostedPaymentSession> {
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
@@ -29,6 +32,9 @@ export async function getHostedPaymentSession(publicToken: string): Promise<Host
     .eq("public_token", publicToken)
     .maybeSingle();
   if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  if (options?.storeId && order.store_id !== options.storeId) {
+    throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  }
   if (!["PENDING_PAYMENT", "PAYMENT_PROCESSING"].includes(order.status)) {
     throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
   }
