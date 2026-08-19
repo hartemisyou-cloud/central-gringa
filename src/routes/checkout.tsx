@@ -152,6 +152,21 @@ function CheckoutPage() {
         },
       });
       setSession(result);
+      storePaymentSession({
+        orderNumber: result.orderNumber,
+        publicToken: result.publicToken,
+        clientSecret: result.clientSecret,
+        publishableKey: result.publishableKey,
+        amountCents: result.amountCents,
+        currency: result.currency,
+        label:
+          cartRows.length === 1 && cartRows[0]
+            ? `${cartRows[0].quantity}× ${cartRows[0].product.name}`
+            : `${cartRows.reduce((sum, row) => sum + row.quantity, 0)} itens`,
+        subtitle: "Pagamento seguro processado pela Stripe.",
+      });
+      clear();
+      void navigate({ to: "/pagamento/$token", params: { token: result.publicToken } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível criar o pedido.");
     } finally {
