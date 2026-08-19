@@ -41,6 +41,9 @@ export async function getHostedPaymentSession(publicToken: string): Promise<Host
   if (!store) throw new PaymentError("NOT_FOUND", "Loja não encontrada.");
 
   const payment = await createOrderPayment({ store: store as StoreRow, orderId: order.id });
+  if (!payment.clientSecret) {
+    throw new PaymentError("INVALID_STATE", "Não foi possível iniciar o pagamento.");
+  }
 
   const items = order.order_items ?? [];
   const first = items[0];
