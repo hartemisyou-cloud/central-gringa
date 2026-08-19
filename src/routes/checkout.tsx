@@ -17,6 +17,7 @@ import {
 } from "@/lib/storefront.functions";
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
+import { storePaymentSession } from "@/routes/pagamento.$token";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,6 +78,7 @@ const EMPTY_FORM: FormState = {
 function CheckoutPage() {
   const { data: products } = useSuspenseQuery(productsQuery);
   const { lines, hydrated, clear } = useCart();
+  const navigate = useNavigate();
   const quote = useServerFn(quoteStorefrontCart);
   const checkout = useServerFn(startStorefrontCheckout);
 
@@ -152,6 +154,21 @@ function CheckoutPage() {
         },
       });
       setSession(result);
+      storePaymentSession({
+        orderNumber: result.orderNumber,
+        publicToken: result.publicToken,
+        clientSecret: result.clientSecret,
+        publishableKey: result.publishableKey,
+        amountCents: result.amountCents,
+        currency: result.currency,
+        label:
+          cartRows.length === 1 && cartRows[0]
+            ? `${cartRows[0].quantity}× ${cartRows[0].product.name}`
+            : `${cartRows.reduce((sum, row) => sum + row.quantity, 0)} itens`,
+        subtitle: "Pagamento seguro processado pela Stripe.",
+      });
+      clear();
+      void navigate({ to: "/pagamento/$token", params: { token: result.publicToken } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível criar o pedido.");
     } finally {

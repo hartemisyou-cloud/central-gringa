@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
+import { Route as PagamentoTokenRouteImport } from './routes/pagamento.$token'
 import { Route as PedidoTokenRouteImport } from './routes/pedido.$token'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
@@ -33,6 +34,11 @@ const AdminRoute = AdminRouteImport.update({
 const CheckoutRoute = CheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PagamentoTokenRoute = PagamentoTokenRouteImport.update({
+  id: '/pagamento/$token',
+  path: '/pagamento/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PedidoTokenRoute = PedidoTokenRouteImport.update({
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/pagamento/$token': typeof PagamentoTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/pagamento/$token': typeof PagamentoTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/pagamento/$token': typeof PagamentoTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/pagamento/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/pagamento/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/pagamento/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -154,6 +166,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   CheckoutRoute: typeof CheckoutRoute
+  PagamentoTokenRoute: typeof PagamentoTokenRoute
   PedidoTokenRoute: typeof PedidoTokenRoute
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
@@ -182,6 +195,13 @@ declare module '@tanstack/react-router' {
       path: '/checkout'
       fullPath: '/checkout'
       preLoaderRoute: typeof CheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pagamento/$token': {
+      id: '/pagamento/$token'
+      path: '/pagamento/$token'
+      fullPath: '/pagamento/$token'
+      preLoaderRoute: typeof PagamentoTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pedido/$token': {
@@ -254,6 +274,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   CheckoutRoute: CheckoutRoute,
+  PagamentoTokenRoute: PagamentoTokenRoute,
   PedidoTokenRoute: PedidoTokenRoute,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,
