@@ -67,7 +67,8 @@ export function preflight(): Response {
   return new Response(null, {
     status: 204,
     headers: {
-      "Access-Control-Allow-Headers": "content-type, x-store-api-key, authorization",
+      "Access-Control-Allow-Headers":
+        "content-type, x-store-api-key, x-store-slug, authorization",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       Vary: "Origin",
     },
