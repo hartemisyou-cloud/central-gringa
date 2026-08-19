@@ -425,7 +425,7 @@ GET  /orders/status/:publicToken       consulta o status do pedido`}</CodeBlock>
   headers: {
     "content-type": "application/json",
     "x-store-api-key": process.env.STORE_API_KEY,
-    "x-store-slug": "${store?.slug ?? "loja-2"}",
+    "x-store-slug": "${store?.slug ?? "livraria-crista"}",
   },
   body: JSON.stringify({
     items: [{ sku: "SKU-001", quantity: 1 }],
@@ -455,8 +455,8 @@ const { data, error } = await res.json();`}</CodeBlock>
 Limites: 20 pedidos/min e 20 pagamentos/min por loja.`}</CodeBlock>
         </section>
 
-        {["coracoes-unidos", "loja-2", "loja-3", "loja-4"].includes(store?.slug ?? "") && (
-          <DonationTiersDocs slug={store?.slug ?? "loja-2"} />
+        {["coracoes-unidos", "livraria-crista", "loja-2", "loja-3", "loja-4"].includes(store?.slug ?? "") && (
+          <DonationTiersDocs slug={store?.slug ?? "livraria-crista"} />
         )}
 
       </CardContent>
