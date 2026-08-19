@@ -78,6 +78,7 @@ const EMPTY_FORM: FormState = {
 function CheckoutPage() {
   const { data: products } = useSuspenseQuery(productsQuery);
   const { lines, hydrated, clear } = useCart();
+  const navigate = useNavigate();
   const quote = useServerFn(quoteStorefrontCart);
   const checkout = useServerFn(startStorefrontCheckout);
 
