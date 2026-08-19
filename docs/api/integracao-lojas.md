@@ -11,7 +11,7 @@ A chave só pode ser usada **no backend/BFF da loja**. Nunca no navegador.
 
 ```
 x-store-api-key: sk_live_b9DHfFufCHbB.LHK3KNXKZPXER8oRUK1L1Fkqj1PYPSR4h2fyKT2MWdpEcQ7e
-x-store-slug: coracoes-unidos | loja-2 | loja-3 | loja-4
+x-store-slug: livraria-crista (padrão) | coracoes-unidos | loja-2 | loja-3 | loja-4
 content-type: application/json
 ```
 
@@ -93,7 +93,7 @@ const API = "https://central-spark-pay.lovable.app/api/public/v1";
 const headers = {
   "content-type": "application/json",
   "x-store-api-key": process.env.STORE_API_KEY!,
-  "x-store-slug": "loja-2",
+  "x-store-slug": "livraria-crista",
 };
 
 const order = await fetch(`${API}/orders`, {
