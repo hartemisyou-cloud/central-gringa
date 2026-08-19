@@ -17,6 +17,7 @@ import {
 } from "@/lib/storefront.functions";
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
+import { storePaymentSession } from "@/routes/pagamento.$token";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
