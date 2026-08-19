@@ -93,7 +93,7 @@ const API = "https://central-spark-pay.lovable.app/api/public/v1";
 const headers = {
   "content-type": "application/json",
   "x-store-api-key": process.env.STORE_API_KEY!,
-  "x-store-slug": "loja-2",
+  "x-store-slug": "livraria-crista",
 };
 
 const order = await fetch(`${API}/orders`, {
