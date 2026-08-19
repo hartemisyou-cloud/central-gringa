@@ -186,7 +186,7 @@ function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
       ? `${window.location.origin}/pedido/${payload.publicToken}`
       : undefined;
 
-  async function finish(confirm: () => ReturnType<NonNullable<typeof stripe>["confirmPayment"]>) {
+  async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
     setProcessing(true);
     const { error } = await confirm();
     setProcessing(false);
