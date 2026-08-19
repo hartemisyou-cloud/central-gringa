@@ -27,10 +27,13 @@ export const Route = createFileRoute("/api/public/v1/orders")({
             );
             const { createOrder } = await import("@/lib/payments/orders.server");
             const result = await createOrder({ store, ...body });
+            const origin = new URL(request.url).origin;
             return {
               orderId: result.order.id,
               orderNumber: result.order.order_number,
               publicToken: result.publicToken,
+              /** Página de checkout hospedada (redirecionar o cliente para cá). */
+              paymentUrl: `${origin}/pay/${result.publicToken}`,
               totals: {
                 currency: result.totals.currency,
                 subtotalCents: result.totals.subtotalCents,

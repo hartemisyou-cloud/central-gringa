@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as PagamentoTokenRouteImport } from './routes/pagamento.$token'
+import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as PedidoTokenRouteImport } from './routes/pedido.$token'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
@@ -39,6 +40,11 @@ const CheckoutRoute = CheckoutRouteImport.update({
 const PagamentoTokenRoute = PagamentoTokenRouteImport.update({
   id: '/pagamento/$token',
   path: '/pagamento/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PayTokenRoute = PayTokenRouteImport.update({
+  id: '/pay/$token',
+  path: '/pay/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PedidoTokenRoute = PedidoTokenRouteImport.update({
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
+  '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
+  '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
+  '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/pagamento/$token'
+    | '/pay/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/pagamento/$token'
+    | '/pay/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/pagamento/$token'
+    | '/pay/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -167,6 +179,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   CheckoutRoute: typeof CheckoutRoute
   PagamentoTokenRoute: typeof PagamentoTokenRoute
+  PayTokenRoute: typeof PayTokenRoute
   PedidoTokenRoute: typeof PedidoTokenRoute
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
@@ -202,6 +215,13 @@ declare module '@tanstack/react-router' {
       path: '/pagamento/$token'
       fullPath: '/pagamento/$token'
       preLoaderRoute: typeof PagamentoTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pay/$token': {
+      id: '/pay/$token'
+      path: '/pay/$token'
+      fullPath: '/pay/$token'
+      preLoaderRoute: typeof PayTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pedido/$token': {
@@ -275,6 +295,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   CheckoutRoute: CheckoutRoute,
   PagamentoTokenRoute: PagamentoTokenRoute,
+  PayTokenRoute: PayTokenRoute,
   PedidoTokenRoute: PedidoTokenRoute,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,

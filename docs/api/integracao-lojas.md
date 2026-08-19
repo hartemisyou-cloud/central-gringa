@@ -121,3 +121,20 @@ const pay = await fetch(`${API}/orders/${order.data.orderId}/payment`, {
 | 500 | `CONFIG_ERROR` | loja sem provedor de pagamento |
 
 Limites: produtos/quote 60/min, pedidos 20/min, pagamento 20/min, status 120/min.
+
+## Checkout hospedado (redirecionamento)
+
+Para não renderizar o formulário na própria página, redirecione o cliente para a
+página de pagamento hospedada da Central (layout idêntico ao Stripe, com cartão,
+Link, Apple Pay e Google Pay):
+
+1. `POST /api/public/v1/orders` (com `x-store-key` e `x-store-slug: livraria-crista`)
+2. A resposta agora inclui `paymentUrl`:
+
+```json
+{ "orderId": "...", "orderNumber": "...", "publicToken": "...", "paymentUrl": "https://central-spark-pay.lovable.app/pay/<publicToken>" }
+```
+
+3. No cliente: `window.location.assign(data.paymentUrl)`
+
+Após o pagamento o cliente é levado para `/pedido/<publicToken>` (comprovante).
