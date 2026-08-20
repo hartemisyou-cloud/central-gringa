@@ -1,26 +1,36 @@
 import { getRequest } from "@tanstack/react-start/server";
 
-function apiBaseUrl(): string {
-  let origin = new URL(getRequest().url).origin;
+// Domínio estável do projeto publicado. Serve o mesmo build sem depender de
+// DNS de domínio customizado nem do gate de login do preview.
+const STABLE_PROD_ORIGIN = "https://project--dfc262d1-6dc6-458b-a321-06bc42199114.lovable.app";
+const STABLE_DEV_ORIGIN = "https://project--dfc262d1-6dc6-458b-a321-06bc42199114-dev.lovable.app";
 
-  // O domínio `id-preview--<id>.lovable.app` fica atrás do login da Lovable e
-  // redireciona (302) até as rotas públicas, o que quebraria o SSR. O domínio
-  // estável de preview serve o mesmo build sem esse gate.
-  const previewMatch = origin.match(/^https:\/\/id-preview--([^.]+)\.lovable\.app$/i);
-  if (previewMatch) origin = `https://project--${previewMatch[1]}-dev.lovable.app`;
+function isLocal(url: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(url);
+}
 
+/** Bases candidatas, em ordem de preferência. */
+function apiBaseUrls(): string[] {
+  const origin = new URL(getRequest().url).origin;
   const configured = process.env["PAYMENTS_API_BASE_URL"]?.trim().replace(/\/$/, "");
 
-  // Só usamos a base configurada se ela fizer sentido para o ambiente atual.
-  // Um valor de desenvolvimento (localhost) em produção quebraria o site inteiro.
-  if (configured) {
-    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(configured);
-    const originIsLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(origin);
-    if (!isLocal || originIsLocal) return configured;
+  const candidates: string[] = [];
+
+  if (isLocal(origin)) {
+    candidates.push(origin);
+    if (configured && isLocal(configured)) candidates.push(configured);
+  } else {
+    if (configured && !isLocal(configured)) candidates.push(configured);
+    // O preview `id-preview--*` fica atrás do login da Lovable; domínios
+    // customizados podem ainda não resolver de dentro do worker.
+    const isPreview = /^https:\/\/id-preview--/i.test(origin);
+    candidates.push(isPreview ? STABLE_DEV_ORIGIN : STABLE_PROD_ORIGIN);
+    if (!isPreview) candidates.push(origin);
   }
 
-  return origin;
+  return [...new Set(candidates)];
 }
+
 
 
 /**
