@@ -10,16 +10,16 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/pedido/$token")({
   head: () => ({
     meta: [
-      { title: "Acompanhe seu pedido — Loja 1" },
+      { title: "Acompanhe seu pedido — Livraria Cristã" },
       {
         name: "description",
         content:
-          "Acompanhe o status do seu pedido na Loja 1: confirmação de pagamento, valores e itens comprados.",
+          "Acompanhe o status do seu pedido na Livraria Cristã: confirmação de pagamento, valores e itens comprados.",
       },
-      { property: "og:title", content: "Acompanhe seu pedido — Loja 1" },
+      { property: "og:title", content: "Acompanhe seu pedido — Livraria Cristã" },
       {
         property: "og:description",
-        content: "Status de pagamento e detalhes do seu pedido na Loja 1.",
+        content: "Status de pagamento e detalhes do seu pedido na Livraria Cristã.",
       },
       { name: "robots", content: "noindex" },
     ],

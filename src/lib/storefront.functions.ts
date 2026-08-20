@@ -29,7 +29,9 @@ export interface StorefrontProduct {
 
 export const getStorefrontProducts = createServerFn({ method: "GET" }).handler(async () => {
   const data = await callCentralApi<{ products: StorefrontProduct[] }>("/products");
-  return data.products;
+  // Produtos de doação são vendidos pelas lojas parceiras via API e não fazem
+  // parte da vitrine da livraria.
+  return data.products.filter((product) => product.category !== "doacao");
 });
 
 export interface ShippingOptionDTO {
