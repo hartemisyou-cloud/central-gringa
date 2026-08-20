@@ -293,17 +293,20 @@ function PaymentForm({ session }: { session: Session }) {
             defaultValues: {
               name: session.customer?.name ?? "",
               phone: session.customer?.phone ?? "",
-              address: session.customer?.address
+              ...(session.customer?.address
                 ? {
-                    line1: session.customer.address.line1,
-                    line2: session.customer.address.line2,
-                    city: session.customer.address.city,
-                    state: session.customer.address.state,
-                    postal_code: session.customer.address.postalCode,
-                    country: session.customer.address.country,
+                    address: {
+                      line1: session.customer.address.line1,
+                      line2: session.customer.address.line2,
+                      city: session.customer.address.city,
+                      state: session.customer.address.state,
+                      postal_code: session.customer.address.postalCode,
+                      country: session.customer.address.country,
+                    },
                   }
-                : undefined,
+                : {}),
             },
+
           }}
           onChange={(event) =>
             setBilling({
