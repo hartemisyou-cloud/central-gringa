@@ -15,12 +15,12 @@ import { toast } from "sonner";
 
 import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
-import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
+import { loadHostedPaymentSession, startHostedPaymentIntent } from "@/lib/hosted-pay.functions";
 
 interface Session {
   orderNumber: string;
   publicToken: string;
-  clientSecret: string;
+  clientSecret: null;
   publishableKey: string;
   amountCents: number;
   currency: string;
@@ -85,7 +85,11 @@ function HostedPayPage() {
     () =>
       session
         ? {
-            clientSecret: session.clientSecret,
+            // Modo diferido: o PaymentIntent só é criado no submit, então a
+            // Stripe não recebe cobranças de checkouts abandonados.
+            mode: "payment" as const,
+            amount: session.amountCents,
+            currency: session.currency.toLowerCase(),
             locale: "pt-BR",
             appearance: {
               theme: "stripe",
