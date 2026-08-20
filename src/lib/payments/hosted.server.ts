@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PaymentError } from "./errors";
-import { createOrderPayment } from "./orders.server";
+import { createOrderPayment, integrationForStore } from "./orders.server";
 import type { StoreRow } from "./store-auth.server";
 
 export interface HostedPaymentCustomer {
