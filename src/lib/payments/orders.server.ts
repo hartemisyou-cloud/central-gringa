@@ -247,11 +247,11 @@ export function describeOrderItems(
   if (items.length === 0) {
     return {
       description: `Pedido ${orderNumberValue}`,
-      statementSuffix: orderNumberValue.slice(-10),
-      statementSuffix_: "" as never,
+      statementSuffix: orderNumberValue.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 22),
       skuList: "",
-    } as never;
+    };
   }
+
   const parts = items.map(
     (item) => `${item.product_name} — SKU ${item.sku} x${item.quantity}`,
   );
