@@ -51,7 +51,7 @@ export const Route = createFileRoute("/pay/$token")({
       {
         name: "description",
         content:
-          "Finalize sua doação com cartão, Apple Pay, Google Pay ou Link em um checkout seguro processado pela Stripe.",
+          "Finalize sua compra com cartão, Apple Pay, Google Pay ou Link em um checkout seguro processado pela Stripe.",
       },
       { property: "og:title", content: "Pagamento seguro — Human Unity Foundation" },
       {
