@@ -246,8 +246,55 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
   }
 
+  // Contexto completo do pedido: itens (nome + SKU), cliente e endereço.
+  // Vai para a Stripe para que a cobrança seja sempre identificável.
+  const [{ data: items }, { data: customer }, { data: address }] = await Promise.all([
+    supabaseAdmin
+      .from("order_items")
+      .select("product_name, sku, quantity, unit_price_cents, total_cents")
+      .eq("order_id", order.id),
+    order.customer_id
+      ? supabaseAdmin
+          .from("customers")
+          .select("email, first_name, last_name, phone, document")
+          .eq("id", order.customer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    order.shipping_address_id
+      ? supabaseAdmin
+          .from("addresses")
+          .select(
+            "recipient_name, phone, street, number, complement, district, city, state, postal_code, country",
+          )
+          .eq("id", order.shipping_address_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const orderItems = items ?? [];
+  const descriptor = describeOrderItems(orderItems, order.order_number);
+  const customerName = customer
+    ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
+    : "";
+  const shipping =
+    address && address.street
+      ? {
+          name: address.recipient_name || customerName || order.order_number,
+          ...(address.phone ? { phone: address.phone } : {}),
+          address: {
+            line1: `${address.street}, ${address.number}`.trim(),
+            ...(address.complement ? { line2: address.complement } : {}),
+            city: address.city,
+            state: address.state,
+            postal_code: address.postal_code,
+            country: address.country || "BR",
+          },
+        }
+      : undefined;
+
   const integration = await integrationForStore(input.store);
   const provider = await providerFromIntegration(integration);
+
 
   const { data: existing } = await supabaseAdmin
     .from("payments")
