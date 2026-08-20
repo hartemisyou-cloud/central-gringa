@@ -203,48 +203,42 @@ function PaymentForm({ session }: { session: Session }) {
     if (returnUrl) window.location.href = returnUrl;
   }
 
-  const confirmArgs = () => ({
-    elements: elements!,
-    redirect: "if_required" as const,
-    confirmParams: {
-      ...(returnUrl ? { return_url: returnUrl } : {}),
+  const confirmArgs = () => {
+    const addr = billing.address;
+    const fullAddress = addr
+      ? {
+          line1: addr.line1,
+          line2: addr.line2 ?? "",
+          city: addr.city,
+          state: addr.state,
+          postal_code: addr.postal_code,
+          country: addr.country,
+        }
+      : undefined;
+    const name = billing.name || session.customer?.name || "";
+    const phone = billing.phone || session.customer?.phone || "";
+    const mail = email || session.customer?.email || "";
+
+    const confirmParams = {
+      return_url: returnUrl,
       payment_method_data: {
         billing_details: {
-          name: billing.name || session.customer?.name || undefined,
-          email: email || session.customer?.email || undefined,
-          phone: billing.phone || session.customer?.phone || undefined,
-          ...(billing.address
-            ? {
-                address: {
-                  line1: billing.address.line1,
-                  line2: billing.address.line2 ?? undefined,
-                  city: billing.address.city,
-                  state: billing.address.state,
-                  postal_code: billing.address.postal_code,
-                  country: billing.address.country,
-                },
-              }
-            : {}),
+          name,
+          email: mail,
+          phone,
+          ...(fullAddress ? { address: fullAddress } : {}),
         },
       },
-      ...(billing.address
-        ? {
-            shipping: {
-              name: billing.name || session.customer?.name || "",
-              phone: billing.phone || session.customer?.phone || undefined,
-              address: {
-                line1: billing.address.line1,
-                line2: billing.address.line2 ?? undefined,
-                city: billing.address.city,
-                state: billing.address.state,
-                postal_code: billing.address.postal_code,
-                country: billing.address.country,
-              },
-            },
-          }
-        : {}),
-    },
-  });
+      ...(fullAddress ? { shipping: { name, phone, address: fullAddress } } : {}),
+    };
+
+    return {
+      elements: elements!,
+      redirect: "if_required" as const,
+      confirmParams,
+    };
+  };
+
 
   return (
     <form
