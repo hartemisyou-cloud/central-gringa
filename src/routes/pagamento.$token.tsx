@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import {
+  AddressElement,
   Elements,
   ExpressCheckoutElement,
   LinkAuthenticationElement,
@@ -24,7 +25,22 @@ export interface PaymentSessionPayload {
   currency: string;
   label: string;
   subtitle?: string;
+  items?: { name: string; sku: string; quantity: number; totalCents: number }[];
+  customer?: {
+    name: string;
+    email: string;
+    phone: string;
+    address: {
+      line1: string;
+      line2: string;
+      city: string;
+      state: string;
+      postalCode: string;
+      country: string;
+    } | null;
+  };
 }
+
 
 export const paymentSessionKey = (token: string) => `loja1.payment.${token}`;
 
