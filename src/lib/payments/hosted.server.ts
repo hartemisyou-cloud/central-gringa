@@ -3,6 +3,27 @@ import { PaymentError } from "./errors";
 import { createOrderPayment } from "./orders.server";
 import type { StoreRow } from "./store-auth.server";
 
+export interface HostedPaymentCustomer {
+  name: string;
+  email: string;
+  phone: string;
+  address: {
+    line1: string;
+    line2: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+  } | null;
+}
+
+export interface HostedPaymentItem {
+  name: string;
+  sku: string;
+  quantity: number;
+  totalCents: number;
+}
+
 export interface HostedPaymentSession {
   orderNumber: string;
   publicToken: string;
@@ -13,7 +34,10 @@ export interface HostedPaymentSession {
   label: string;
   subtitle: string | null;
   storeName: string;
+  items: HostedPaymentItem[];
+  customer: HostedPaymentCustomer;
 }
+
 
 /**
  * Sessão de pagamento hospedada, resolvida apenas pelo public_token do pedido
