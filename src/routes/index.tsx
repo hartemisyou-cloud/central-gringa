@@ -15,13 +15,13 @@ const productsQuery = queryOptions({
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Loja 1 — Produtos físicos com checkout seguro" },
+      { title: "Livraria Cristã — Bíblias, livros e presentes cristãos" },
       {
         name: "description",
         content:
-          "Catálogo da Loja 1: produtos físicos com frete calculado, estoque em tempo real e pagamento processado por API central com Stripe.",
+          "Bíblias de estudo, devocionais, hinários, cruzes e presentes cristãos com frete calculado, estoque em tempo real e pagamento processado por API central com Stripe.",
       },
-      { property: "og:title", content: "Loja 1 — Produtos físicos com checkout seguro" },
+      { property: "og:title", content: "Livraria Cristã — Bíblias, livros e presentes cristãos" },
       {
         property: "og:description",
         content:
@@ -52,7 +52,7 @@ function Storefront() {
             <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
               <ShoppingBag className="size-4" />
             </span>
-            <span className="font-display text-lg font-semibold tracking-tight">Loja 1</span>
+            <span className="font-display text-lg font-semibold tracking-tight">Livraria Cristã</span>
           </Link>
           <Button asChild size="sm" disabled={itemCount === 0}>
             <Link to="/checkout">

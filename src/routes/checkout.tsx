@@ -30,13 +30,13 @@ const productsQuery = queryOptions({
 export const Route = createFileRoute("/checkout")({
   head: () => ({
     meta: [
-      { title: "Checkout seguro — Loja 1" },
+      { title: "Checkout seguro — Livraria Cristã" },
       {
         name: "description",
         content:
-          "Finalize sua compra na Loja 1 com frete calculado por CEP e pagamento protegido pela API central de pagamentos.",
+          "Finalize sua compra na Livraria Cristã com frete calculado por CEP e pagamento protegido pela API central de pagamentos.",
       },
-      { property: "og:title", content: "Checkout seguro — Loja 1" },
+      { property: "og:title", content: "Checkout seguro — Livraria Cristã" },
       {
         property: "og:description",
         content: "Frete calculado por CEP e pagamento protegido pela API central de pagamentos.",
