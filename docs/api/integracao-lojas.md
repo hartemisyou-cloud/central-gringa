@@ -19,27 +19,26 @@ content-type: application/json
 - Loja fora do escopo da chave (ex.: `loja-1`) → `403`
 - O banco guarda apenas o hash SHA-256 da chave.
 
-## Catálogo das lojas parceiras (SKUs)
+## Tickets de doação (SKUs)
 
-| Valor | Produto | SKU |
-| --- | --- | --- |
-| US$ 20 | Devocional Diário Fé em Ação | `LC-DEV-020` |
-| US$ 30 | Bíblia de Bolso Capa Dura | `LC-BIB-030` |
-| US$ 50 | Bíblia de Estudo Ilustrada | `LC-BIE-050` |
-| US$ 100 | Kit Bíblia de Estudo + Devocional | `LC-KIT-100` |
-| US$ 250 | Coleção Clássicos Cristãos (10 volumes) | `LC-COL-250` |
-| US$ 500 | Biblioteca Cristã Completa Edição Premium | `LC-PRE-500` |
+| Valor | SKU |
+| --- | --- |
+| US$ 20 | `CU-DON-020` |
+| US$ 30 | `CU-DON-030` |
+| US$ 50 | `CU-DON-050` |
+| US$ 100 | `CU-DON-100` |
+| US$ 250 | `CU-DON-250` |
+| US$ 500 | `CU-DON-500` |
 
 O valor cobrado é sempre o preço do SKU no servidor — o cliente nunca define o valor.
 
-## 1. Listar produtos
+## 1. Listar produtos/tickets
 
 `GET /api/public/v1/products`
 
 ```json
-{"data":{"products":[{"id":"uuid","name":"Devocional Diário Fé em Ação","sku":"LC-DEV-020","priceCents":2000,"currency":"USD","available":1000000}]}}
+{"data":{"products":[{"id":"uuid","name":"Doação US$ 20","sku":"CU-DON-020","priceCents":2000,"currency":"USD","available":1000000}]}}
 ```
-
 
 Use o `id` retornado para montar o pedido.
 

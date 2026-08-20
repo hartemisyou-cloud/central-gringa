@@ -27,7 +27,7 @@ Resposta de `checkout/session`:
     "publishableKey": "pk_live_...",
     "amountCents": 5000,
     "currency": "BRL",
-    "label": "Bíblia de Estudo Ilustrada",
+    "label": "Doação $50",
     "subtitle": "Livraria Cristã",
     "storeName": "Livraria Cristã"
   }
@@ -143,7 +143,7 @@ export const Route = createFileRoute("/pay/$token")({
       {
         name: "description",
         content:
-          "Finalize sua compra com cartão, Apple Pay, Google Pay ou Link em um checkout seguro processado pela Stripe.",
+          "Finalize sua doação com cartão, Apple Pay, Google Pay ou Link em um checkout seguro processado pela Stripe.",
       },
       { property: "og:title", content: "Pagamento seguro — Human Unity Foundation" },
       {
@@ -358,7 +358,7 @@ export const createDonationOrder = createServerFn({ method: "POST" })
         customer: data.customer,
         address: {
           postalCode: "00000-000",
-          street: "Rua da Livraria",
+          street: "Doação online",
           number: "0",
           district: "Online",
           city: "Online",

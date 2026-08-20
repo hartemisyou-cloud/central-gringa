@@ -1,1 +1,0 @@
-UPDATE public.products SET category = 'parceiros' WHERE sku IN ('LC-DEV-020','LC-BIB-030','LC-BIE-050','LC-KIT-100','LC-COL-250','LC-PRE-500');
