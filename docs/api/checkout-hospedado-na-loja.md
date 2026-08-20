@@ -11,7 +11,7 @@ A loja renderiza a página `/pay/$token` no domínio dela, mas todo o processame
 | GET    | `/api/public/v1/checkout/session/{publicToken}`         | client_secret + resumo        |
 | GET    | `/api/public/v1/orders/status/{publicToken}`            | status pós-pagamento          |
 
-Base: `https://central-spark-pay.lovable.app`
+Base: `https://livrariacristaglobal.com`
 Headers: `x-store-api-key: <STORE_API_KEY>` e `x-store-slug: livraria-crista`.
 **A chave nunca vai para o browser** — as chamadas saem do servidor (server function).
 
@@ -40,7 +40,7 @@ Resposta de `checkout/session`:
 ### 1. `src/lib/central-pay.server.ts`
 
 ```ts
-const BASE = "https://central-spark-pay.lovable.app";
+const BASE = "https://livrariacristaglobal.com";
 
 export async function callCentralApi<T>(
   path: string,
@@ -126,7 +126,7 @@ import { toast } from "sonner";
 import { loadCheckoutSession, type CheckoutSession } from "@/lib/central-pay.functions";
 
 const LOGO =
-  "https://central-spark-pay.lovable.app/__l5e/assets-v1/fb6340ab-ba41-4846-903a-4572a6a113ef/human-unity-logo.png";
+  "https://livrariacristaglobal.com/__l5e/assets-v1/fb6340ab-ba41-4846-903a-4572a6a113ef/human-unity-logo.png";
 
 const money = (cents: number, currency: string) =>
   new Intl.NumberFormat(currency === "BRL" ? "pt-BR" : "en-US", {
