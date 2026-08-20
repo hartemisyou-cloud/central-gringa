@@ -189,7 +189,8 @@ function PaymentForm({ session }: { session: Session }) {
   const returnUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/pedido/${session.publicToken}`
-      : undefined;
+      : `/pedido/${session.publicToken}`;
+
 
   async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
     setProcessing(true);
