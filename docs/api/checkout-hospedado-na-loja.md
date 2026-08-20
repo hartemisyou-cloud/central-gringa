@@ -8,7 +8,8 @@ A loja renderiza a página `/pay/$token` no domínio dela, mas todo o processame
 | Método | Rota                                                    | Uso                          |
 | ------ | ------------------------------------------------------- | ---------------------------- |
 | POST   | `/api/public/v1/orders`                                 | cria o pedido → `publicToken` |
-| GET    | `/api/public/v1/checkout/session/{publicToken}`         | client_secret + resumo        |
+| GET    | `/api/public/v1/checkout/session/{publicToken}`         | resumo do pedido (sem cobrança) |
+| POST   | `/api/public/v1/checkout/intent/{publicToken}`          | cria o PaymentIntent na confirmação |
 | GET    | `/api/public/v1/orders/status/{publicToken}`            | status pós-pagamento          |
 
 Base: `https://central-spark-pay.lovable.app`
@@ -22,7 +23,7 @@ Resposta de `checkout/session`:
   "data": {
     "orderNumber": "ORD-000123",
     "publicToken": "...",
-    "clientSecret": "pi_..._secret_...",
+    "clientSecret": null,
     "publishableKey": "pk_live_...",
     "amountCents": 5000,
     "currency": "BRL",
@@ -80,7 +81,7 @@ import { z } from "zod";
 export interface CheckoutSession {
   orderNumber: string;
   publicToken: string;
-  clientSecret: string;
+  clientSecret: null;
   publishableKey: string;
   amountCents: number;
   currency: string;
@@ -174,7 +175,12 @@ function PayPage() {
     () =>
       session
         ? {
-            clientSecret: session.clientSecret,
+            // Modo diferido: crie o PaymentIntent só no submit chamando
+            // POST /api/public/v1/checkout/intent/{publicToken} e passe o
+            // clientSecret retornado para stripe.confirmPayment().
+            mode: "payment",
+            amount: session.amountCents,
+            currency: session.currency.toLowerCase(),
             locale: "pt-BR",
             appearance: {
               theme: "stripe",
