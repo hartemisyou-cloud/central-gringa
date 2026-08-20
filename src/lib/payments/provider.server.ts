@@ -80,6 +80,11 @@ export class StripePaymentProvider implements PaymentProvider {
         metadata: input.metadata,
         ...(input.description ? { description: input.description } : {}),
         ...(input.receiptEmail ? { receipt_email: input.receiptEmail } : {}),
+        ...(input.statementDescriptorSuffix
+          ? { statement_descriptor_suffix: input.statementDescriptorSuffix }
+          : {}),
+        ...(input.shipping ? { shipping: input.shipping } : {}),
+
       },
       input.idempotencyKey,
     );
