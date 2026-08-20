@@ -27,7 +27,12 @@ export interface HostedPaymentItem {
 export interface HostedPaymentSession {
   orderNumber: string;
   publicToken: string;
-  clientSecret: string;
+  /**
+   * Sempre `null`: o PaymentIntent só é criado quando o cliente confirma o
+   * pagamento, para que a Stripe receba apenas cobranças aprovadas ou
+   * recusadas (nada de checkouts abandonados/incompletos).
+   */
+  clientSecret: null;
   publishableKey: string;
   amountCents: number;
   currency: string;
