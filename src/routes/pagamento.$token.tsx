@@ -190,17 +190,36 @@ function CenterLoader() {
   );
 }
 
+interface BillingSnapshot {
+  name: string;
+  phone: string;
+  address: {
+    line1: string;
+    line2?: string | null;
+    city: string;
+    state: string;
+    postal_code: string;
+    country: string;
+  } | null;
+}
+
 function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
   const stripe = useStripe();
   const elements = useElements();
   const navigate = useNavigate();
   const [processing, setProcessing] = useState(false);
   const [hasExpress, setHasExpress] = useState(false);
+  const [email, setEmail] = useState(payload.customer?.email ?? "");
+  const [billing, setBilling] = useState<BillingSnapshot>({
+    name: payload.customer?.name ?? "",
+    phone: payload.customer?.phone ?? "",
+    address: null,
+  });
 
   const returnUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/pedido/${payload.publicToken}`
-      : undefined;
+      : `/pedido/${payload.publicToken}`;
 
   async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
     setProcessing(true);
@@ -214,34 +233,62 @@ function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
     void navigate({ to: "/pedido/$token", params: { token: payload.publicToken } });
   }
 
+  const confirmArgs = () => {
+    const addr = billing.address;
+    const fullAddress = addr
+      ? {
+          line1: addr.line1,
+          line2: addr.line2 ?? "",
+          city: addr.city,
+          state: addr.state,
+          postal_code: addr.postal_code,
+          country: addr.country,
+        }
+      : undefined;
+    const name = billing.name || payload.customer?.name || "";
+    const phone = billing.phone || payload.customer?.phone || "";
+    const mail = email || payload.customer?.email || "";
+
+    return {
+      elements: elements!,
+      redirect: "if_required" as const,
+      confirmParams: {
+        return_url: returnUrl,
+        payment_method_data: {
+          billing_details: {
+            name,
+            email: mail,
+            phone,
+            ...(fullAddress ? { address: fullAddress } : {}),
+          },
+        },
+        ...(fullAddress ? { shipping: { name, phone, address: fullAddress } } : {}),
+      },
+    };
+  };
+
   return (
     <form
       className="space-y-6"
       onSubmit={(event) => {
         event.preventDefault();
         if (!stripe || !elements) return;
-        void finish(() =>
-          stripe.confirmPayment({
-            elements,
-            redirect: "if_required",
-            confirmParams: returnUrl ? { return_url: returnUrl } : {},
-          }),
-        );
+        void finish(() => stripe.confirmPayment(confirmArgs()));
       }}
     >
       <div className={hasExpress ? "space-y-5" : ""}>
         <ExpressCheckoutElement
-          options={{ buttonHeight: 48 }}
+          options={{
+            buttonHeight: 48,
+            emailRequired: true,
+            phoneNumberRequired: true,
+            billingAddressRequired: true,
+            shippingAddressRequired: true,
+          }}
           onReady={({ availablePaymentMethods }) => setHasExpress(Boolean(availablePaymentMethods))}
           onConfirm={() => {
             if (!stripe || !elements) return;
-            void finish(() =>
-              stripe.confirmPayment({
-                elements,
-                redirect: "if_required",
-                confirmParams: returnUrl ? { return_url: returnUrl } : {},
-              }),
-            );
+            void finish(() => stripe.confirmPayment(confirmArgs()));
           }}
         />
         {hasExpress ? (
@@ -254,14 +301,70 @@ function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-base font-medium">Dados para contato</h2>
-        <LinkAuthenticationElement />
+        <h2 className="text-base font-medium">E-mail</h2>
+        <LinkAuthenticationElement
+          options={{ defaultValues: { email: payload.customer?.email ?? "" } }}
+          onChange={(event) => setEmail(event.value.email)}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-base font-medium">Dados de cobrança e entrega</h2>
+        <AddressElement
+          options={{
+            mode: "shipping",
+            display: { name: "full" },
+            fields: { phone: "always" },
+            validation: { phone: { required: "always" } },
+            autocomplete: { mode: "automatic" },
+            defaultValues: {
+              name: payload.customer?.name ?? "",
+              phone: payload.customer?.phone ?? "",
+              ...(payload.customer?.address
+                ? {
+                    address: {
+                      line1: payload.customer.address.line1,
+                      line2: payload.customer.address.line2,
+                      city: payload.customer.address.city,
+                      state: payload.customer.address.state,
+                      postal_code: payload.customer.address.postalCode,
+                      country: payload.customer.address.country,
+                    },
+                  }
+                : {}),
+            },
+          }}
+          onChange={(event) =>
+            setBilling({
+              name: event.value.name ?? "",
+              phone: event.value.phone ?? "",
+              address: event.value.address as BillingSnapshot["address"],
+            })
+          }
+        />
       </div>
 
       <div className="space-y-3">
         <h2 className="text-base font-medium">Forma de pagamento</h2>
-        <PaymentElement options={{ layout: "tabs" }} />
+        <PaymentElement
+          options={{
+            layout: "tabs",
+            fields: {
+              billingDetails: { name: "never", email: "never", phone: "never", address: "never" },
+            },
+          }}
+        />
       </div>
+
+      {payload.items?.length ? (
+        <ul className="space-y-1 border-t border-[#e6e6e6] pt-4 text-xs text-[#6d6e78]">
+          {payload.items.map((item) => (
+            <li key={item.sku}>
+              {item.name} — SKU {item.sku} x{item.quantity}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <button
         type="submit"
@@ -271,5 +374,6 @@ function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
         {processing ? <Loader2 className="size-4 animate-spin" /> : "Pagar"}
       </button>
     </form>
+
   );
 }
