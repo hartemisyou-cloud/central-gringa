@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import {
-  AddressElement,
   Elements,
   ExpressCheckoutElement,
   LinkAuthenticationElement,
@@ -15,33 +14,18 @@ import { toast } from "sonner";
 
 import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
-import { loadHostedPaymentSession, startHostedPaymentIntent } from "@/lib/hosted-pay.functions";
+import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
 
 interface Session {
   orderNumber: string;
   publicToken: string;
-  clientSecret: null;
+  clientSecret: string;
   publishableKey: string;
   amountCents: number;
   currency: string;
   label: string;
   subtitle: string | null;
-  items?: { name: string; sku: string; quantity: number; totalCents: number }[];
-  customer?: {
-    name: string;
-    email: string;
-    phone: string;
-    address: {
-      line1: string;
-      line2: string;
-      city: string;
-      state: string;
-      postalCode: string;
-      country: string;
-    } | null;
-  };
 }
-
 
 export const Route = createFileRoute("/pay/$token")({
   loader: ({ params }) => loadHostedPaymentSession({ data: { token: params.token } }),
@@ -85,11 +69,7 @@ function HostedPayPage() {
     () =>
       session
         ? {
-            // Modo diferido: o PaymentIntent só é criado no submit, então a
-            // Stripe não recebe cobranças de checkouts abandonados.
-            mode: "payment" as const,
-            amount: session.amountCents,
-            currency: session.currency.toLowerCase(),
+            clientSecret: session.clientSecret,
             locale: "pt-BR",
             appearance: {
               theme: "stripe",
@@ -163,128 +143,50 @@ function HostedPayPage() {
   );
 }
 
-interface BillingSnapshot {
-  complete: boolean;
-  name: string;
-  phone: string;
-  address: {
-    line1: string;
-    line2?: string | null;
-    city: string;
-    state: string;
-    postal_code: string;
-    country: string;
-  } | null;
-}
-
 function PaymentForm({ session }: { session: Session }) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [hasExpress, setHasExpress] = useState(false);
-  const [email, setEmail] = useState(session.customer?.email ?? "");
-  const [billing, setBilling] = useState<BillingSnapshot>({
-    complete: false,
-    name: session.customer?.name ?? "",
-    phone: session.customer?.phone ?? "",
-    address: null,
-  });
 
   const returnUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/pedido/${session.publicToken}`
-      : `/pedido/${session.publicToken}`;
+      : undefined;
 
-
-  /**
-   * Confirma o pagamento: valida os campos, cria o PaymentIntent na Stripe
-   * (só agora) e confirma. Checkout abandonado nunca chega na Stripe.
-   */
-  async function finish() {
-    if (!stripe || !elements) return;
+  async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
     setProcessing(true);
-    try {
-      const submitted = await elements.submit();
-      if (submitted.error) {
-        toast.error(submitted.error.message ?? "Revise os dados informados.");
-        return;
-      }
-      const intent = await startHostedPaymentIntent({ data: { token: session.publicToken } });
-      if (!intent.ok || !intent.clientSecret) {
-        toast.error(intent.ok ? "Não foi possível iniciar o pagamento." : intent.message);
-        return;
-      }
-      const { error } = await stripe.confirmPayment({
-        ...confirmArgs(),
-        clientSecret: intent.clientSecret,
-      });
-      if (error) {
-        toast.error(error.message ?? "Pagamento não autorizado.");
-        return;
-      }
-      if (returnUrl) window.location.href = returnUrl;
-    } finally {
-      setProcessing(false);
+    const { error } = await confirm();
+    setProcessing(false);
+    if (error) {
+      toast.error(error.message ?? "Pagamento não autorizado.");
+      return;
     }
+    if (returnUrl) window.location.href = returnUrl;
   }
 
-  const confirmArgs = () => {
-    const addr = billing.address;
-    const fullAddress = addr
-      ? {
-          line1: addr.line1,
-          line2: addr.line2 ?? "",
-          city: addr.city,
-          state: addr.state,
-          postal_code: addr.postal_code,
-          country: addr.country,
-        }
-      : undefined;
-    const name = billing.name || session.customer?.name || "";
-    const phone = billing.phone || session.customer?.phone || "";
-    const mail = email || session.customer?.email || "";
-
-    const confirmParams = {
-      return_url: returnUrl,
-      payment_method_data: {
-        billing_details: {
-          name,
-          email: mail,
-          phone,
-          ...(fullAddress ? { address: fullAddress } : {}),
-        },
-      },
-      ...(fullAddress ? { shipping: { name, phone, address: fullAddress } } : {}),
-    };
-
-    return {
-      elements: elements!,
-      redirect: "if_required" as const,
-      confirmParams,
-    };
-  };
-
+  const confirmArgs = () => ({
+    elements: elements!,
+    redirect: "if_required" as const,
+    confirmParams: returnUrl ? { return_url: returnUrl } : {},
+  });
 
   return (
     <form
       className="space-y-6"
       onSubmit={(event) => {
         event.preventDefault();
-        void finish();
+        if (!stripe || !elements) return;
+        void finish(() => stripe.confirmPayment(confirmArgs()));
       }}
     >
       <div className={hasExpress ? "space-y-5" : ""}>
         <ExpressCheckoutElement
-          options={{
-            buttonHeight: 48,
-            emailRequired: true,
-            phoneNumberRequired: true,
-            billingAddressRequired: true,
-            shippingAddressRequired: true,
-          }}
+          options={{ buttonHeight: 48 }}
           onReady={({ availablePaymentMethods }) => setHasExpress(Boolean(availablePaymentMethods))}
           onConfirm={() => {
-            void finish();
+            if (!stripe || !elements) return;
+            void finish(() => stripe.confirmPayment(confirmArgs()));
           }}
         />
         {hasExpress ? (
@@ -297,70 +199,14 @@ function PaymentForm({ session }: { session: Session }) {
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-base font-medium">E-mail</h2>
-        <LinkAuthenticationElement
-          options={{ defaultValues: { email: session.customer?.email ?? "" } }}
-          onChange={(event) => setEmail(event.value.email)}
-        />
-      </div>
-
-      <div className="space-y-3">
-        <h2 className="text-base font-medium">Dados de cobrança e entrega</h2>
-        <AddressElement
-          options={{
-            mode: "shipping",
-            display: { name: "full" },
-            fields: { phone: "always" },
-            validation: { phone: { required: "always" } },
-            autocomplete: { mode: "automatic" },
-            defaultValues: {
-              name: session.customer?.name ?? "",
-              phone: session.customer?.phone ?? "",
-              ...(session.customer?.address
-                ? {
-                    address: {
-                      line1: session.customer.address.line1,
-                      line2: session.customer.address.line2,
-                      city: session.customer.address.city,
-                      state: session.customer.address.state,
-                      postal_code: session.customer.address.postalCode,
-                      country: session.customer.address.country,
-                    },
-                  }
-                : {}),
-            },
-
-          }}
-          onChange={(event) =>
-            setBilling({
-              complete: event.complete,
-              name: event.value.name ?? "",
-              phone: event.value.phone ?? "",
-              address: event.value.address as BillingSnapshot["address"],
-            })
-          }
-        />
+        <h2 className="text-base font-medium">Dados para contato</h2>
+        <LinkAuthenticationElement />
       </div>
 
       <div className="space-y-3">
         <h2 className="text-base font-medium">Forma de pagamento</h2>
-        <PaymentElement
-          options={{
-            layout: "tabs",
-            fields: { billingDetails: { name: "never", email: "never", phone: "never", address: "never" } },
-          }}
-        />
+        <PaymentElement options={{ layout: "tabs" }} />
       </div>
-
-      {session.items?.length ? (
-        <ul className="space-y-1 border-t border-[#e6e6e6] pt-4 text-xs text-[#6d6e78]">
-          {session.items.map((item) => (
-            <li key={item.sku}>
-              {item.name} — SKU {item.sku} x{item.quantity}
-            </li>
-          ))}
-        </ul>
-      ) : null}
 
       <button
         type="submit"
@@ -372,4 +218,3 @@ function PaymentForm({ session }: { session: Session }) {
     </form>
   );
 }
-

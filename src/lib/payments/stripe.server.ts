@@ -134,19 +134,6 @@ export class StripeService {
       metadata: Record<string, string>;
       description?: string;
       receipt_email?: string;
-      statement_descriptor_suffix?: string;
-      shipping?: {
-        name: string;
-        phone?: string;
-        address: {
-          line1: string;
-          line2?: string;
-          city?: string;
-          state?: string;
-          postal_code?: string;
-          country?: string;
-        };
-      };
     },
     idempotencyKey: string,
   ): Promise<StripePaymentIntent> {
@@ -158,8 +145,6 @@ export class StripeService {
         currency: params.currency.toLowerCase(),
         description: params.description,
         receipt_email: params.receipt_email,
-        statement_descriptor_suffix: params.statement_descriptor_suffix,
-        shipping: params.shipping,
         metadata: params.metadata,
         // Usa os métodos habilitados no dashboard da conta Stripe:
         automatic_payment_methods: { enabled: true },
@@ -167,7 +152,6 @@ export class StripeService {
       idempotencyKey,
     );
   }
-
 
   retrievePaymentIntent(id: string): Promise<StripePaymentIntent> {
     return this.request<StripePaymentIntent>("GET", `/payment_intents/${encodeURIComponent(id)}`);

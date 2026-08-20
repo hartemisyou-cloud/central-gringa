@@ -18,7 +18,6 @@ import {
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
 import { storePaymentSession } from "@/routes/pagamento.$token";
-import { startHostedPaymentIntent } from "@/lib/hosted-pay.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -158,6 +157,7 @@ function CheckoutPage() {
       storePaymentSession({
         orderNumber: result.orderNumber,
         publicToken: result.publicToken,
+        clientSecret: result.clientSecret,
         publishableKey: result.publishableKey,
         amountCents: result.amountCents,
         currency: result.currency,
@@ -405,12 +405,7 @@ function PaymentStep({ session, onPaid }: { session: CheckoutDTO; onPaid: () => 
       </h2>
       <Elements
         stripe={stripe}
-        options={{
-          mode: "payment",
-          amount: session.amountCents,
-          currency: session.currency.toLowerCase(),
-          locale: "pt-BR",
-        }}
+        options={{ clientSecret: session.clientSecret, locale: "pt-BR" }}
       >
         <PaymentForm session={session} onPaid={onPaid} />
       </Elements>
@@ -428,22 +423,8 @@ function PaymentForm({ session, onPaid }: { session: CheckoutDTO; onPaid: () => 
     event.preventDefault();
     if (!stripe || !elements) return;
     setProcessing(true);
-    const submitted = await elements.submit();
-    if (submitted.error) {
-      setProcessing(false);
-      toast.error(submitted.error.message ?? "Revise os dados informados.");
-      return;
-    }
-    // A cobrança na Stripe nasce só aqui, na confirmação.
-    const intent = await startHostedPaymentIntent({ data: { token: session.publicToken } });
-    if (!intent.ok || !intent.clientSecret) {
-      setProcessing(false);
-      toast.error(intent.ok ? "Não foi possível iniciar o pagamento." : intent.message);
-      return;
-    }
     const { error } = await stripe.confirmPayment({
       elements,
-      clientSecret: intent.clientSecret,
       redirect: "if_required",
       confirmParams: {
         return_url: `${window.location.origin}/pedido/${session.publicToken}`,
