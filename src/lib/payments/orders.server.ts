@@ -229,11 +229,46 @@ async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
   return data;
 }
 
+interface DescribableItem {
+  product_name: string;
+  sku: string;
+  quantity: number;
+}
+
+/**
+ * Descrição legível da cobrança para a Stripe: nome do produto cristão +
+ * SKU + quantidade + número do pedido. Garante que todo pagamento seja
+ * rastreável até o item e o estoque correspondentes.
+ */
+export function describeOrderItems(
+  items: DescribableItem[],
+  orderNumberValue: string,
+): { description: string; statementSuffix: string; skuList: string } {
+  if (items.length === 0) {
+    return {
+      description: `Pedido ${orderNumberValue}`,
+      statementSuffix: orderNumberValue.slice(-10),
+      statementSuffix_: "" as never,
+      skuList: "",
+    } as never;
+  }
+  const parts = items.map(
+    (item) => `${item.product_name} — SKU ${item.sku} x${item.quantity}`,
+  );
+  const first = items[0]!;
+  return {
+    description: `${parts.join(" | ")} · Pedido ${orderNumberValue}`.slice(0, 999),
+    statementSuffix: first.sku.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 22),
+    skuList: items.map((item) => `${item.sku}x${item.quantity}`).join(","),
+  };
+}
+
 /**
  * Cria (ou reaproveita) o pagamento de um pedido.
  * Idempotente: chave estável `payment:create:{order_id}:{attempt}` na Stripe e
  * índice único no banco impedem cobranças duplicadas.
  */
+
 export async function createOrderPayment(input: { store: StoreRow; orderId: string }) {
   const { data: order } = await supabaseAdmin
     .from("orders")
