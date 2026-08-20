@@ -2088,7 +2088,7 @@ O objetivo é deixar o sistema efetivamente utilizável, seguro e preparado para
 
 This project was built with [Lovable](https://lovable.dev).
 
-**Live app**: https://livrariacristaglobal.com
+**Live app**: https://central-spark-pay.lovable.app
 
 ## Build with Lovable
 

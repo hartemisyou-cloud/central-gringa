@@ -1,6 +1,6 @@
 # API Central de Pagamentos — Documentação de Integração
 
-Base URL (produção): `https://livrariacristaglobal.com`
+Base URL (produção): `https://central-spark-pay.lovable.app`
 Base URL (preview): `https://id-preview--dfc262d1-6dc6-458b-a321-06bc42199114.lovable.app`
 
 Todos os endpoints ficam sob `/api/public/v1`.
@@ -89,7 +89,7 @@ A confirmação definitiva vem do webhook da Stripe recebido pela central.
 ## Exemplo (Node/BFF)
 
 ```ts
-const API = "https://livrariacristaglobal.com/api/public/v1";
+const API = "https://central-spark-pay.lovable.app/api/public/v1";
 const headers = {
   "content-type": "application/json",
   "x-store-api-key": process.env.STORE_API_KEY!,
@@ -132,7 +132,7 @@ Link, Apple Pay e Google Pay):
 2. A resposta agora inclui `paymentUrl`:
 
 ```json
-{ "orderId": "...", "orderNumber": "...", "publicToken": "...", "paymentUrl": "https://livrariacristaglobal.com/pay/<publicToken>" }
+{ "orderId": "...", "orderNumber": "...", "publicToken": "...", "paymentUrl": "https://central-spark-pay.lovable.app/pay/<publicToken>" }
 ```
 
 3. No cliente: `window.location.assign(data.paymentUrl)`
