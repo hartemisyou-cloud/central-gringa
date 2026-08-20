@@ -387,14 +387,37 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       amountCents: order.total_cents,
       currency: order.currency,
       idempotencyKey,
-      description: `Pedido ${order.order_number}`,
+      description: descriptor.description,
+      statementDescriptorSuffix: descriptor.statementSuffix,
+      ...(customer?.email ? { receiptEmail: customer.email } : {}),
+      ...(shipping ? { shipping } : {}),
       metadata: {
         store_id: order.store_id,
         order_id: order.id,
         order_number: order.order_number,
         environment: order.environment,
+        items_count: String(orderItems.length),
+        skus: descriptor.skuList.slice(0, 480),
+        items: orderItems
+          .map((item) => `${item.sku}|${item.product_name}|${item.quantity}`)
+          .join(" ; ")
+          .slice(0, 480),
+        ...(customerName ? { customer_name: customerName } : {}),
+        ...(customer?.email ? { customer_email: customer.email } : {}),
+        ...(customer?.phone ? { customer_phone: customer.phone } : {}),
+        ...(customer?.document ? { customer_document: customer.document } : {}),
+        ...(address
+          ? {
+              shipping_address:
+                `${address.street}, ${address.number}${address.complement ? ` - ${address.complement}` : ""}, ${address.district}, ${address.city}/${address.state}, ${address.postal_code}, ${address.country}`.slice(
+                  0,
+                  480,
+                ),
+            }
+          : {}),
       },
     });
+
   } catch (error) {
     await supabaseAdmin
       .from("payments")
