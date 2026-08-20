@@ -46,8 +46,8 @@ export interface HostedPaymentSession {
 
 /**
  * Sessão de pagamento hospedada, resolvida apenas pelo public_token do pedido
- * (token aleatório e não enumerável). Não expõe dados internos da Stripe além
- * do client_secret do PaymentIntent do próprio pedido.
+ * (token aleatório e não enumerável). NÃO cria PaymentIntent — apenas devolve
+ * o contexto do pedido e a chave publicável para montar o checkout.
  */
 export async function getHostedPaymentSession(
   publicToken: string,
