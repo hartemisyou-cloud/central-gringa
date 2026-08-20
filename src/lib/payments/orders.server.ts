@@ -207,7 +207,7 @@ export async function createOrder(input: {
   return { order, totals, publicToken: order.public_token };
 }
 
-async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
+export async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
   if (!store.stripe_integration_id) {
     throw new PaymentError("CONFIG_ERROR", "Loja sem integração de pagamento configurada.");
   }
