@@ -15,12 +15,12 @@ import { toast } from "sonner";
 
 import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
-import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
+import { loadHostedPaymentSession, startHostedPaymentIntent } from "@/lib/hosted-pay.functions";
 
 interface Session {
   orderNumber: string;
   publicToken: string;
-  clientSecret: string;
+  clientSecret: null;
   publishableKey: string;
   amountCents: number;
   currency: string;
@@ -85,7 +85,11 @@ function HostedPayPage() {
     () =>
       session
         ? {
-            clientSecret: session.clientSecret,
+            // Modo diferido: o PaymentIntent só é criado no submit, então a
+            // Stripe não recebe cobranças de checkouts abandonados.
+            mode: "payment" as const,
+            amount: session.amountCents,
+            currency: session.currency.toLowerCase(),
             locale: "pt-BR",
             appearance: {
               theme: "stripe",
@@ -192,15 +196,36 @@ function PaymentForm({ session }: { session: Session }) {
       : `/pedido/${session.publicToken}`;
 
 
-  async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
+  /**
+   * Confirma o pagamento: valida os campos, cria o PaymentIntent na Stripe
+   * (só agora) e confirma. Checkout abandonado nunca chega na Stripe.
+   */
+  async function finish() {
+    if (!stripe || !elements) return;
     setProcessing(true);
-    const { error } = await confirm();
-    setProcessing(false);
-    if (error) {
-      toast.error(error.message ?? "Pagamento não autorizado.");
-      return;
+    try {
+      const submitted = await elements.submit();
+      if (submitted.error) {
+        toast.error(submitted.error.message ?? "Revise os dados informados.");
+        return;
+      }
+      const intent = await startHostedPaymentIntent({ data: { token: session.publicToken } });
+      if (!intent.ok || !intent.clientSecret) {
+        toast.error(intent.ok ? "Não foi possível iniciar o pagamento." : intent.message);
+        return;
+      }
+      const { error } = await stripe.confirmPayment({
+        ...confirmArgs(),
+        clientSecret: intent.clientSecret,
+      });
+      if (error) {
+        toast.error(error.message ?? "Pagamento não autorizado.");
+        return;
+      }
+      if (returnUrl) window.location.href = returnUrl;
+    } finally {
+      setProcessing(false);
     }
-    if (returnUrl) window.location.href = returnUrl;
   }
 
   const confirmArgs = () => {
@@ -245,8 +270,7 @@ function PaymentForm({ session }: { session: Session }) {
       className="space-y-6"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!stripe || !elements) return;
-        void finish(() => stripe.confirmPayment(confirmArgs()));
+        void finish();
       }}
     >
       <div className={hasExpress ? "space-y-5" : ""}>
@@ -260,8 +284,7 @@ function PaymentForm({ session }: { session: Session }) {
           }}
           onReady={({ availablePaymentMethods }) => setHasExpress(Boolean(availablePaymentMethods))}
           onConfirm={() => {
-            if (!stripe || !elements) return;
-            void finish(() => stripe.confirmPayment(confirmArgs()));
+            void finish();
           }}
         />
         {hasExpress ? (

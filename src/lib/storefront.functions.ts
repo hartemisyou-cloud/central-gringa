@@ -63,13 +63,12 @@ export interface CheckoutDTO {
   orderId: string;
   orderNumber: string;
   publicToken: string;
-  clientSecret: string;
   publishableKey: string;
   amountCents: number;
   currency: string;
 }
 
-/** Cria o pedido (com reserva de estoque) e já inicia o pagamento. */
+/** Cria o pedido (com reserva de estoque) e prepara o checkout. */
 export const startStorefrontCheckout = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => storefrontCheckoutSchema.parse(input))
   .handler(async ({ data }): Promise<CheckoutDTO> => {
@@ -80,21 +79,21 @@ export const startStorefrontCheckout = createServerFn({ method: "POST" })
       totals: { currency: string; totalCents: number };
     }>("/orders", { method: "POST", body: data });
 
-    const payment = await callCentralApi<{
-      clientSecret: string;
+    // Não cria PaymentIntent aqui: apenas lê a sessão de checkout. A cobrança
+    // na Stripe só é criada quando o cliente confirma o pagamento.
+    const session = await callCentralApi<{
       publishableKey: string;
       amountCents: number;
       currency: string;
-    }>(`/orders/${order.orderId}/payment`, { method: "POST" });
+    }>(`/checkout/session/${order.publicToken}`, { method: "GET" });
 
     return {
       orderId: order.orderId,
       orderNumber: order.orderNumber,
       publicToken: order.publicToken,
-      clientSecret: payment.clientSecret,
-      publishableKey: payment.publishableKey,
-      amountCents: payment.amountCents,
-      currency: payment.currency,
+      publishableKey: session.publishableKey,
+      amountCents: session.amountCents,
+      currency: session.currency,
     };
   });
 

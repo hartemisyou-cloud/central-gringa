@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PaymentError } from "./errors";
-import { createOrderPayment } from "./orders.server";
+import { createOrderPayment, integrationForStore } from "./orders.server";
 import type { StoreRow } from "./store-auth.server";
 
 export interface HostedPaymentCustomer {
@@ -27,7 +27,12 @@ export interface HostedPaymentItem {
 export interface HostedPaymentSession {
   orderNumber: string;
   publicToken: string;
-  clientSecret: string;
+  /**
+   * Sempre `null`: o PaymentIntent só é criado quando o cliente confirma o
+   * pagamento, para que a Stripe receba apenas cobranças aprovadas ou
+   * recusadas (nada de checkouts abandonados/incompletos).
+   */
+  clientSecret: null;
   publishableKey: string;
   amountCents: number;
   currency: string;
@@ -41,8 +46,8 @@ export interface HostedPaymentSession {
 
 /**
  * Sessão de pagamento hospedada, resolvida apenas pelo public_token do pedido
- * (token aleatório e não enumerável). Não expõe dados internos da Stripe além
- * do client_secret do PaymentIntent do próprio pedido.
+ * (token aleatório e não enumerável). NÃO cria PaymentIntent — apenas devolve
+ * o contexto do pedido e a chave publicável para montar o checkout.
  */
 export async function getHostedPaymentSession(
   publicToken: string,
@@ -70,10 +75,8 @@ export async function getHostedPaymentSession(
     .maybeSingle();
   if (!store) throw new PaymentError("NOT_FOUND", "Loja não encontrada.");
 
-  const payment = await createOrderPayment({ store: store as StoreRow, orderId: order.id });
-  if (!payment.clientSecret) {
-    throw new PaymentError("INVALID_STATE", "Não foi possível iniciar o pagamento.");
-  }
+  const integration = await integrationForStore(store as StoreRow);
+
 
   const [{ data: customerRow }, { data: addressRow }] = await Promise.all([
     order.customer_id
@@ -109,10 +112,10 @@ export async function getHostedPaymentSession(
   return {
     orderNumber: order.order_number,
     publicToken,
-    clientSecret: payment.clientSecret,
-    publishableKey: payment.publishableKey,
-    amountCents: payment.amountCents,
-    currency: payment.currency,
+    clientSecret: null,
+    publishableKey: integration.publishable_key,
+    amountCents: order.total_cents,
+    currency: order.currency,
     label,
     subtitle: store.name ?? null,
     storeName: store.name ?? "",
@@ -140,3 +143,41 @@ export async function getHostedPaymentSession(
   };
 }
 
+
+/**
+ * Cria o PaymentIntent do pedido no momento em que o cliente confirma o
+ * pagamento. Chamado apenas pelo checkout no submit — assim a Stripe só
+ * recebe cobranças que serão efetivamente aprovadas ou recusadas.
+ */
+export async function startHostedPayment(
+  publicToken: string,
+  options?: { storeId?: string },
+): Promise<{ clientSecret: string; publishableKey: string; amountCents: number; currency: string }> {
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("id, store_id, status")
+    .eq("public_token", publicToken)
+    .maybeSingle();
+  if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  if (options?.storeId && order.store_id !== options.storeId) {
+    throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  }
+
+  const { data: store } = await supabaseAdmin
+    .from("stores")
+    .select("*")
+    .eq("id", order.store_id)
+    .maybeSingle();
+  if (!store) throw new PaymentError("NOT_FOUND", "Loja não encontrada.");
+
+  const payment = await createOrderPayment({ store: store as StoreRow, orderId: order.id });
+  if (!payment.clientSecret) {
+    throw new PaymentError("INVALID_STATE", "Não foi possível iniciar o pagamento.");
+  }
+  return {
+    clientSecret: payment.clientSecret,
+    publishableKey: payment.publishableKey,
+    amountCents: payment.amountCents,
+    currency: payment.currency,
+  };
+}
