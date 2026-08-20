@@ -47,7 +47,7 @@ export async function callCentralApi<T>(
 
   const slug = process.env["STORE_SLUG"]?.trim().toLowerCase() || "livraria-crista";
 
-  const response = await fetch(`${apiBaseUrl()}/api/public/v1${path}`, {
+  const requestInit: RequestInit = {
     method: init?.method ?? "GET",
     headers: {
       "content-type": "application/json",
@@ -55,15 +55,35 @@ export async function callCentralApi<T>(
       ...(slug ? { "x-store-slug": slug } : {}),
     },
     ...(init?.body ? { body: JSON.stringify(init.body) } : {}),
-  });
+  };
 
+  const bases = apiBaseUrls();
+  let lastError: unknown = new Error("Não foi possível concluir a operação.");
 
-  const payload = (await response.json().catch(() => null)) as
-    | { data?: T; error?: { code?: string; message?: string } }
-    | null;
+  for (const base of bases) {
+    let response: Response;
+    try {
+      response = await fetch(`${base}/api/public/v1${path}`, requestInit);
+    } catch (error) {
+      lastError = error;
+      continue; // base inacessível (DNS/rede) — tenta a próxima
+    }
 
-  if (!response.ok || payload?.data === undefined) {
-    throw new Error(payload?.error?.message ?? "Não foi possível concluir a operação.");
+    const payload = (await response.json().catch(() => null)) as
+      | { data?: T; error?: { code?: string; message?: string } }
+      | null;
+
+    if (response.ok && payload?.data !== undefined) return payload.data;
+
+    lastError = new Error(
+      payload?.error?.message ?? "Não foi possível concluir a operação.",
+    );
+    // Resposta válida da API (erro de negócio) — não adianta tentar outra base.
+    if (payload?.error?.message) break;
   }
-  return payload.data;
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Não foi possível concluir a operação.");
+
 }
