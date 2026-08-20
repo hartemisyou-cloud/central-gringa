@@ -229,11 +229,46 @@ async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
   return data;
 }
 
+interface DescribableItem {
+  product_name: string;
+  sku: string;
+  quantity: number;
+}
+
+/**
+ * Descrição legível da cobrança para a Stripe: nome do produto cristão +
+ * SKU + quantidade + número do pedido. Garante que todo pagamento seja
+ * rastreável até o item e o estoque correspondentes.
+ */
+export function describeOrderItems(
+  items: DescribableItem[],
+  orderNumberValue: string,
+): { description: string; statementSuffix: string; skuList: string } {
+  if (items.length === 0) {
+    return {
+      description: `Pedido ${orderNumberValue}`,
+      statementSuffix: orderNumberValue.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 22),
+      skuList: "",
+    };
+  }
+
+  const parts = items.map(
+    (item) => `${item.product_name} — SKU ${item.sku} x${item.quantity}`,
+  );
+  const first = items[0]!;
+  return {
+    description: `${parts.join(" | ")} · Pedido ${orderNumberValue}`.slice(0, 999),
+    statementSuffix: first.sku.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 22),
+    skuList: items.map((item) => `${item.sku}x${item.quantity}`).join(","),
+  };
+}
+
 /**
  * Cria (ou reaproveita) o pagamento de um pedido.
  * Idempotente: chave estável `payment:create:{order_id}:{attempt}` na Stripe e
  * índice único no banco impedem cobranças duplicadas.
  */
+
 export async function createOrderPayment(input: { store: StoreRow; orderId: string }) {
   const { data: order } = await supabaseAdmin
     .from("orders")
@@ -246,8 +281,55 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
   }
 
+  // Contexto completo do pedido: itens (nome + SKU), cliente e endereço.
+  // Vai para a Stripe para que a cobrança seja sempre identificável.
+  const [{ data: items }, { data: customer }, { data: address }] = await Promise.all([
+    supabaseAdmin
+      .from("order_items")
+      .select("product_name, sku, quantity, unit_price_cents, total_cents")
+      .eq("order_id", order.id),
+    order.customer_id
+      ? supabaseAdmin
+          .from("customers")
+          .select("email, first_name, last_name, phone, document")
+          .eq("id", order.customer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    order.shipping_address_id
+      ? supabaseAdmin
+          .from("addresses")
+          .select(
+            "recipient_name, phone, street, number, complement, district, city, state, postal_code, country",
+          )
+          .eq("id", order.shipping_address_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const orderItems = items ?? [];
+  const descriptor = describeOrderItems(orderItems, order.order_number);
+  const customerName = customer
+    ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
+    : "";
+  const shipping =
+    address && address.street
+      ? {
+          name: address.recipient_name || customerName || order.order_number,
+          ...(address.phone ? { phone: address.phone } : {}),
+          address: {
+            line1: `${address.street}, ${address.number}`.trim(),
+            ...(address.complement ? { line2: address.complement } : {}),
+            city: address.city,
+            state: address.state,
+            postal_code: address.postal_code,
+            country: address.country || "BR",
+          },
+        }
+      : undefined;
+
   const integration = await integrationForStore(input.store);
   const provider = await providerFromIntegration(integration);
+
 
   const { data: existing } = await supabaseAdmin
     .from("payments")
@@ -305,14 +387,37 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       amountCents: order.total_cents,
       currency: order.currency,
       idempotencyKey,
-      description: `Pedido ${order.order_number}`,
+      description: descriptor.description,
+      statementDescriptorSuffix: descriptor.statementSuffix,
+      ...(customer?.email ? { receiptEmail: customer.email } : {}),
+      ...(shipping ? { shipping } : {}),
       metadata: {
         store_id: order.store_id,
         order_id: order.id,
         order_number: order.order_number,
         environment: order.environment,
+        items_count: String(orderItems.length),
+        skus: descriptor.skuList.slice(0, 480),
+        items: orderItems
+          .map((item) => `${item.sku}|${item.product_name}|${item.quantity}`)
+          .join(" ; ")
+          .slice(0, 480),
+        ...(customerName ? { customer_name: customerName } : {}),
+        ...(customer?.email ? { customer_email: customer.email } : {}),
+        ...(customer?.phone ? { customer_phone: customer.phone } : {}),
+        ...(customer?.document ? { customer_document: customer.document } : {}),
+        ...(address
+          ? {
+              shipping_address:
+                `${address.street}, ${address.number}${address.complement ? ` - ${address.complement}` : ""}, ${address.district}, ${address.city}/${address.state}, ${address.postal_code}, ${address.country}`.slice(
+                  0,
+                  480,
+                ),
+            }
+          : {}),
       },
     });
+
   } catch (error) {
     await supabaseAdmin
       .from("payments")

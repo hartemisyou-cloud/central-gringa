@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import {
+  AddressElement,
   Elements,
   ExpressCheckoutElement,
   LinkAuthenticationElement,
@@ -25,7 +26,22 @@ interface Session {
   currency: string;
   label: string;
   subtitle: string | null;
+  items?: { name: string; sku: string; quantity: number; totalCents: number }[];
+  customer?: {
+    name: string;
+    email: string;
+    phone: string;
+    address: {
+      line1: string;
+      line2: string;
+      city: string;
+      state: string;
+      postalCode: string;
+      country: string;
+    } | null;
+  };
 }
+
 
 export const Route = createFileRoute("/pay/$token")({
   loader: ({ params }) => loadHostedPaymentSession({ data: { token: params.token } }),
@@ -143,16 +159,38 @@ function HostedPayPage() {
   );
 }
 
+interface BillingSnapshot {
+  complete: boolean;
+  name: string;
+  phone: string;
+  address: {
+    line1: string;
+    line2?: string | null;
+    city: string;
+    state: string;
+    postal_code: string;
+    country: string;
+  } | null;
+}
+
 function PaymentForm({ session }: { session: Session }) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [hasExpress, setHasExpress] = useState(false);
+  const [email, setEmail] = useState(session.customer?.email ?? "");
+  const [billing, setBilling] = useState<BillingSnapshot>({
+    complete: false,
+    name: session.customer?.name ?? "",
+    phone: session.customer?.phone ?? "",
+    address: null,
+  });
 
   const returnUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/pedido/${session.publicToken}`
-      : undefined;
+      : `/pedido/${session.publicToken}`;
+
 
   async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
     setProcessing(true);
@@ -165,11 +203,42 @@ function PaymentForm({ session }: { session: Session }) {
     if (returnUrl) window.location.href = returnUrl;
   }
 
-  const confirmArgs = () => ({
-    elements: elements!,
-    redirect: "if_required" as const,
-    confirmParams: returnUrl ? { return_url: returnUrl } : {},
-  });
+  const confirmArgs = () => {
+    const addr = billing.address;
+    const fullAddress = addr
+      ? {
+          line1: addr.line1,
+          line2: addr.line2 ?? "",
+          city: addr.city,
+          state: addr.state,
+          postal_code: addr.postal_code,
+          country: addr.country,
+        }
+      : undefined;
+    const name = billing.name || session.customer?.name || "";
+    const phone = billing.phone || session.customer?.phone || "";
+    const mail = email || session.customer?.email || "";
+
+    const confirmParams = {
+      return_url: returnUrl,
+      payment_method_data: {
+        billing_details: {
+          name,
+          email: mail,
+          phone,
+          ...(fullAddress ? { address: fullAddress } : {}),
+        },
+      },
+      ...(fullAddress ? { shipping: { name, phone, address: fullAddress } } : {}),
+    };
+
+    return {
+      elements: elements!,
+      redirect: "if_required" as const,
+      confirmParams,
+    };
+  };
+
 
   return (
     <form
@@ -182,7 +251,13 @@ function PaymentForm({ session }: { session: Session }) {
     >
       <div className={hasExpress ? "space-y-5" : ""}>
         <ExpressCheckoutElement
-          options={{ buttonHeight: 48 }}
+          options={{
+            buttonHeight: 48,
+            emailRequired: true,
+            phoneNumberRequired: true,
+            billingAddressRequired: true,
+            shippingAddressRequired: true,
+          }}
           onReady={({ availablePaymentMethods }) => setHasExpress(Boolean(availablePaymentMethods))}
           onConfirm={() => {
             if (!stripe || !elements) return;
@@ -199,14 +274,70 @@ function PaymentForm({ session }: { session: Session }) {
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-base font-medium">Dados para contato</h2>
-        <LinkAuthenticationElement />
+        <h2 className="text-base font-medium">E-mail</h2>
+        <LinkAuthenticationElement
+          options={{ defaultValues: { email: session.customer?.email ?? "" } }}
+          onChange={(event) => setEmail(event.value.email)}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-base font-medium">Dados de cobrança e entrega</h2>
+        <AddressElement
+          options={{
+            mode: "shipping",
+            display: { name: "full" },
+            fields: { phone: "always" },
+            validation: { phone: { required: "always" } },
+            autocomplete: { mode: "automatic" },
+            defaultValues: {
+              name: session.customer?.name ?? "",
+              phone: session.customer?.phone ?? "",
+              ...(session.customer?.address
+                ? {
+                    address: {
+                      line1: session.customer.address.line1,
+                      line2: session.customer.address.line2,
+                      city: session.customer.address.city,
+                      state: session.customer.address.state,
+                      postal_code: session.customer.address.postalCode,
+                      country: session.customer.address.country,
+                    },
+                  }
+                : {}),
+            },
+
+          }}
+          onChange={(event) =>
+            setBilling({
+              complete: event.complete,
+              name: event.value.name ?? "",
+              phone: event.value.phone ?? "",
+              address: event.value.address as BillingSnapshot["address"],
+            })
+          }
+        />
       </div>
 
       <div className="space-y-3">
         <h2 className="text-base font-medium">Forma de pagamento</h2>
-        <PaymentElement options={{ layout: "tabs" }} />
+        <PaymentElement
+          options={{
+            layout: "tabs",
+            fields: { billingDetails: { name: "never", email: "never", phone: "never", address: "never" } },
+          }}
+        />
       </div>
+
+      {session.items?.length ? (
+        <ul className="space-y-1 border-t border-[#e6e6e6] pt-4 text-xs text-[#6d6e78]">
+          {session.items.map((item) => (
+            <li key={item.sku}>
+              {item.name} — SKU {item.sku} x{item.quantity}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <button
         type="submit"
@@ -218,3 +349,4 @@ function PaymentForm({ session }: { session: Session }) {
     </form>
   );
 }
+

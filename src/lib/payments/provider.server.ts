@@ -6,14 +6,30 @@ import type { Database } from "@/integrations/supabase/types";
 export type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"];
 export type PaymentEnvironment = Database["public"]["Enums"]["payment_environment"];
 
+export interface ProviderShipping {
+  name: string;
+  phone?: string;
+  address: {
+    line1: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
+  };
+}
+
 export interface CreatePaymentInput {
   amountCents: number;
   currency: string;
   metadata: Record<string, string>;
   description?: string;
   receiptEmail?: string;
+  statementDescriptorSuffix?: string;
+  shipping?: ProviderShipping;
   idempotencyKey: string;
 }
+
 
 export interface ProviderPayment {
   providerPaymentId: string;
@@ -64,6 +80,11 @@ export class StripePaymentProvider implements PaymentProvider {
         metadata: input.metadata,
         ...(input.description ? { description: input.description } : {}),
         ...(input.receiptEmail ? { receipt_email: input.receiptEmail } : {}),
+        ...(input.statementDescriptorSuffix
+          ? { statement_descriptor_suffix: input.statementDescriptorSuffix }
+          : {}),
+        ...(input.shipping ? { shipping: input.shipping } : {}),
+
       },
       input.idempotencyKey,
     );

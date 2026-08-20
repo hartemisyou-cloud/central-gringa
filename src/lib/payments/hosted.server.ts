@@ -3,6 +3,27 @@ import { PaymentError } from "./errors";
 import { createOrderPayment } from "./orders.server";
 import type { StoreRow } from "./store-auth.server";
 
+export interface HostedPaymentCustomer {
+  name: string;
+  email: string;
+  phone: string;
+  address: {
+    line1: string;
+    line2: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+  } | null;
+}
+
+export interface HostedPaymentItem {
+  name: string;
+  sku: string;
+  quantity: number;
+  totalCents: number;
+}
+
 export interface HostedPaymentSession {
   orderNumber: string;
   publicToken: string;
@@ -13,7 +34,10 @@ export interface HostedPaymentSession {
   label: string;
   subtitle: string | null;
   storeName: string;
+  items: HostedPaymentItem[];
+  customer: HostedPaymentCustomer;
 }
+
 
 /**
  * Sessão de pagamento hospedada, resolvida apenas pelo public_token do pedido
@@ -27,7 +51,7 @@ export async function getHostedPaymentSession(
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
-      "id, store_id, order_number, status, total_cents, currency, order_items(product_name, quantity)",
+      "id, store_id, order_number, status, total_cents, currency, customer_id, shipping_address_id, order_items(product_name, sku, quantity, total_cents)",
     )
     .eq("public_token", publicToken)
     .maybeSingle();
@@ -51,13 +75,36 @@ export async function getHostedPaymentSession(
     throw new PaymentError("INVALID_STATE", "Não foi possível iniciar o pagamento.");
   }
 
+  const [{ data: customerRow }, { data: addressRow }] = await Promise.all([
+    order.customer_id
+      ? supabaseAdmin
+          .from("customers")
+          .select("email, first_name, last_name, phone")
+          .eq("id", order.customer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    order.shipping_address_id
+      ? supabaseAdmin
+          .from("addresses")
+          .select(
+            "recipient_name, phone, street, number, complement, district, city, state, postal_code, country",
+          )
+          .eq("id", order.shipping_address_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
   const items = order.order_items ?? [];
   const first = items[0];
   const label = first
     ? items.length > 1
-      ? `${first.product_name} + ${items.length - 1} item(s)`
-      : first.product_name
+      ? `${first.product_name} (SKU ${first.sku}) + ${items.length - 1} item(s)`
+      : `${first.product_name} (SKU ${first.sku})`
     : `Pedido ${order.order_number}`;
+
+  const customerName = customerRow
+    ? `${customerRow.first_name ?? ""} ${customerRow.last_name ?? ""}`.trim()
+    : (addressRow?.recipient_name ?? "");
 
   return {
     orderNumber: order.order_number,
@@ -69,5 +116,27 @@ export async function getHostedPaymentSession(
     label,
     subtitle: store.name ?? null,
     storeName: store.name ?? "",
+    items: items.map((item) => ({
+      name: item.product_name,
+      sku: item.sku,
+      quantity: item.quantity,
+      totalCents: item.total_cents,
+    })),
+    customer: {
+      name: customerName,
+      email: customerRow?.email ?? "",
+      phone: customerRow?.phone ?? addressRow?.phone ?? "",
+      address: addressRow
+        ? {
+            line1: `${addressRow.street}, ${addressRow.number}`.trim(),
+            line2: addressRow.complement ?? "",
+            city: addressRow.city,
+            state: addressRow.state,
+            postalCode: addressRow.postal_code,
+            country: addressRow.country || "BR",
+          }
+        : null,
+    },
   };
 }
+
