@@ -157,7 +157,6 @@ function CheckoutPage() {
       storePaymentSession({
         orderNumber: result.orderNumber,
         publicToken: result.publicToken,
-        clientSecret: result.clientSecret,
         publishableKey: result.publishableKey,
         amountCents: result.amountCents,
         currency: result.currency,

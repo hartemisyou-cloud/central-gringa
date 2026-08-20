@@ -15,11 +15,11 @@ import { toast } from "sonner";
 
 import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
+import { startHostedPaymentIntent } from "@/lib/hosted-pay.functions";
 
 export interface PaymentSessionPayload {
   orderNumber: string;
   publicToken: string;
-  clientSecret: string;
   publishableKey: string;
   amountCents: number;
   currency: string;
@@ -101,7 +101,10 @@ function PaymentPage() {
     () =>
       payload
         ? {
-            clientSecret: payload.clientSecret,
+            // Modo diferido: o PaymentIntent só nasce no submit.
+            mode: "payment" as const,
+            amount: payload.amountCents,
+            currency: payload.currency.toLowerCase(),
             locale: "pt-BR",
             appearance: {
               theme: "stripe",
@@ -221,16 +224,33 @@ function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
       ? `${window.location.origin}/pedido/${payload.publicToken}`
       : `/pedido/${payload.publicToken}`;
 
-  async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
+  async function finish() {
+    if (!stripe || !elements) return;
     setProcessing(true);
-    const { error } = await confirm();
-    setProcessing(false);
-    if (error) {
-      toast.error(error.message ?? "Pagamento não autorizado.");
-      return;
+    try {
+      const submitted = await elements.submit();
+      if (submitted.error) {
+        toast.error(submitted.error.message ?? "Revise os dados informados.");
+        return;
+      }
+      const intent = await startHostedPaymentIntent({ data: { token: payload.publicToken } });
+      if (!intent.ok || !intent.clientSecret) {
+        toast.error(intent.ok ? "Não foi possível iniciar o pagamento." : intent.message);
+        return;
+      }
+      const { error } = await stripe.confirmPayment({
+        ...confirmArgs(),
+        clientSecret: intent.clientSecret,
+      });
+      if (error) {
+        toast.error(error.message ?? "Pagamento não autorizado.");
+        return;
+      }
+      window.sessionStorage.removeItem(paymentSessionKey(payload.publicToken));
+      void navigate({ to: "/pedido/$token", params: { token: payload.publicToken } });
+    } finally {
+      setProcessing(false);
     }
-    window.sessionStorage.removeItem(paymentSessionKey(payload.publicToken));
-    void navigate({ to: "/pedido/$token", params: { token: payload.publicToken } });
   }
 
   const confirmArgs = () => {
@@ -272,8 +292,7 @@ function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
       className="space-y-6"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!stripe || !elements) return;
-        void finish(() => stripe.confirmPayment(confirmArgs()));
+        void finish();
       }}
     >
       <div className={hasExpress ? "space-y-5" : ""}>
@@ -287,8 +306,7 @@ function PaymentForm({ payload }: { payload: PaymentSessionPayload }) {
           }}
           onReady={({ availablePaymentMethods }) => setHasExpress(Boolean(availablePaymentMethods))}
           onConfirm={() => {
-            if (!stripe || !elements) return;
-            void finish(() => stripe.confirmPayment(confirmArgs()));
+            void finish();
           }}
         />
         {hasExpress ? (
