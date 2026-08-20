@@ -341,7 +341,7 @@ function AdminDashboard() {
   );
 }
 
-const API_BASE = "https://livrariacristaglobal.com/api/public/v1";
+const API_BASE = "https://central-spark-pay.lovable.app/api/public/v1";
 
 function CodeBlock({ children }: { children: string }) {
   return (
