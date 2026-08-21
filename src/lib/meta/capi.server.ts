@@ -107,25 +107,38 @@ async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
   };
 }
 
-function eventSourceUrl(context: OrderContext, landingPage?: string | undefined): string | undefined {
+/**
+ * URL real da conversão. Prioridade:
+ * 1) URL do checkout/sessão onde a compra aconteceu (capturada no navegador);
+ * 2) landing page da atribuição;
+ * 3) fallback: página do pedido no domínio da loja.
+ */
+function eventSourceUrl(
+  context: OrderContext,
+  attribution: OrderAttributionRecord,
+): string | undefined {
+  const captured = attribution.event_source_url;
+  if (captured && /^https?:\/\//.test(captured)) return captured;
+  const landing = attribution.landing_page;
+  if (landing && /^https?:\/\//.test(landing)) return landing;
   if (context.storeDomain) {
     const base = context.storeDomain.startsWith("http")
       ? context.storeDomain
       : `https://${context.storeDomain}`;
     return `${base.replace(/\/$/, "")}/pedido/${context.publicToken}`;
   }
-  if (landingPage && /^https?:\/\//.test(landingPage)) return landingPage;
   return undefined;
 }
 
 async function buildPayload(
   context: OrderContext,
-  settings: { testEventCode: string | null },
   extra: { clientIp?: string | null; userAgent?: string | null } = {},
 ) {
-  const attribution: Attribution = await getOrderAttribution(context.orderId).catch(
-    () => ({}) as Attribution,
+  const record: OrderAttributionRecord = await getOrderAttributionRecord(context.orderId).catch(
+    () => ({}) as OrderAttributionRecord,
   );
+  const attribution: Attribution = record;
+
 
   const userData: Record<string, unknown> = {};
   const em = await hashEmail(context.email);
