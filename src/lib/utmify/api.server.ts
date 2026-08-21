@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getOrderAttribution } from "@/lib/payments/attribution.server";
-import type { Attribution } from "@/lib/payments/attribution";
+import { getOrderAttributionRecord } from "@/lib/payments/attribution.server";
+import type { Attribution, OrderAttributionRecord } from "@/lib/payments/attribution";
 import { getUtmifySettingsWithToken, recordUtmifyHealth } from "./config.server";
 
 /**
