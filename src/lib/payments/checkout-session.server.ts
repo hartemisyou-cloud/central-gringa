@@ -337,6 +337,36 @@ export async function createOrderCheckoutSession(input: {
     throw new PaymentError("PROVIDER_ERROR", "Checkout Session criada sem client_secret.");
   }
 
+  // ── Instrumentação TEMPORÁRIA (diagnóstico de Adaptive Pricing) ──────────
+  // Nenhum dado sensível (secret keys, tokens, dados de cartão) é registrado.
+  console.log(
+    "[checkout-session][diag]",
+    JSON.stringify({
+      session_id: session.id,
+      ui_mode: (session as unknown as StripeParams)["ui_mode"] ?? null,
+      currency: session.currency ?? null,
+      adaptive_pricing: (session as unknown as StripeParams)["adaptive_pricing"] ?? null,
+      currency_conversion: session.currency_conversion ?? null,
+      presentment_details: (session as unknown as StripeParams)["presentment_details"] ?? null,
+      customer_email: (session as unknown as StripeParams)["customer_email"] ?? null,
+      line_items: lineItems.map((li) => {
+        const price = li["price_data"] as StripeParams | undefined;
+        const product = price?.["product_data"] as StripeParams | undefined;
+        const meta = (product?.["metadata"] ?? {}) as Record<string, string>;
+        return {
+          price_id: li["price"] ?? null,
+          product_id: meta["product_id"] ?? null,
+          sku: meta["sku"] ?? null,
+          slug: meta["slug"] ?? null,
+          unit_amount: price?.["unit_amount"] ?? null,
+          currency: price?.["currency"] ?? null,
+          quantity: li["quantity"] ?? null,
+        };
+      }),
+    }),
+  );
+
+
   await supabaseAdmin.from("stripe_checkout_sessions").upsert(
     {
       store_id: order.store_id,
