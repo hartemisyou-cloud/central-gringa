@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getOrderAttribution } from "@/lib/payments/attribution.server";
+import type { Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
 import { hashEmail, hashName, hashPhone } from "./hash";
 
@@ -111,7 +112,9 @@ async function buildPayload(
   settings: { testEventCode: string | null },
   extra: { clientIp?: string | null; userAgent?: string | null } = {},
 ) {
-  const attribution = await getOrderAttribution(context.orderId).catch(() => ({}));
+  const attribution: Attribution = await getOrderAttribution(context.orderId).catch(
+    () => ({}) as Attribution,
+  );
 
   const userData: Record<string, unknown> = {};
   const em = await hashEmail(context.email);
