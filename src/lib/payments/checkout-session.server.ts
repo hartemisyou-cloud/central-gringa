@@ -258,7 +258,10 @@ export async function createOrderCheckoutSession(input: {
     adaptive_pricing: { enabled: true },
     currency: order.currency.toLowerCase(),
     line_items: lineItems,
-    automatic_payment_methods: { enabled: true },
+    // A Checkout Session NÃO aceita `automatic_payment_methods` (a Stripe
+    // rejeita com parameter_unknown). O comportamento equivalente é obtido
+    // omitindo `payment_method_types`: a Stripe então habilita automaticamente
+    // todos os métodos elegíveis (cartão, Apple Pay, Google Pay, Link).
     client_reference_id: order.public_token,
     metadata,
     payment_intent_data: { metadata, description: `Pedido ${order.order_number}` },
