@@ -220,11 +220,14 @@ export async function createOrderCheckoutSession(input: {
   }
 
   // ── Metadata: base atual + attribution persistida + extras da loja ───────
+  // Mesma base do PaymentIntent clássico (store_id, order_id, order_number,
+  // environment) + public_token, que na Session também vai em client_reference_id.
   const baseMetadata: Record<string, string> = {
     store_id: order.store_id,
     order_id: order.id,
     order_number: order.order_number,
     environment: order.environment,
+    public_token: order.public_token,
   };
 
   const { getOrderAttribution } = await import("./attribution.server");
@@ -239,18 +242,55 @@ export async function createOrderCheckoutSession(input: {
   const withExtras: Record<string, string> = { ...extras, ...baseMetadata };
   const metadata = mergeAttributionIntoMetadata(withExtras, attribution);
 
-  // ── Cliente ──────────────────────────────────────────────────────────────
+  // ── Cliente e endereço (mesmas linhas do pedido, sem recoletar nada) ──────
   let customerEmail = input.customerEmail;
-  if (!customerEmail && order.customer_id) {
+  let customerPhone: string | null = null;
+  let customerName: string | null = null;
+  if (order.customer_id) {
     const { data: customer } = await supabaseAdmin
       .from("customers")
-      .select("email")
+      .select("email, first_name, last_name, phone")
       .eq("id", order.customer_id)
       .maybeSingle();
-    customerEmail = customer?.email ?? undefined;
+    if (customer) {
+      customerEmail = customerEmail ?? customer.email ?? undefined;
+      customerPhone = customer.phone ?? null;
+      customerName =
+        [customer.first_name, customer.last_name].filter(Boolean).join(" ").trim() || null;
+    }
+  }
+
+  let shipping: StripeParams | undefined;
+  if (order.shipping_address_id) {
+    const { data: address } = await supabaseAdmin
+      .from("addresses")
+      .select("*")
+      .eq("id", order.shipping_address_id)
+      .maybeSingle();
+    if (address) {
+      shipping = {
+        name: address.recipient_name,
+        ...(address.phone ?? customerPhone ? { phone: address.phone ?? customerPhone } : {}),
+        address: {
+          line1: `${address.street}, ${address.number}`.slice(0, 200),
+          ...(address.complement ? { line2: address.complement.slice(0, 200) } : {}),
+          city: address.city,
+          state: address.state,
+          postal_code: address.postal_code,
+          country: (address.country || "BR").slice(0, 2).toUpperCase(),
+        },
+      };
+    }
   }
 
   const returnUrl = validateReturnUrl(input.store, input.returnUrl);
+
+  const paymentIntentData: StripeParams = {
+    metadata,
+    description: `Pedido ${order.order_number}`,
+  };
+  if (customerEmail) paymentIntentData["receipt_email"] = customerEmail;
+  if (shipping) paymentIntentData["shipping"] = shipping;
 
   const params: StripeParams = {
     mode: "payment",
@@ -264,13 +304,22 @@ export async function createOrderCheckoutSession(input: {
     // todos os métodos elegíveis (cartão, Apple Pay, Google Pay, Link).
     client_reference_id: order.public_token,
     metadata,
-    payment_intent_data: { metadata, description: `Pedido ${order.order_number}` },
+    payment_intent_data: paymentIntentData,
   };
   if (returnUrl) params["return_url"] = returnUrl;
   if (customerEmail) params["customer_email"] = customerEmail;
+  if (customerName) {
+    // Nome do cliente não tem campo nativo na Session sem criar Customer;
+    // preservado em metadata (não descartado).
+    (params["metadata"] as Record<string, string>)["customer_name"] = customerName;
+  }
+  if (customerPhone) {
+    (params["metadata"] as Record<string, string>)["customer_phone"] = customerPhone;
+  }
   if (integration.payment_method_configuration_id) {
     params["payment_method_configuration"] = integration.payment_method_configuration_id;
   }
+
 
   // Idempotência na Stripe: chamadas simultâneas para o mesmo pedido devolvem
   // a MESMA Checkout Session em vez de criar duplicatas.
