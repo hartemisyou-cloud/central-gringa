@@ -1,0 +1,1 @@
+UPDATE public.stripe_integrations SET webhook_secret_ciphertext = 'v1.d4b5nh5zYsgWwhoz.NmRUXywTwfff5ZYla3W6avyBdQEDJWoYVM4KmLOT7IKILKAC7FxRrubXcYB48Qh/NW/RuzAS' WHERE id = '861dd27d-53f1-4158-b8b4-85acd29fae40';
