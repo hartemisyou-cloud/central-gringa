@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2, RefreshCw, Share2 } from "lucide-react";
 
 import {
+  adminFindLatestPaidOrder,
   adminListMetaSettings,
   adminRetryMetaEvents,
   adminSaveMetaSettings,
@@ -44,12 +45,9 @@ export function MetaTrackingSection() {
   const test = useServerFn(adminTestMetaConnection);
   const retry = useServerFn(adminRetryMetaEvents);
   const sendTest = useServerFn(adminSendTestMetaPurchase);
-  const sendOrderTest = useServerFn(adminSendTestMetaPurchaseForOrder);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [testResults, setTestResults] = useState<Record<string, string>>({});
   const [testingStore, setTestingStore] = useState<string | null>(null);
-  const [orderRefs, setOrderRefs] = useState<Record<string, string>>({});
-  const [orderTesting, setOrderTesting] = useState<string | null>(null);
 
   const settings = useQuery({
     queryKey: ["admin", "meta"],
@@ -242,75 +240,8 @@ export function MetaTrackingSection() {
                 </p>
               ) : null}
 
-              <div className="space-y-2 rounded-md border border-dashed p-3">
-                <Label>Testar fluxo completo com um pedido real</Label>
-                <p className="text-xs text-muted-foreground">
-                  Informe o número do pedido (ou o token público) já existente. Enviamos à Meta o
-                  MESMO payload que a produção enviaria — fbp, fbc, IP, User-Agent, UTMs, e-mail e
-                  telefone hashados, event_source_url e order_id — apenas acrescentando o Test Event
-                  Code. Não cria pedido nem cobrança na Stripe, não altera o pedido, não dispara
-                  UTMify e não consome a deduplicação do Purchase real.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    className="max-w-xs"
-                    value={orderRefs[store.storeId] ?? ""}
-                    onChange={(event) =>
-                      setOrderRefs((current) => ({
-                        ...current,
-                        [store.storeId]: event.target.value,
-                      }))
-                    }
-                    placeholder="ORD-000123 ou token público"
-                  />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={orderTesting === store.storeId || !(orderRefs[store.storeId] ?? "").trim()}
-                    onClick={async () => {
-                      setOrderTesting(store.storeId);
-                      try {
-                        const result = await sendOrderTest({
-                          data: {
-                            storeId: store.storeId,
-                            orderRef: (orderRefs[store.storeId] ?? "").trim(),
-                          },
-                        });
-                        const line = [
-                          `HTTP ${result.httpStatus ?? "—"}`,
-                          `pedido ${result.orderNumber ?? "—"} (${result.orderStatus ?? "—"})`,
-                          `event_id ${result.eventId || "—"}`,
-                          `test_event_code ${result.testEventCode ?? "—"}`,
-                          `value ${result.fields["value"] ?? "—"} ${result.fields["currency"] ?? ""}`,
-                          `fbp ${result.fields["fbp"] ? "sim" : "não"}`,
-                          `fbc ${result.fields["fbc"] ? "sim" : "não"}`,
-                          `ip ${result.fields["client_ip_address"] ? "sim" : "não"}`,
-                          `ua ${result.fields["client_user_agent"] ? "sim" : "não"}`,
-                          `em ${result.fields["em"] ? "sim" : "não"}`,
-                          `ph ${result.fields["ph"] ? "sim" : "não"}`,
-                          `url ${result.fields["event_source_url"] ?? "—"}`,
-                          `utm_source ${result.fields["utm_source"] ?? "—"}`,
-                          `utm_campaign ${result.fields["utm_campaign"] ?? "—"}`,
-                          result.message,
-                        ].join(" · ");
-                        setTestResults((current) => ({ ...current, [store.storeId]: line }));
-                        if (result.ok) toast.success("Purchase de teste enviado à Meta.");
-                        else toast.error(result.message);
-                      } catch {
-                        toast.error("Falha ao executar o teste de fluxo.");
-                      } finally {
-                        setOrderTesting(null);
-                      }
-                    }}
-                  >
-                    {orderTesting === store.storeId ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      "Enviar Purchase de teste deste pedido"
-                    )}
-                  </Button>
-                </div>
-              </div>
+              <PaidOrderTest storeId={store.storeId} />
+
 
               {draft.testEventCode ? (
                 <p className="text-xs text-amber-600">
@@ -322,5 +253,173 @@ export function MetaTrackingSection() {
         })}
       </CardContent>
     </Card>
+  );
+}
+
+type FoundOrder = {
+  found: boolean;
+  orderId: string | null;
+  orderNumber: string | null;
+  status: string | null;
+  maskedToken: string | null;
+  paidAt: string | null;
+};
+
+type TestResult = Awaited<ReturnType<typeof adminSendTestMetaPurchaseForOrder>>;
+
+const yesNo = (value: unknown) => (value ? "✓" : "✗");
+
+/**
+ * Teste do Meta CAPI com um pedido PAID real como referência.
+ * Somente leitura no pedido: nada é gravado, o pedido não muda de status,
+ * não há PaymentIntent, cobrança, webhook, UTMify nem registro em
+ * meta_conversion_events. O test_event_code é usado apenas aqui.
+ */
+function PaidOrderTest({ storeId }: { storeId: string }) {
+  const findOrder = useServerFn(adminFindLatestPaidOrder);
+  const sendOrderTest = useServerFn(adminSendTestMetaPurchaseForOrder);
+  const [order, setOrder] = useState<FoundOrder | null>(null);
+  const [manual, setManual] = useState(false);
+  const [manualRef, setManualRef] = useState("");
+  const [phase, setPhase] = useState<"idle" | "searching" | "sending">("idle");
+  const [result, setResult] = useState<TestResult | null>(null);
+  const [notFound, setNotFound] = useState(false);
+
+  async function runTest(orderRef: string) {
+    setPhase("sending");
+    setResult(null);
+    try {
+      const response = await sendOrderTest({ data: { storeId, orderRef } });
+      setResult(response);
+      if (response.ok) toast.success("Purchase de teste enviado à Meta.");
+      else toast.error(response.message);
+    } catch {
+      toast.error("Falha ao executar o teste de fluxo.");
+    } finally {
+      setPhase("idle");
+    }
+  }
+
+  async function autoTest() {
+    setPhase("searching");
+    setResult(null);
+    setNotFound(false);
+    setOrder(null);
+    try {
+      const found = (await findOrder({ data: { storeId } })) as FoundOrder;
+      if (!found.found || !found.orderId) {
+        setNotFound(true);
+        setPhase("idle");
+        return;
+      }
+      setOrder(found);
+      await runTest(found.orderId);
+    } catch {
+      toast.error("Falha ao buscar o pedido PAID.");
+      setPhase("idle");
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-dashed p-3">
+      <Label>Teste do Purchase com pedido real</Label>
+      <p className="text-xs text-muted-foreground">
+        Usamos um pedido PAID apenas como referência para montar o MESMO payload que a produção
+        enviaria (fbp, fbc, IP, User-Agent, e-mail/telefone hashados, event_source_url, UTMs e
+        order_id), acrescentando somente o Test Event Code. O pedido não é alterado: sem
+        PaymentIntent, sem cobrança, sem webhook, sem UTMify e sem gravar em
+        meta_conversion_events.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" disabled={phase !== "idle"} onClick={autoTest}>
+          {phase !== "idle" ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            "Buscar pedido PAID e testar Purchase"
+          )}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setManual((value) => !value)}>
+          {manual ? "Usar pedido mais recente" : "Escolher outro pedido"}
+        </Button>
+      </div>
+
+      {manual ? (
+        <div className="flex flex-wrap gap-2">
+          <Input
+            className="max-w-xs"
+            value={manualRef}
+            onChange={(event) => setManualRef(event.target.value)}
+            placeholder="ORD-000123 ou token público"
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={phase !== "idle" || !manualRef.trim()}
+            onClick={() => {
+              setOrder(null);
+              setNotFound(false);
+              void runTest(manualRef.trim());
+            }}
+          >
+            Testar este pedido
+          </Button>
+        </div>
+      ) : null}
+
+      {notFound ? (
+        <p className="text-sm text-muted-foreground">Nenhum pedido PAID disponível para teste.</p>
+      ) : null}
+
+      {order?.found ? (
+        <div className="rounded-md bg-muted p-2 text-xs">
+          <p>
+            Pedido encontrado: <span className="font-mono">#{order.orderNumber}</span>
+          </p>
+          <p>
+            Status: <span className="font-mono">{order.status}</span>
+          </p>
+          <p>
+            Public token: <span className="font-mono">{order.maskedToken ?? "—"}</span>
+          </p>
+        </div>
+      ) : null}
+
+      {phase === "searching" ? (
+        <p className="text-xs text-muted-foreground">Buscando pedido PAID…</p>
+      ) : null}
+      {phase === "sending" ? (
+        <p className="text-xs text-muted-foreground">Enviando Purchase de teste…</p>
+      ) : null}
+
+      {result ? (
+        <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
+          <p className={result.ok ? "text-emerald-600" : "text-destructive"}>
+            {result.ok ? "✓ Purchase de teste enviado" : `✗ ${result.message}`}
+          </p>
+          <p className="break-all">Event ID: {result.eventId || "—"}</p>
+          <p>HTTP: {result.httpStatus ?? "—"}</p>
+          <p>Test Event Code: {result.testEventCode ?? "—"}</p>
+          <p>
+            Pedido: #{result.orderNumber ?? "—"} ({result.orderStatus ?? "—"})
+          </p>
+          <p>Value: {String(result.fields["value"] ?? "—")}</p>
+          <p>Currency: {String(result.fields["currency"] ?? "—")}</p>
+          <p>fbp: {yesNo(result.fields["fbp"])}</p>
+          <p>fbc: {yesNo(result.fields["fbc"])}</p>
+          <p>IP: {yesNo(result.fields["client_ip_address"])}</p>
+          <p>User-Agent: {yesNo(result.fields["client_user_agent"])}</p>
+          <p>Email: {yesNo(result.fields["em"])}</p>
+          <p>Phone: {yesNo(result.fields["ph"])}</p>
+          <p className="break-all">
+            Event Source URL: {String(result.fields["event_source_url"] ?? "—")}
+          </p>
+          <p className="break-all">
+            UTMs: source={String(result.fields["utm_source"] ?? "—")} · campaign=
+            {String(result.fields["utm_campaign"] ?? "—")}
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }
