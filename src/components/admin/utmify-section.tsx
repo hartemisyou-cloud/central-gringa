@@ -68,6 +68,7 @@ export function UtmifySection() {
   });
 
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
