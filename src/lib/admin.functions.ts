@@ -125,6 +125,21 @@ export const adminSendTestMetaPurchase = createServerFn({ method: "POST" })
     return sendTestPurchase(data.storeId);
   });
 
+/**
+ * Teste de fluxo completo: reenvia o Purchase de um pedido REAL existente com
+ * test_event_code. Não cria pedido, cobrança nem grava evento de produção.
+ */
+export const adminSendTestMetaPurchaseForOrder = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string; orderRef: string }) =>
+    z.object({ storeId: z.string().uuid(), orderRef: z.string().trim().min(3).max(120) }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { sendTestPurchaseFromOrder } = await import("./meta/capi.server");
+    return sendTestPurchaseFromOrder({ storeId: data.storeId, orderRef: data.orderRef });
+  });
+
 export const adminRetryMetaEvents = createServerFn({ method: "POST" })
   .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
