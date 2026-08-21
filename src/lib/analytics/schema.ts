@@ -56,6 +56,8 @@ export const SERVER_ONLY_EVENTS: ReadonlySet<string> = new Set([
   "payment_canceled",
   "payment_intent_created",
   "webhook_received",
+  "meta_capi_succeeded",
+  "meta_capi_failed",
 ]);
 
 export const clientEventSchema = z.object({
