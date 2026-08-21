@@ -14,8 +14,9 @@ import { toast } from "sonner";
 
 import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
-import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
+import { captureHostedAttribution, loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
 import { createCheckoutTracker } from "@/lib/analytics/client";
+import { captureAttribution } from "@/lib/tracking/attribution-client";
 import {
   initPixel,
   trackInitiateCheckout,
