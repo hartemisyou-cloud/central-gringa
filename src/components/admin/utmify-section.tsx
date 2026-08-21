@@ -156,11 +156,20 @@ export function UtmifySection() {
               </div>
 
               <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                <p>Último evento enviado: {formatDate(store.lastSentAt ?? store.lastSuccessAt)}</p>
+                <p>Último evento enviado: {formatDate(store.lastSentAt)}</p>
                 <p>Última venda: {store.lastOrderNumber ?? "—"}</p>
                 <p>Vendas enviadas: {store.sentCount}</p>
-                <p className="truncate">Último erro: {store.lastError ?? "—"}</p>
+                <p className="truncate">Último erro de venda: {store.lastError ?? "—"}</p>
+                <p className="sm:col-span-2 truncate">
+                  Teste de conexão:{" "}
+                  {store.connectionStatus === "OK"
+                    ? `OK · ${formatDate(store.connectionSuccessAt)}`
+                    : store.connectionStatus === "ERROR"
+                      ? `Erro · ${formatDate(store.connectionErrorAt)} · ${store.connectionError ?? ""}`
+                      : "não testado"}
+                </p>
               </div>
+
 
               <div className="flex flex-wrap gap-2">
                 <Button
