@@ -368,3 +368,126 @@ export async function testUtmifyConnection(
     return { ok: false, message };
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Ação administrativa temporária: reenvio de UMA única ordem           */
+/* ------------------------------------------------------------------ */
+
+function maskIp(ip: string | null): string | null {
+  if (!ip) return null;
+  if (ip.includes(":")) return `${ip.split(":").slice(0, 2).join(":")}:***`;
+  const parts = ip.split(".");
+  return parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.***` : "***";
+}
+
+/**
+ * Reenvia à UTMify SOMENTE o pedido informado (por order_number).
+ * Não cria pedido/PaymentIntent, não altera status financeiro, não dispara
+ * Meta. Reutiliza a linha existente em utmify_events (nunca duplica).
+ */
+export async function resendUtmifySaleForOrderNumber(orderNumber: string): Promise<{
+  ok: boolean;
+  message: string;
+  orderNumber: string;
+  orderStatus?: string;
+  clientIpMasked?: string | null;
+  httpStatus?: number | null;
+  responseBody?: string | null;
+  eventStatus?: string | null;
+  attemptCount?: number | null;
+}> {
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("id, store_id, status")
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  if (!order) return { ok: false, message: "Pedido não encontrado.", orderNumber };
+
+  const settings = await getUtmifySettingsWithToken(order.store_id);
+  if (!settings) {
+    return { ok: false, message: "UTMify desativada ou sem token para a loja do pedido.", orderNumber };
+  }
+
+  const context = await loadOrderContext(order.id);
+  if (!context) return { ok: false, message: "Contexto do pedido indisponível.", orderNumber };
+
+  const attributionRecord = await getOrderAttributionRecord(order.id).catch(
+    () => ({}) as OrderAttributionRecord,
+  );
+  const clientIp = attributionRecord.client_ip ?? null;
+  const payload = buildSalePayload(context, attributionRecord as Attribution, {
+    isTest: settings.isTest,
+    clientIp,
+  });
+
+  let httpStatus: number | null = null;
+  let responseBody: string | null = null;
+  let ok = false;
+  try {
+    const response = await fetch(UTMIFY_ORDERS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-token": settings.apiToken },
+      body: JSON.stringify(payload),
+    });
+    httpStatus = response.status;
+    responseBody = sanitizeError((await response.text()).slice(0, 800));
+    ok = response.ok;
+  } catch (error) {
+    responseBody = sanitizeError((error as Error).message);
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from("utmify_events")
+    .select("id, attempt_count")
+    .eq("store_id", order.store_id)
+    .eq("order_id", order.id)
+    .eq("event_status", "paid")
+    .maybeSingle();
+
+  const attempt = (existing?.attempt_count ?? 0) + 1;
+  const permanent = httpStatus !== null && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429;
+  const eventStatus = ok ? "SENT" : permanent ? "FAILED_PERMANENT" : "FAILED";
+
+  if (existing?.id) {
+    await supabaseAdmin
+      .from("utmify_events")
+      .update({
+        status: eventStatus,
+        attempt_count: attempt,
+        http_status: httpStatus,
+        last_error: ok ? null : responseBody,
+      })
+      .eq("id", existing.id);
+  } else {
+    await supabaseAdmin.from("utmify_events").insert({
+      store_id: order.store_id,
+      order_id: order.id,
+      order_number: context.orderNumber,
+      event_status: "paid",
+      status: eventStatus,
+      attempt_count: attempt,
+      http_status: httpStatus,
+      last_error: ok ? null : responseBody,
+    });
+  }
+
+  await recordUtmifyHealth(order.store_id, {
+    ok,
+    error: ok ? null : responseBody,
+    orderNumber: context.orderNumber,
+  });
+
+  return {
+    ok,
+    message: ok
+      ? `Venda aceita pela UTMify (HTTP ${httpStatus}).`
+      : `UTMify recusou o envio (HTTP ${httpStatus ?? "n/a"}).`,
+    orderNumber: context.orderNumber,
+    orderStatus: context.status,
+    clientIpMasked: maskIp(clientIp),
+    httpStatus,
+    responseBody,
+    eventStatus,
+    attemptCount: attempt,
+  };
+}
