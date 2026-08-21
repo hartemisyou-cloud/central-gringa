@@ -327,6 +327,59 @@ export async function sendPurchaseForOrder(input: {
   }
 }
 
+/**
+ * Purchase de TESTE (somente painel admin).
+ * Não cria pedido, PaymentIntent, cobrança, UTMify nem registro de venda:
+ * apenas envia um evento isolado à Meta com o Test Event Code da loja.
+ */
+export async function sendTestPurchase(storeId: string): Promise<{
+  ok: boolean;
+  httpStatus: number | null;
+  eventId: string;
+  testEventCode: string | null;
+  message: string;
+}> {
+  const settings = await getMetaSettingsWithToken(storeId);
+  const eventId = `test_purchase_${crypto.randomUUID()}`;
+  if (!settings) {
+    return {
+      ok: false,
+      httpStatus: null,
+      eventId,
+      testEventCode: null,
+      message: "Integração Meta desativada ou incompleta para esta loja.",
+    };
+  }
+
+  const body: Record<string, unknown> = {
+    data: [
+      {
+        event_name: "Purchase",
+        event_time: Math.floor(Date.now() / 1000),
+        event_id: eventId,
+        action_source: "website",
+        user_data: {},
+        custom_data: { currency: "USD", value: 20.0 },
+      },
+    ],
+  };
+  if (settings.testEventCode) body["test_event_code"] = settings.testEventCode;
+
+  const result = await postToMeta(settings.pixelId!, settings.accessToken, body);
+  console.log(
+    `[meta-capi-test] store=${storeId} event_id=${eventId} status=${result.ok ? "SENT" : "FAILED"} http=${result.httpStatus ?? "n/a"}`,
+  );
+  return {
+    ok: result.ok,
+    httpStatus: result.httpStatus ?? null,
+    eventId,
+    testEventCode: settings.testEventCode,
+    message: result.ok
+      ? `Evento de teste aceito pela Meta (HTTP ${result.httpStatus}).`
+      : sanitizeError(result.error),
+  };
+}
+
 /** Reenvio manual dos eventos pendentes/falhos de uma loja (backoff administrativo). */
 export async function retryFailedMetaEvents(storeId: string): Promise<{ retried: number }> {
   const { data: rows } = await supabaseAdmin

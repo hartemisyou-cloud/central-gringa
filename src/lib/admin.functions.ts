@@ -115,6 +115,16 @@ export const adminTestMetaConnection = createServerFn({ method: "POST" })
     return testMetaConnection(data.storeId);
   });
 
+/** Purchase de teste (não cria pedido/pagamento). Somente admin. */
+export const adminSendTestMetaPurchase = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { sendTestPurchase } = await import("./meta/capi.server");
+    return sendTestPurchase(data.storeId);
+  });
+
 export const adminRetryMetaEvents = createServerFn({ method: "POST" })
   .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
