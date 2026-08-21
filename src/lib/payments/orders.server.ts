@@ -208,7 +208,11 @@ export async function createOrder(input: {
     metadata: { total_cents: totals.totalCents } as never,
   });
 
-  return { order, totals, publicToken: order.public_token };
+  const { saveOrderAttribution } = await import("./attribution.server");
+  const attribution = await saveOrderAttribution(order.id, input.attribution);
+
+  return { order, totals, publicToken: order.public_token, attribution };
+
 }
 
 async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
