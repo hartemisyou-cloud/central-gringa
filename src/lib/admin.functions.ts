@@ -274,3 +274,18 @@ export const adminRetryUtmifyEvents = createServerFn({ method: "POST" })
     const { retryFailedUtmifyEvents } = await import("./utmify/api.server");
     return retryFailedUtmifyEvents(data.storeId);
   });
+
+/**
+ * Ação administrativa temporária: reenvia à UTMify SOMENTE o pedido informado.
+ * Não cria pedido/cobrança, não altera status financeiro, não envia Meta.
+ */
+export const adminResendUtmifyOrder = createServerFn({ method: "POST" })
+  .inputValidator((data: { orderNumber: string }) =>
+    z.object({ orderNumber: z.string().trim().min(5).max(60) }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { resendUtmifySaleForOrderNumber } = await import("./utmify/api.server");
+    return resendUtmifySaleForOrderNumber(data.orderNumber);
+  });
