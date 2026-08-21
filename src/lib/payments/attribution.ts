@@ -29,7 +29,7 @@ export const ATTRIBUTION_KEYS = [
 ] as const;
 
 export type AttributionKey = (typeof ATTRIBUTION_KEYS)[number];
-export type Attribution = Partial<Record<AttributionKey, string>>;
+export type Attribution = { [K in AttributionKey]?: string | undefined };
 
 /** URLs podem ser mais longas; os demais campos são curtos por natureza. */
 const MAX_LENGTH: Partial<Record<AttributionKey, number>> = {
