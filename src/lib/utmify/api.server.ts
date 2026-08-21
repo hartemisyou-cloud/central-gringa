@@ -1,5 +1,8 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getOrderAttribution } from "@/lib/payments/attribution.server";
+import {
+  getOrderAttributionRecord,
+  type OrderAttributionRecord,
+} from "@/lib/payments/attribution.server";
 import type { Attribution } from "@/lib/payments/attribution";
 import { getUtmifySettingsWithToken, recordUtmifyHealth } from "./config.server";
 
@@ -259,12 +262,15 @@ export async function sendSaleForOrder(input: {
       rowId = inserted.id;
     }
 
-    const attribution: Attribution = await getOrderAttribution(input.orderId).catch(
-      () => ({}) as Attribution,
+    // Atribuição + telemetria do navegador (IP real do comprador persistido em
+    // order_attribution.client_ip). Nunca usamos o IP do worker/servidor.
+    const attributionRecord = await getOrderAttributionRecord(input.orderId).catch(
+      () => ({}) as OrderAttributionRecord,
     );
+    const attribution: Attribution = attributionRecord;
     const payload = buildSalePayload(context, attribution, {
       isTest: settings.isTest,
-      clientIp: input.clientIp ?? null,
+      clientIp: input.clientIp ?? attributionRecord.client_ip ?? null,
     });
     const result = await postToUtmify(settings.apiToken, payload);
     const attempt = (existing?.attempt_count ?? 0) + 1;
