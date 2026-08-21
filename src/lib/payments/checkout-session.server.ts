@@ -274,7 +274,17 @@ export async function createOrderCheckoutSession(input: {
 
   // Idempotência na Stripe: chamadas simultâneas para o mesmo pedido devolvem
   // a MESMA Checkout Session em vez de criar duplicatas.
-  const session = await stripe.createCheckoutSession(params, `cs_${order.id}`);
+  // Idempotência: a primeira criação usa exatamente `cs_{orderId}` — chamadas
+  // simultâneas devolvem a MESMA sessão. Recriações (sessão expirada/inválida)
+  // usam um sufixo, pois a Stripe também cacheia a resposta anterior da chave.
+  const { count: previousSessions } = await supabaseAdmin
+    .from("stripe_checkout_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("order_id", order.id);
+  const idempotencyKey =
+    previousSessions && previousSessions > 0 ? `cs_${order.id}:${previousSessions}` : `cs_${order.id}`;
+
+  const session = await stripe.createCheckoutSession(params, idempotencyKey);
   if (!session.client_secret) {
     throw new PaymentError("PROVIDER_ERROR", "Checkout Session criada sem client_secret.");
   }
