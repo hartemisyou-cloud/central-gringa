@@ -161,8 +161,12 @@ async function buildPayload(
   }
   if (attribution.fbc) userData["fbc"] = attribution.fbc;
   if (attribution.fbp) userData["fbp"] = attribution.fbp;
-  if (extra.clientIp) userData["client_ip_address"] = extra.clientIp;
-  if (extra.userAgent) userData["client_user_agent"] = extra.userAgent;
+  // IP e User-Agent do contexto real da compra: o webhook da Stripe não os
+  // possui, então usamos o que foi capturado no checkout e persistido.
+  const clientIp = extra.clientIp ?? record.client_ip ?? null;
+  const userAgent = extra.userAgent ?? record.client_user_agent ?? null;
+  if (clientIp) userData["client_ip_address"] = clientIp;
+  if (userAgent) userData["client_user_agent"] = userAgent;
 
   const customData: Record<string, unknown> = {
     currency: context.currency.toUpperCase(),
