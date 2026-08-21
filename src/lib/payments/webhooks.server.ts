@@ -82,6 +82,14 @@ async function applyEvent(event: StripeEvent): Promise<string> {
       } catch (error) {
         console.error("[meta-capi] purchase dispatch failed", (error as Error).message);
       }
+      // UTMify (API direta): independente do webhook Stripe → UTMify existente,
+      // que continua ativo. Idempotente por (store_id, order_id, "paid").
+      try {
+        const { sendSaleForOrder } = await import("@/lib/utmify/api.server");
+        await sendSaleForOrder({ orderId: payment.order_id, storeId: payment.store_id });
+      } catch (error) {
+        console.error("[utmify] sale dispatch failed", (error as Error).message);
+      }
       return "Pagamento confirmado.";
     }
     case "payment_intent.payment_failed": {
