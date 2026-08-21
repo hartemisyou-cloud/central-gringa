@@ -81,32 +81,51 @@ export async function recordUtmifyHealth(
   await supabaseAdmin.from("utmify_settings").update(patch as never).eq("store_id", storeId);
 }
 
-/** Painel: nunca devolve o token — apenas "configurado" e os 4 últimos caracteres. */
+/**
+ * Painel: nunca devolve o token — apenas "configurado" e os 4 últimos caracteres.
+ * O estado das VENDAS vem exclusivamente de `utmify_events`; o resultado do botão
+ * "Testar conexão" (`utmify_settings.last_error/last_success_at`) fica isolado e
+ * NUNCA marca o painel de vendas como erro. Leitura pura — não envia nada.
+ */
 export async function listUtmifySettings(): Promise<UtmifySettingsSummary[]> {
   const { data: stores } = await supabaseAdmin.from("stores").select("id, name, slug").order("name");
   const { data: settings } = await supabaseAdmin.from("utmify_settings").select("*");
   const { data: events } = await supabaseAdmin
     .from("utmify_events")
-    .select("store_id, status, created_at")
-    .eq("status", "SENT")
-    .order("created_at", { ascending: false })
+    .select("store_id, status, order_number, last_error, created_at, updated_at")
+    .order("updated_at", { ascending: false })
     .limit(1000);
 
   return (stores ?? []).map((store) => {
     const row = (settings ?? []).find((entry) => entry.store_id === store.id);
-    const sent = (events ?? []).filter((entry) => entry.store_id === store.id);
+    const storeEvents = (events ?? []).filter((entry) => entry.store_id === store.id);
+    const sent = storeEvents.filter((entry) => entry.status === "SENT");
+    const failed = storeEvents.filter(
+      (entry) => entry.status !== "SENT" && Boolean(entry.last_error),
+    );
+    const lastSent = sent[0];
+    const lastFailed = failed[0];
     const configured = Boolean(row?.api_token_ciphertext);
+
     const status: UtmifySettingsSummary["status"] = !row || !row.enabled
       ? configured
         ? "DISABLED"
         : "NOT_CONFIGURED"
       : !configured
         ? "NOT_CONFIGURED"
-        : row.last_error && (!row.last_success_at || (row.last_error_at ?? "") > row.last_success_at)
+        : lastFailed && (!lastSent || (lastFailed.updated_at ?? "") > (lastSent.updated_at ?? ""))
           ? "ERROR"
-          : row.last_success_at
+          : lastSent
             ? "CONNECTED"
             : "CONFIGURED";
+
+    const connectionStatus: UtmifySettingsSummary["connectionStatus"] = !row
+      ? "UNKNOWN"
+      : row.last_error && (!row.last_success_at || (row.last_error_at ?? "") > row.last_success_at)
+        ? "ERROR"
+        : row.last_success_at
+          ? "OK"
+          : "UNKNOWN";
 
     return {
       storeId: store.id,
@@ -117,15 +136,20 @@ export async function listUtmifySettings(): Promise<UtmifySettingsSummary[]> {
       isTest: row?.is_test ?? false,
       hasApiToken: configured,
       status,
-      lastSuccessAt: row?.last_success_at ?? null,
-      lastOrderNumber: row?.last_order_number ?? null,
-      lastError: row?.last_error ?? null,
-      lastErrorAt: row?.last_error_at ?? null,
+      lastSuccessAt: lastSent?.updated_at ?? null,
+      lastOrderNumber: lastSent?.order_number ?? row?.last_order_number ?? null,
+      lastError: lastFailed?.last_error ?? null,
+      lastErrorAt: lastFailed?.updated_at ?? null,
       sentCount: sent.length,
-      lastSentAt: sent[0]?.created_at ?? null,
+      lastSentAt: lastSent?.updated_at ?? null,
+      connectionStatus,
+      connectionError: row?.last_error ?? null,
+      connectionErrorAt: row?.last_error_at ?? null,
+      connectionSuccessAt: row?.last_success_at ?? null,
     };
   });
 }
+
 
 export async function saveUtmifySettings(input: {
   storeId: string;
