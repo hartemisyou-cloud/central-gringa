@@ -16,9 +16,11 @@ export const Route = createFileRoute("/api/public/v1/orders")({
           request,
           { bucket: "orders", limit: 20, windowSeconds: 60 },
           async (store) => {
-            const { attributionSchema, appendAttributionToUrl } = await import(
-              "@/lib/payments/attribution"
-            );
+            const {
+              attributionWithContextSchema,
+              splitAttributionPayload,
+              appendAttributionToUrl,
+            } = await import("@/lib/payments/attribution");
             const body = await parseBody(
               request,
               z.object({
@@ -26,17 +28,43 @@ export const Route = createFileRoute("/api/public/v1/orders")({
                 customer: customerSchema,
                 address: addressSchema,
                 shippingOptionId: z.string().trim().min(1).max(40),
-                attribution: attributionSchema,
+                attribution: attributionWithContextSchema,
               }),
             );
+            const { attribution, context } = splitAttributionPayload(body.attribution);
+
+            // Headers da requisição como fallback; o que o checkout envia explicitamente vence.
+            const headers = request.headers;
+            const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+            const clientContext = {
+              clientIp:
+                context.clientIp ??
+                headers.get("cf-connecting-ip") ??
+                forwarded ??
+                headers.get("x-real-ip") ??
+                null,
+              clientUserAgent: context.clientUserAgent ?? headers.get("user-agent"),
+              eventSourceUrl:
+                context.eventSourceUrl ?? attribution.landing_page ?? headers.get("referer"),
+            };
+
             const { createOrder } = await import("@/lib/payments/orders.server");
-            const result = await createOrder({ store, ...body });
+            const result = await createOrder({
+              store,
+              items: body.items,
+              customer: body.customer,
+              address: body.address,
+              shippingOptionId: body.shippingOptionId,
+              attribution,
+              clientContext,
+            });
 
             const origin = new URL(request.url).origin;
             const paymentUrl = appendAttributionToUrl(
               `${origin}/pay/${result.publicToken}`,
               result.attribution,
             );
+
             return {
               orderId: result.order.id,
               orderNumber: result.order.order_number,
