@@ -188,7 +188,7 @@ async function buildPayload(
     if (value) customData[key] = value;
   }
 
-  const url = eventSourceUrl(context, attribution.landing_page);
+  const url = eventSourceUrl(context, record);
 
   const event: Record<string, unknown> = {
     event_name: "Purchase",
@@ -200,9 +200,10 @@ async function buildPayload(
   };
   if (url) event["event_source_url"] = url;
 
-  const body: Record<string, unknown> = { data: [event] };
-  if (settings.testEventCode) body["test_event_code"] = settings.testEventCode;
-  return body;
+  // PRODUÇÃO: nunca enviar test_event_code. Vendas reais precisam entrar no
+  // fluxo normal de eventos da Meta; o Test Event Code existe apenas para o
+  // botão de teste do painel (sendTestPurchase).
+  return { data: [event] } as Record<string, unknown>;
 }
 
 async function postToMeta(
