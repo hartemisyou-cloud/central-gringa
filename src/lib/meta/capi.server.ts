@@ -539,6 +539,44 @@ export async function sendTestPurchaseFromOrder(input: {
   };
 }
 
+/**
+ * Busca (somente leitura) o pedido PAID mais recente da loja para servir de
+ * referência ao teste CAPI. Não altera nada e devolve o token mascarado —
+ * o token completo nunca é enviado ao navegador.
+ */
+export async function findLatestPaidOrder(storeId: string): Promise<{
+  found: boolean;
+  orderId: string | null;
+  orderNumber: string | null;
+  status: string | null;
+  maskedToken: string | null;
+  paidAt: string | null;
+}> {
+  const { data } = await supabaseAdmin
+    .from("orders")
+    .select("id, order_number, status, public_token, paid_at, created_at")
+    .eq("store_id", storeId)
+    .eq("status", "PAID")
+    .order("paid_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data) {
+    return { found: false, orderId: null, orderNumber: null, status: null, maskedToken: null, paidAt: null };
+  }
+  const token = data.public_token ?? "";
+  const masked = token ? `${token.slice(0, 4)}••••${token.slice(-4)}` : null;
+  return {
+    found: true,
+    orderId: data.id,
+    orderNumber: data.order_number,
+    status: data.status,
+    maskedToken: masked,
+    paidAt: data.paid_at ?? null,
+  };
+}
+
 /** Reenvio manual dos eventos pendentes/falhos de uma loja (backoff administrativo). */
 export async function retryFailedMetaEvents(storeId: string): Promise<{ retried: number }> {
   const { data: rows } = await supabaseAdmin
