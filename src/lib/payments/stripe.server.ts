@@ -12,9 +12,6 @@ import { PaymentError } from "./errors";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_VERSION = "2024-06-20";
-// `ui_mode: custom` + Adaptive Pricing exigem uma versão mais nova da API.
-// Usada SOMENTE nas Checkout Sessions; PaymentIntents seguem em 2024-06-20.
-const CHECKOUT_SESSION_API_VERSION = "2025-03-31.basil";
 
 export type StripeParams = Record<string, unknown>;
 
@@ -69,30 +66,6 @@ export interface StripeAccount {
   charges_enabled?: boolean;
 }
 
-export interface StripeCheckoutSession {
-  id: string;
-  object?: string;
-  client_secret?: string | null;
-  status?: string | null;
-  url?: string | null;
-  mode?: string;
-  currency?: string | null;
-  amount_total?: number | null;
-  amount_subtotal?: number | null;
-  expires_at?: number | null;
-  livemode?: boolean;
-  payment_intent?: string | null;
-  client_reference_id?: string | null;
-  customer_email?: string | null;
-  metadata?: Record<string, string>;
-  currency_conversion?: {
-    amount_total?: number | null;
-    amount_subtotal?: number | null;
-    source_currency?: string | null;
-    fx_rate?: string | null;
-  } | null;
-}
-
 export interface StripeEvent {
   id: string;
   type: string;
@@ -114,11 +87,10 @@ export class StripeService {
     path: string,
     params?: StripeParams,
     idempotencyKey?: string,
-    apiVersion: string = STRIPE_VERSION,
   ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
-      "Stripe-Version": apiVersion,
+      "Stripe-Version": STRIPE_VERSION,
     };
     let url = `${STRIPE_API}${path}`;
     let body: string | undefined;
@@ -211,44 +183,6 @@ export class StripeService {
 
   retrieveRefund(id: string): Promise<StripeRefund> {
     return this.request<StripeRefund>("GET", `/refunds/${encodeURIComponent(id)}`);
-  }
-
-  /**
-   * Checkout Session em ui_mode "custom" (Payment Element controlado pela loja).
-   * Nunca envia `payment_method_types`: a Stripe decide os métodos elegíveis
-   * (cartão, Apple Pay, Google Pay, Link) via automatic_payment_methods.
-   */
-  createCheckoutSession(
-    params: StripeParams,
-    idempotencyKey: string,
-  ): Promise<StripeCheckoutSession> {
-    return this.request<StripeCheckoutSession>(
-      "POST",
-      "/checkout/sessions",
-      params,
-      idempotencyKey,
-      CHECKOUT_SESSION_API_VERSION,
-    );
-  }
-
-  retrieveCheckoutSession(id: string): Promise<StripeCheckoutSession> {
-    return this.request<StripeCheckoutSession>(
-      "GET",
-      `/checkout/sessions/${encodeURIComponent(id)}`,
-      undefined,
-      undefined,
-      CHECKOUT_SESSION_API_VERSION,
-    );
-  }
-
-  expireCheckoutSession(id: string): Promise<StripeCheckoutSession> {
-    return this.request<StripeCheckoutSession>(
-      "POST",
-      `/checkout/sessions/${encodeURIComponent(id)}/expire`,
-      undefined,
-      undefined,
-      CHECKOUT_SESSION_API_VERSION,
-    );
   }
 }
 

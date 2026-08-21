@@ -96,30 +96,6 @@ Resposta: `orderId`, `orderNumber`, `publicToken`, `paymentUrl`, `totals`.
 No frontend, use `clientSecret` + `publishableKey` com Stripe Elements (`confirmPayment`).
 A chave secreta da Stripe nunca sai da central (armazenada cifrada AES-256-GCM).
 
-## 4b. Checkout Session (Adaptive Pricing / moeda local)
-
-`POST /api/public/v1/orders/{orderId}/checkout-session`
-
-Body (todos os campos opcionais):
-
-```json
-{"returnUrl":"https://sualoja.com/obrigado","customerEmail":"cliente@email.com","metadata":{"campaignId":"cmp-9"}}
-```
-
-Resposta:
-
-```json
-{"data":{"clientSecret":"cs_live_..._secret_...","publishableKey":"pk_live_...","sessionId":"cs_live_...","publicToken":"...","orderNumber":"ORD-..."}}
-```
-
-- Usa `ui_mode: "custom"` + `adaptive_pricing.enabled: true` (preço convertido para a moeda local do comprador pela Stripe).
-- Line items reais do pedido (nome, descrição, SKU, `product_id`, slug) + frete como item explícito; o frete/valor base do pedido não é alterado.
-- Metadados do pedido e de atribuição (UTMs, `fbclid`, `fbp`, etc.) são replicados na Session e no PaymentIntent — Meta CAPI e UTMify continuam funcionando.
-- Idempotente por pedido: chamadas repetidas devolvem a mesma Session enquanto ela estiver aberta.
-- `returnUrl` deve ser HTTPS e pertencer a uma origem autorizada da loja.
-- A confirmação vem por webhook (`checkout.session.completed`), sem quebrar o fluxo existente de `payment_intent.succeeded`.
-
-
 ## 5. Consultar status
 
 `GET /api/public/v1/orders/status/{publicToken}`

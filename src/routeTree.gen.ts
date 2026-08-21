@@ -22,7 +22,6 @@ import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quo
 import { Route as ApiPublicV1AnalyticsEventsRouteImport } from './routes/api/public/v1/analytics.events'
 import { Route as ApiPublicWebhooksStripeIntegrationIdRouteImport } from './routes/api/public/webhooks/stripe.$integrationId'
 import { Route as ApiPublicV1CheckoutSessionPublicTokenRouteImport } from './routes/api/public/v1/checkout.session.$publicToken'
-import { Route as ApiPublicV1OrdersOrderIdCheckoutSessionRouteImport } from './routes/api/public/v1/orders.$orderId.checkout-session'
 import { Route as ApiPublicV1OrdersOrderIdPaymentRouteImport } from './routes/api/public/v1/orders.$orderId.payment'
 import { Route as ApiPublicV1OrdersStatusPublicTokenRouteImport } from './routes/api/public/v1/orders.status.$publicToken'
 
@@ -94,12 +93,6 @@ const ApiPublicV1CheckoutSessionPublicTokenRoute =
     path: '/api/public/v1/checkout/session/$publicToken',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicV1OrdersOrderIdCheckoutSessionRoute =
-  ApiPublicV1OrdersOrderIdCheckoutSessionRouteImport.update({
-    id: '/$orderId/checkout-session',
-    path: '/$orderId/checkout-session',
-    getParentRoute: () => ApiPublicV1OrdersRoute,
-  } as any)
 const ApiPublicV1OrdersOrderIdPaymentRoute =
   ApiPublicV1OrdersOrderIdPaymentRouteImport.update({
     id: '/$orderId/payment',
@@ -127,7 +120,6 @@ export interface FileRoutesByFullPath {
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
-  '/api/public/v1/orders/$orderId/checkout-session': typeof ApiPublicV1OrdersOrderIdCheckoutSessionRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
 }
@@ -145,7 +137,6 @@ export interface FileRoutesByTo {
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
-  '/api/public/v1/orders/$orderId/checkout-session': typeof ApiPublicV1OrdersOrderIdCheckoutSessionRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
 }
@@ -164,7 +155,6 @@ export interface FileRoutesById {
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
-  '/api/public/v1/orders/$orderId/checkout-session': typeof ApiPublicV1OrdersOrderIdCheckoutSessionRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
 }
@@ -184,7 +174,6 @@ export interface FileRouteTypes {
     | '/api/public/v1/analytics/events'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
-    | '/api/public/v1/orders/$orderId/checkout-session'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/status/$publicToken'
   fileRoutesByTo: FileRoutesByTo
@@ -202,7 +191,6 @@ export interface FileRouteTypes {
     | '/api/public/v1/analytics/events'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
-    | '/api/public/v1/orders/$orderId/checkout-session'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/status/$publicToken'
   id:
@@ -220,7 +208,6 @@ export interface FileRouteTypes {
     | '/api/public/v1/analytics/events'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
-    | '/api/public/v1/orders/$orderId/checkout-session'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/status/$publicToken'
   fileRoutesById: FileRoutesById
@@ -334,13 +321,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicV1CheckoutSessionPublicTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/v1/orders/$orderId/checkout-session': {
-      id: '/api/public/v1/orders/$orderId/checkout-session'
-      path: '/$orderId/checkout-session'
-      fullPath: '/api/public/v1/orders/$orderId/checkout-session'
-      preLoaderRoute: typeof ApiPublicV1OrdersOrderIdCheckoutSessionRouteImport
-      parentRoute: typeof ApiPublicV1OrdersRoute
-    }
     '/api/public/v1/orders/$orderId/payment': {
       id: '/api/public/v1/orders/$orderId/payment'
       path: '/$orderId/payment'
@@ -359,14 +339,11 @@ declare module '@tanstack/react-router' {
 }
 
 interface ApiPublicV1OrdersRouteChildren {
-  ApiPublicV1OrdersOrderIdCheckoutSessionRoute: typeof ApiPublicV1OrdersOrderIdCheckoutSessionRoute
   ApiPublicV1OrdersOrderIdPaymentRoute: typeof ApiPublicV1OrdersOrderIdPaymentRoute
   ApiPublicV1OrdersStatusPublicTokenRoute: typeof ApiPublicV1OrdersStatusPublicTokenRoute
 }
 
 const ApiPublicV1OrdersRouteChildren: ApiPublicV1OrdersRouteChildren = {
-  ApiPublicV1OrdersOrderIdCheckoutSessionRoute:
-    ApiPublicV1OrdersOrderIdCheckoutSessionRoute,
   ApiPublicV1OrdersOrderIdPaymentRoute: ApiPublicV1OrdersOrderIdPaymentRoute,
   ApiPublicV1OrdersStatusPublicTokenRoute:
     ApiPublicV1OrdersStatusPublicTokenRoute,
