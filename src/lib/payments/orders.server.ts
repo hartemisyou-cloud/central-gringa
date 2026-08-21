@@ -312,6 +312,9 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
         order_number: order.order_number,
         environment: order.environment,
       },
+      ...(integration.payment_method_configuration_id
+        ? { paymentMethodConfiguration: integration.payment_method_configuration_id }
+        : {}),
     });
   } catch (error) {
     await supabaseAdmin
