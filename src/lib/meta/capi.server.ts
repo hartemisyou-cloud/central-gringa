@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getOrderAttribution } from "@/lib/payments/attribution.server";
 import type { Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
-import { hashEmail, hashName, hashPhone } from "./hash";
+import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
 
 /**
  * Meta Conversions API — Purchase server-side.
