@@ -198,5 +198,71 @@ export function UtmifySection() {
         })}
       </CardContent>
     </Card>
+    <SingleOrderResend />
+    </div>
+  );
+}
+
+/**
+ * Ação temporária de validação: reenvia à UTMify UMA única ordem informada.
+ * Nenhum pedido/cobrança é criado e o status financeiro não é alterado.
+ */
+const TARGET_ORDER = "ORD-20260821-QQJUZZ";
+
+function SingleOrderResend() {
+  const resend = useServerFn(adminResendUtmifyOrder);
+  const [orderNumber, setOrderNumber] = useState(TARGET_ORDER);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof resend>> | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => resend({ data: { orderNumber: orderNumber.trim() } }),
+    onSuccess: (data) => {
+      setResult(data);
+      if (data.ok) toast.success(data.message);
+      else toast.error(data.message);
+    },
+    onError: () => toast.error("Falha ao executar o reenvio."),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Reenvio pontual à UTMify (diagnóstico)</CardTitle>
+        <CardDescription>
+          Reenvia somente a ordem informada, usando `order_attribution.client_ip` em
+          `customer.ip`. Não cria pedido, PaymentIntent ou cobrança, não altera o status
+          financeiro e não dispara Meta.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="grid gap-1">
+            <Label htmlFor="utmify-single-order">Número do pedido</Label>
+            <Input
+              id="utmify-single-order"
+              value={orderNumber}
+              onChange={(event) => setOrderNumber(event.target.value)}
+              className="w-64 font-mono text-sm"
+            />
+          </div>
+          <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "Reenviar à UTMify"}
+          </Button>
+        </div>
+
+        {result && (
+          <div className="space-y-1 rounded-lg border bg-muted/40 p-3 text-xs">
+            <p>Pedido: <span className="font-mono">{result.orderNumber}</span> · status {result.orderStatus ?? "—"}</p>
+            <p>customer.ip usado: <span className="font-mono">{result.clientIpMasked ?? "—"}</span></p>
+            <p>HTTP status: <span className="font-mono">{result.httpStatus ?? "—"}</span></p>
+            <p className="break-all">Resposta UTMify: <span className="font-mono">{result.responseBody ?? "—"}</span></p>
+            <p>
+              utmify_events: <Badge variant={result.eventStatus === "SENT" ? "default" : "destructive"}>{result.eventStatus ?? "—"}</Badge>{" "}
+              · tentativas: {result.attemptCount ?? "—"}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
