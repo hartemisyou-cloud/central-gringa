@@ -446,6 +446,89 @@ export type Database = {
           },
         ]
       }
+      order_attribution: {
+        Row: {
+          anonymous_session_id: string | null
+          checkout_session_id: string | null
+          click_id: string | null
+          created_at: string
+          fbc: string | null
+          fbclid: string | null
+          fbp: string | null
+          gbraid: string | null
+          gclid: string | null
+          id: string
+          landing_page: string | null
+          msclkid: string | null
+          order_id: string
+          referrer: string | null
+          ttclid: string | null
+          updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          wbraid: string | null
+        }
+        Insert: {
+          anonymous_session_id?: string | null
+          checkout_session_id?: string | null
+          click_id?: string | null
+          created_at?: string
+          fbc?: string | null
+          fbclid?: string | null
+          fbp?: string | null
+          gbraid?: string | null
+          gclid?: string | null
+          id?: string
+          landing_page?: string | null
+          msclkid?: string | null
+          order_id: string
+          referrer?: string | null
+          ttclid?: string | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          wbraid?: string | null
+        }
+        Update: {
+          anonymous_session_id?: string | null
+          checkout_session_id?: string | null
+          click_id?: string | null
+          created_at?: string
+          fbc?: string | null
+          fbclid?: string | null
+          fbp?: string | null
+          gbraid?: string | null
+          gclid?: string | null
+          id?: string
+          landing_page?: string | null
+          msclkid?: string | null
+          order_id?: string
+          referrer?: string | null
+          ttclid?: string | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          wbraid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_attribution_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
           created_at: string

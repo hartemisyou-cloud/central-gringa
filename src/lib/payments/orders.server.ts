@@ -6,6 +6,8 @@ import { mapProviderStatus, providerFromIntegration } from "./provider.server";
 import { randomToken } from "./crypto.server";
 import type { StoreRow } from "./store-auth.server";
 import type { Database } from "@/integrations/supabase/types";
+import { mergeAttributionIntoMetadata, type Attribution } from "./attribution";
+
 
 type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"];
 
@@ -88,7 +90,9 @@ export async function createOrder(input: {
   customer: CustomerInput;
   address: AddressInput;
   shippingOptionId: string;
+  attribution?: Attribution | undefined;
 }) {
+
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
@@ -204,7 +208,11 @@ export async function createOrder(input: {
     metadata: { total_cents: totals.totalCents } as never,
   });
 
-  return { order, totals, publicToken: order.public_token };
+  const { saveOrderAttribution } = await import("./attribution.server");
+  const attribution = await saveOrderAttribution(order.id, input.attribution);
+
+  return { order, totals, publicToken: order.public_token, attribution };
+
 }
 
 async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
@@ -300,48 +308,19 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
   }
 
   let created;
-  const paymentIntentMetadata: Record<string, string> = {
+  const baseMetadata: Record<string, string> = {
     store_id: order.store_id,
     order_id: order.id,
     order_number: order.order_number,
     environment: order.environment,
   };
 
-  // --- INSTRUMENTAÇÃO TEMPORÁRIA (somente leitura/diagnóstico) ---
-  // Mostra o que sobrou de atribuição no momento de criar o PaymentIntent.
-  {
-    const { scanAttribution, mergeScans, logAttribution } = await import(
-      "./attribution-diagnostics.server"
-    );
-    const { data: session } = await supabaseAdmin
-      .from("checkout_sessions")
-      .select("utm_source, utm_medium, utm_campaign, utm_term, utm_content, referrer")
-      .eq("order_id", order.id)
-      .order("last_seen_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  // Atribuição persistida no pedido -> metadata do PaymentIntent.
+  // Só campos presentes são adicionados; o metadata base nunca é alterado.
+  const { getOrderAttribution } = await import("./attribution.server");
+  const attribution = await getOrderAttribution(order.id).catch(() => ({}));
+  const paymentIntentMetadata = mergeAttributionIntoMetadata(baseMetadata, attribution);
 
-    const scan = mergeScans([
-      { origin: "order row", scan: scanAttribution(order) },
-      { origin: "checkout_sessions (analytics)", scan: scanAttribution(session) },
-    ]);
-
-    logAttribution({
-      stage: "central->paymentintent",
-      storeId: order.store_id,
-      orderId: order.id,
-      orderNumber: order.order_number,
-      fields: scan.fields,
-      metadataKeys: Object.keys(paymentIntentMetadata),
-      notes: [
-        session
-          ? "sessao de analytics encontrada para este pedido"
-          : "nenhuma sessao de analytics vinculada a este pedido (order_id nulo em checkout_sessions)",
-        "metadata do PaymentIntent nao inclui nenhum campo de atribuicao hoje",
-      ],
-    });
-  }
-  // --- FIM DA INSTRUMENTAÇÃO ---
 
   try {
     created = await provider.createPayment({
