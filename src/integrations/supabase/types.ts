@@ -1252,6 +1252,88 @@ export type Database = {
           },
         ]
       }
+      stripe_checkout_sessions: {
+        Row: {
+          amount_total: number | null
+          base_amount_cents: number
+          base_currency: string
+          client_secret: string | null
+          created_at: string
+          currency: string | null
+          expires_at: string | null
+          id: string
+          integration_id: string | null
+          order_id: string
+          payment_intent_id: string | null
+          presented_amount_total: number | null
+          presented_currency: string | null
+          session_id: string
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_total?: number | null
+          base_amount_cents: number
+          base_currency: string
+          client_secret?: string | null
+          created_at?: string
+          currency?: string | null
+          expires_at?: string | null
+          id?: string
+          integration_id?: string | null
+          order_id: string
+          payment_intent_id?: string | null
+          presented_amount_total?: number | null
+          presented_currency?: string | null
+          session_id: string
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_total?: number | null
+          base_amount_cents?: number
+          base_currency?: string
+          client_secret?: string | null
+          created_at?: string
+          currency?: string | null
+          expires_at?: string | null
+          id?: string
+          integration_id?: string | null
+          order_id?: string
+          payment_intent_id?: string | null
+          presented_amount_total?: number | null
+          presented_currency?: string | null
+          session_id?: string
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_checkout_sessions_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "stripe_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_checkout_sessions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_checkout_sessions_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stripe_integrations: {
         Row: {
           connection_error: string | null
