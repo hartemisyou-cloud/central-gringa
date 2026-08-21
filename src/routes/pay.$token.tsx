@@ -149,19 +149,44 @@ function PaymentForm({ session }: { session: Session }) {
   const [processing, setProcessing] = useState(false);
   const [hasExpress, setHasExpress] = useState(false);
 
+  // Telemetria de conversão: totalmente assíncrona e sem dados de cartão.
+  const tracker = useMemo(
+    () => createCheckoutTracker({ publicToken: session.publicToken }),
+    [session.publicToken],
+  );
+
+  useEffect(() => {
+    tracker.track("checkout_viewed");
+    tracker.track("checkout_started");
+    return () => tracker.dispose();
+  }, [tracker]);
+
   const returnUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/pedido/${session.publicToken}`
       : undefined;
 
-  async function finish(confirm: () => Promise<{ error?: { message?: string } | undefined }>) {
+  async function finish(
+    method: string,
+    confirm: () => Promise<{ error?: { message?: string; code?: string } | undefined }>,
+  ) {
     setProcessing(true);
+    tracker.track("payment_submitted", { paymentMethod: method });
     const { error } = await confirm();
     setProcessing(false);
     if (error) {
+      tracker.track(method === "card" ? "payment_error" : `${method}_failed`, {
+        paymentMethod: method,
+        errorCode: error.code,
+      });
+      tracker.flush();
       toast.error(error.message ?? "Pagamento não autorizado.");
       return;
     }
+    tracker.track(method === "card" ? "payment_processing" : `${method}_success`, {
+      paymentMethod: method,
+    });
+    tracker.flush();
     if (returnUrl) window.location.href = returnUrl;
   }
 
@@ -177,18 +202,34 @@ function PaymentForm({ session }: { session: Session }) {
       onSubmit={(event) => {
         event.preventDefault();
         if (!stripe || !elements) return;
-        void finish(() => stripe.confirmPayment(confirmArgs()));
+        void finish("card", () => stripe.confirmPayment(confirmArgs()));
       }}
     >
       <div className={hasExpress ? "space-y-5" : ""}>
         <ExpressCheckoutElement
           options={{ buttonHeight: 48 }}
-          onReady={({ availablePaymentMethods }) => setHasExpress(Boolean(availablePaymentMethods))}
-          onConfirm={() => {
+          onReady={({ availablePaymentMethods }) => {
+            setHasExpress(Boolean(availablePaymentMethods));
+            if (availablePaymentMethods) {
+              tracker.track("express_checkout_displayed");
+              if (availablePaymentMethods.applePay) tracker.track("apple_pay_available");
+              if (availablePaymentMethods.googlePay) tracker.track("google_pay_available");
+              if (availablePaymentMethods.link) tracker.track("link_available");
+              else tracker.track("link_unavailable");
+            }
+          }}
+          onClick={({ expressPaymentType, resolve }) => {
+            tracker.track(`${normalizeExpress(expressPaymentType)}_clicked`);
+            resolve();
+          }}
+          onConfirm={({ expressPaymentType }) => {
             if (!stripe || !elements) return;
-            void finish(() => stripe.confirmPayment(confirmArgs()));
+            const method = normalizeExpress(expressPaymentType);
+            tracker.track(`${method}_selected`);
+            void finish(method, () => stripe.confirmPayment(confirmArgs()));
           }}
         />
+
         {hasExpress ? (
           <div className="flex items-center gap-4 text-xs text-[#6d6e78]">
             <span className="h-px flex-1 bg-[#e6e6e6]" />
