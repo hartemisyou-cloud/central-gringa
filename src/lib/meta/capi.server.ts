@@ -435,6 +435,109 @@ export async function sendTestPurchase(storeId: string): Promise<{
   };
 }
 
+/**
+ * TESTE DE FLUXO COMPLETO (somente painel admin).
+ *
+ * Reproduz exatamente o Purchase que a produção enviaria para um pedido real
+ * existente (mesmo payload, mesma atribuição: fbp/fbc/UTMs/IP/User-Agent/
+ * event_source_url/e-mail e telefone hashados), porém:
+ * - adiciona `test_event_code` (só aqui);
+ * - usa um `event_id` de teste, para não consumir a deduplicação do pedido;
+ * - NÃO grava em meta_conversion_events, NÃO toca Stripe/PaymentIntent/UTMify
+ *   e NÃO altera o status do pedido — nenhuma cobrança é criada.
+ *
+ * `orderRef` aceita order_number, public_token ou o id do pedido.
+ */
+export async function sendTestPurchaseFromOrder(input: {
+  storeId: string;
+  orderRef: string;
+}): Promise<{
+  ok: boolean;
+  httpStatus: number | null;
+  eventId: string;
+  testEventCode: string | null;
+  orderNumber: string | null;
+  orderStatus: string | null;
+  message: string;
+  fields: Record<string, boolean | string | number>;
+}> {
+  const empty = {
+    ok: false,
+    httpStatus: null,
+    eventId: "",
+    testEventCode: null,
+    orderNumber: null,
+    orderStatus: null,
+    fields: {},
+  };
+  const settings = await getMetaSettingsWithToken(input.storeId);
+  if (!settings) {
+    return { ...empty, message: "Integração Meta desativada ou incompleta para esta loja." };
+  }
+  const testEventCode = settings.testEventCode;
+  if (!testEventCode) {
+    return {
+      ...empty,
+      message: "Defina um Test Event Code na loja antes de rodar o teste de fluxo.",
+    };
+  }
+
+  const ref = input.orderRef.trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
+  const { data: found } = await supabaseAdmin
+    .from("orders")
+    .select("id")
+    .eq("store_id", input.storeId)
+    .or(
+      isUuid
+        ? `id.eq.${ref},public_token.eq.${ref}`
+        : `order_number.eq.${ref},public_token.eq.${ref}`,
+    )
+    .limit(1)
+    .maybeSingle();
+  if (!found) {
+    return { ...empty, message: "Pedido não encontrado nesta loja." };
+  }
+
+  const context = await loadOrderContext(found.id);
+  if (!context) return { ...empty, message: "Pedido não encontrado nesta loja." };
+
+  const eventId = `test_${purchaseEventId(context.orderId)}_${Date.now()}`;
+  const payload = await buildPayload(context, { eventIdOverride: eventId, testEventCode });
+  const event = (payload["data"] as Array<Record<string, unknown>>)[0]!;
+  const userData = event["user_data"] as Record<string, unknown>;
+  const customData = event["custom_data"] as Record<string, unknown>;
+
+  const result = await postToMeta(settings.pixelId!, settings.accessToken, payload);
+  console.log(
+    `[meta-capi-test-order] store=${input.storeId} order=${context.orderId} event_id=${eventId} status=${result.ok ? "SENT" : "FAILED"} http=${result.httpStatus ?? "n/a"}`,
+  );
+
+  return {
+    ok: result.ok,
+    httpStatus: result.httpStatus ?? null,
+    eventId,
+    testEventCode,
+    orderNumber: context.orderNumber,
+    orderStatus: context.status,
+    message: result.ok
+      ? `Purchase de teste aceito pela Meta (HTTP ${result.httpStatus}).`
+      : sanitizeError(result.error),
+    fields: {
+      value: Number(customData["value"] ?? 0),
+      currency: String(customData["currency"] ?? ""),
+      em: Boolean(userData["em"]),
+      ph: Boolean(userData["ph"]),
+      fbp: Boolean(userData["fbp"]),
+      fbc: Boolean(userData["fbc"]),
+      client_ip_address: Boolean(userData["client_ip_address"]),
+      client_user_agent: Boolean(userData["client_user_agent"]),
+      event_source_url: String(event["event_source_url"] ?? "—"),
+      utm_source: String(customData["utm_source"] ?? "—"),
+      utm_campaign: String(customData["utm_campaign"] ?? "—"),
+    },
+  };
+}
 
 /** Reenvio manual dos eventos pendentes/falhos de uma loja (backoff administrativo). */
 export async function retryFailedMetaEvents(storeId: string): Promise<{ retried: number }> {
