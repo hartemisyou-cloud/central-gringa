@@ -636,3 +636,210 @@ export async function testMetaConnection(
     return { ok: false, message };
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Diagnóstico: Purchase de teste com pedido PAID + atribuição real     */
+/* ------------------------------------------------------------------ */
+
+export type AttributedPaidOrder = {
+  found: boolean;
+  orderId: string | null;
+  orderNumber: string | null;
+  status: string | null;
+  paidAt: string | null;
+  attribution: {
+    fbc: string | null;
+    fbp: string | null;
+    client_ip: string | null;
+    client_user_agent: string | null;
+    event_source_url: string | null;
+    utm_source: string | null;
+    utm_medium: string | null;
+    utm_campaign: string | null;
+    utm_content: string | null;
+    utm_term: string | null;
+  } | null;
+};
+
+/**
+ * Somente leitura: pedido PAID mais recente da loja que POSSUI registro em
+ * order_attribution. Sem fallback e sem dados inventados.
+ */
+export async function findLatestPaidOrderWithAttribution(
+  storeId: string,
+): Promise<AttributedPaidOrder> {
+  const empty: AttributedPaidOrder = {
+    found: false,
+    orderId: null,
+    orderNumber: null,
+    status: null,
+    paidAt: null,
+    attribution: null,
+  };
+
+  const { data: orders } = await supabaseAdmin
+    .from("orders")
+    .select("id, order_number, status, paid_at, created_at")
+    .eq("store_id", storeId)
+    .eq("status", "PAID")
+    .order("paid_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (!orders || orders.length === 0) return empty;
+
+  const { data: rows } = await supabaseAdmin
+    .from("order_attribution")
+    .select(
+      "order_id, fbc, fbp, client_ip, client_user_agent, event_source_url, utm_source, utm_medium, utm_campaign, utm_content, utm_term",
+    )
+    .in(
+      "order_id",
+      orders.map((order) => order.id),
+    );
+  if (!rows || rows.length === 0) return empty;
+
+  const byOrder = new Map(rows.map((row) => [row.order_id, row]));
+  const match = orders.find((order) => byOrder.has(order.id));
+  if (!match) return empty;
+  const row = byOrder.get(match.id)!;
+
+  return {
+    found: true,
+    orderId: match.id,
+    orderNumber: match.order_number,
+    status: match.status,
+    paidAt: match.paid_at,
+    attribution: {
+      fbc: row.fbc ?? null,
+      fbp: row.fbp ?? null,
+      client_ip: row.client_ip ?? null,
+      client_user_agent: row.client_user_agent ?? null,
+      event_source_url: row.event_source_url ?? null,
+      utm_source: row.utm_source ?? null,
+      utm_medium: row.utm_medium ?? null,
+      utm_campaign: row.utm_campaign ?? null,
+      utm_content: row.utm_content ?? null,
+      utm_term: row.utm_term ?? null,
+    },
+  };
+}
+
+export type AttributedTestResult = {
+  ok: boolean;
+  message: string;
+  httpStatus: number | null;
+  eventId: string | null;
+  value: number | null;
+  currency: string | null;
+  order: AttributedPaidOrder | null;
+  sentAttribution: Record<string, string | null>;
+  metaResponse: string | null;
+};
+
+/**
+ * Envia um Purchase SOMENTE como Test Event (test_event_code da loja) usando
+ * exatamente os dados armazenados do pedido PAID mais recente com atribuição.
+ * Nada é criado ou alterado: sem PaymentIntent, cobrança, webhook, UTMify,
+ * mudança de status/paid_at nem gravação em meta_conversion_events.
+ */
+export async function sendTestPurchaseFromAttributedOrder(
+  storeId: string,
+): Promise<AttributedTestResult> {
+  const base: AttributedTestResult = {
+    ok: false,
+    message: "",
+    httpStatus: null,
+    eventId: null,
+    value: null,
+    currency: null,
+    order: null,
+    sentAttribution: {},
+    metaResponse: null,
+  };
+
+  const settings = await getMetaSettingsWithToken(storeId);
+  if (!settings) {
+    return { ...base, message: "Integração Meta desativada ou incompleta para esta loja." };
+  }
+  const testEventCode = settings.testEventCode;
+  if (!testEventCode) {
+    return { ...base, message: "Defina um Test Event Code na loja antes de rodar o teste." };
+  }
+
+  const order = await findLatestPaidOrderWithAttribution(storeId);
+  if (!order.found || !order.orderId) {
+    return {
+      ...base,
+      message: "Nenhum pedido PAID com dados de atribuição disponível para teste.",
+    };
+  }
+
+  const context = await loadOrderContext(order.orderId);
+  if (!context) {
+    return {
+      ...base,
+      order,
+      message: "Nenhum pedido PAID com dados de atribuição disponível para teste.",
+    };
+  }
+
+  const eventId = `test_purchase_${context.orderId}_${Date.now()}`;
+  const payload = await buildPayload(context, { eventIdOverride: eventId, testEventCode });
+  const event = (payload["data"] as Array<Record<string, unknown>>)[0]!;
+  const userData = event["user_data"] as Record<string, unknown>;
+  const customData = event["custom_data"] as Record<string, unknown>;
+
+  const asText = (value: unknown) => (value == null ? null : String(value));
+  const sentAttribution: Record<string, string | null> = {
+    fbc: asText(userData["fbc"]),
+    fbp: asText(userData["fbp"]),
+    client_ip_address: asText(userData["client_ip_address"]),
+    client_user_agent: asText(userData["client_user_agent"]),
+    event_source_url: asText(event["event_source_url"]),
+    utm_source: asText(customData["utm_source"]),
+    utm_medium: asText(customData["utm_medium"]),
+    utm_campaign: asText(customData["utm_campaign"]),
+    utm_content: asText(customData["utm_content"]),
+    utm_term: asText(customData["utm_term"]),
+  };
+
+  let httpStatus: number | null = null;
+  let metaResponse: string | null = null;
+  let ok = false;
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${settings.pixelId}/events`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${settings.accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    httpStatus = response.status;
+    metaResponse = sanitizeError(await response.text());
+    ok = response.ok;
+  } catch (error) {
+    metaResponse = sanitizeError((error as Error).message);
+  }
+
+  console.log(
+    `[meta-capi-test-attributed] store=${storeId} order=${context.orderId} event_id=${eventId} http=${httpStatus ?? "n/a"} ok=${ok}`,
+  );
+
+  return {
+    ok,
+    message: ok
+      ? `Test Event aceito pela Meta (HTTP ${httpStatus}).`
+      : `Falha ao enviar o Test Event${httpStatus ? ` (HTTP ${httpStatus})` : ""}.`,
+    httpStatus,
+    eventId,
+    value: Number(customData["value"] ?? 0),
+    currency: String(customData["currency"] ?? context.currency).toUpperCase(),
+    order,
+    sentAttribution,
+    metaResponse,
+  };
+}
