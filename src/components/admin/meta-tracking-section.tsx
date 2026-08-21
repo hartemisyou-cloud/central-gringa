@@ -6,6 +6,9 @@ import { Loader2, RefreshCw, Share2 } from "lucide-react";
 
 import {
   adminFindLatestPaidOrder,
+  adminInspectOrderForMetaDiagnostics,
+  adminListOrdersForMetaDiagnostics,
+  adminSendDiagnosticMetaTestPurchase,
   adminFindPaidOrderWithAttribution,
   adminSendTestMetaPurchaseAttributed,
   adminListMetaSettings,
@@ -541,6 +544,205 @@ function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
           <p>value: {result.value ?? "—"}</p>
           <p>currency: {show(result.currency)}</p>
           <p className="pt-1">Atribuição enviada:</p>
+          {Object.entries(result.sentAttribution).map(([key, value]) => (
+            <p key={key} className="break-all">
+              {key}: {show(value)}
+            </p>
+          ))}
+          <p className="break-all pt-1">Resposta da Meta: {show(result.metaResponse)}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type DiagOrders = Awaited<ReturnType<typeof adminListOrdersForMetaDiagnostics>>;
+type DiagDetail = Awaited<ReturnType<typeof adminInspectOrderForMetaDiagnostics>>;
+type DiagResult = Awaited<ReturnType<typeof adminSendDiagnosticMetaTestPurchase>>;
+
+/**
+ * Ferramenta ADMIN de diagnóstico (somente leitura no pedido).
+ * Permite escolher qualquer pedido da loja, inspecionar os dados armazenados e
+ * — após confirmação — enviar o Purchase SOMENTE como Test Event (TEST2904).
+ * Não altera status, não cria PaymentIntent/cobrança, não envia UTMify e não
+ * grava em meta_conversion_events.
+ */
+function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
+  const listOrders = useServerFn(adminListOrdersForMetaDiagnostics);
+  const inspect = useServerFn(adminInspectOrderForMetaDiagnostics);
+  const sendDiag = useServerFn(adminSendDiagnosticMetaTestPurchase);
+
+  const [orders, setOrders] = useState<DiagOrders | null>(null);
+  const [selected, setSelected] = useState("");
+  const [detail, setDetail] = useState<DiagDetail | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [result, setResult] = useState<DiagResult | null>(null);
+  const [phase, setPhase] = useState<"idle" | "orders" | "detail" | "sending">("idle");
+
+  async function loadOrders() {
+    setPhase("orders");
+    try {
+      setOrders(await listOrders({ data: { storeId } }));
+    } catch {
+      toast.error("Falha ao carregar pedidos da loja.");
+    } finally {
+      setPhase("idle");
+    }
+  }
+
+  async function loadDetail(orderId: string) {
+    setSelected(orderId);
+    setDetail(null);
+    setResult(null);
+    setConfirming(false);
+    if (!orderId) return;
+    setPhase("detail");
+    try {
+      setDetail(await inspect({ data: { storeId, orderId } }));
+    } catch {
+      toast.error("Falha ao carregar os dados do pedido.");
+    } finally {
+      setPhase("idle");
+    }
+  }
+
+  async function send() {
+    setPhase("sending");
+    setResult(null);
+    try {
+      const response = await sendDiag({ data: { storeId, orderId: selected } });
+      setResult(response);
+      setConfirming(false);
+      if (response.ok) toast.success("TEST EVENT enviado à Meta (não é venda real).");
+      else toast.error(response.message);
+    } catch {
+      toast.error("Falha ao enviar o TEST EVENT.");
+    } finally {
+      setPhase("idle");
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-dashed p-3">
+      <Label>Diagnóstico de pedido (TEST EVENT — não é venda real)</Label>
+      <p className="text-xs text-muted-foreground">
+        Selecione qualquer pedido desta loja para inspecionar os dados armazenados (valor, moeda,
+        fbc, fbp, IP, User-Agent, event_source_url e UTMs). O envio à Meta acontece apenas como
+        Test Event com o código <span className="font-mono">TEST2904</span> e event_id exclusivo de
+        teste. Nada é alterado: sem mudança de status, sem PaymentIntent, sem cobrança, sem UTMify e
+        sem gravar em meta_conversion_events.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" disabled={phase !== "idle"} onClick={loadOrders}>
+          {phase === "orders" ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            "Carregar pedidos recentes"
+          )}
+        </Button>
+        {orders ? (
+          <select
+            className="h-9 min-w-[18rem] rounded-md border bg-background px-2 text-sm"
+            value={selected}
+            onChange={(event) => void loadDetail(event.target.value)}
+          >
+            <option value="">Selecione um pedido…</option>
+            {orders.map((order) => (
+              <option key={order.orderId} value={order.orderId}>
+                #{order.orderNumber} · {order.status} ·{" "}
+                {(order.totalCents / 100).toFixed(2)} {order.currency}
+                {order.hasAttribution ? " · com atribuição" : " · sem atribuição"}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </div>
+
+      {orders && orders.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhum pedido encontrado para esta loja.</p>
+      ) : null}
+
+      {phase === "detail" ? (
+        <p className="text-xs text-muted-foreground">Carregando dados do pedido…</p>
+      ) : null}
+
+      {detail?.found ? (
+        <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
+          <p>order_number: #{show(detail.orderNumber)}</p>
+          <p>status: {show(detail.status)}</p>
+          <p>
+            value: {detail.value ?? "—"} · currency: {show(detail.currency)}
+          </p>
+          <p className="break-all">fbc: {show(detail.attribution.fbc)}</p>
+          <p className="break-all">fbp: {show(detail.attribution.fbp)}</p>
+          <p>client_ip: {show(detail.attribution.client_ip)}</p>
+          <p className="break-all">
+            client_user_agent: {show(detail.attribution.client_user_agent)}
+          </p>
+          <p className="break-all">
+            event_source_url: {show(detail.attribution.event_source_url)}
+          </p>
+          <p>utm_source: {show(detail.attribution.utm_source)}</p>
+          <p>utm_medium: {show(detail.attribution.utm_medium)}</p>
+          <p>utm_campaign: {show(detail.attribution.utm_campaign)}</p>
+          <p>utm_content: {show(detail.attribution.utm_content)}</p>
+          <p>utm_term: {show(detail.attribution.utm_term)}</p>
+          {!detail.hasAttribution ? (
+            <p className="text-amber-600">
+              Este pedido não possui registro em order_attribution — os campos acima vão vazios.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {detail?.found ? (
+        confirming ? (
+          <div className="space-y-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
+            <p className="text-xs">
+              Confirmar envio do Purchase do pedido #{show(detail.orderNumber)} à Meta como{" "}
+              <strong>TEST EVENT (TEST2904)</strong>? Isto NÃO registra venda, não altera o pedido e
+              usa exatamente os dados exibidos acima.
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={phase !== "idle"} onClick={send}>
+                {phase === "sending" ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  "Confirmar envio de TESTE"
+                )}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={phase !== "idle"}
+            onClick={() => setConfirming(true)}
+          >
+            Enviar Purchase como TEST EVENT (TEST2904)
+          </Button>
+        )
+      ) : null}
+
+      {result ? (
+        <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
+          <p className={result.ok ? "text-emerald-600" : "text-destructive"}>
+            {result.ok ? "✓ TEST EVENT enviado (não é venda real)" : `✗ ${result.message}`}
+          </p>
+          <p>HTTP: {result.httpStatus ?? "—"}</p>
+          <p className="break-all">event_id: {show(result.eventId)}</p>
+          <p>test_event_code: {result.testEventCode}</p>
+          <p>
+            pedido: #{show(result.orderNumber)} ({show(result.orderStatus)})
+          </p>
+          <p>
+            value: {result.value ?? "—"} · currency: {show(result.currency)}
+          </p>
           {Object.entries(result.sentAttribution).map(([key, value]) => (
             <p key={key} className="break-all">
               {key}: {show(value)}
