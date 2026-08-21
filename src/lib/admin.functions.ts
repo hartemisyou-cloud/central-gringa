@@ -140,6 +140,16 @@ export const adminSendTestMetaPurchaseForOrder = createServerFn({ method: "POST"
     return sendTestPurchaseFromOrder({ storeId: data.storeId, orderRef: data.orderRef });
   });
 
+/** Localiza o pedido PAID mais recente da loja (somente leitura, token mascarado). */
+export const adminFindLatestPaidOrder = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { findLatestPaidOrder } = await import("./meta/capi.server");
+    return findLatestPaidOrder(data.storeId);
+  });
+
 export const adminRetryMetaEvents = createServerFn({ method: "POST" })
   .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
