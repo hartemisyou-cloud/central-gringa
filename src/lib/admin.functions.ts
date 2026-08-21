@@ -170,6 +170,40 @@ export const adminSendTestMetaPurchaseAttributed = createServerFn({ method: "POS
     return sendTestPurchaseFromAttributedOrder(data.storeId);
   });
 
+/* Diagnóstico: inspeção de pedidos + Purchase somente como Test Event TEST2904 */
+
+export const adminListOrdersForMetaDiagnostics = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { listOrdersForDiagnostics } = await import("./meta/diagnostics.server");
+    return listOrdersForDiagnostics(data.storeId);
+  });
+
+export const adminInspectOrderForMetaDiagnostics = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string; orderId: string }) =>
+    z.object({ storeId: z.string().uuid(), orderId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { inspectOrderForDiagnostics } = await import("./meta/diagnostics.server");
+    return inspectOrderForDiagnostics(data);
+  });
+
+export const adminSendDiagnosticMetaTestPurchase = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string; orderId: string }) =>
+    z.object({ storeId: z.string().uuid(), orderId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { sendDiagnosticTestPurchase } = await import("./meta/diagnostics.server");
+    return sendDiagnosticTestPurchase(data);
+  });
+
+
 export const adminRetryMetaEvents = createServerFn({ method: "POST" })
   .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
