@@ -20,8 +20,8 @@ export async function saveOrderAttribution(
   if (!hasAttribution(attribution)) return attribution;
 
   try {
-    const row = { order_id: orderId, ...attribution } as Record<string, string>;
-    await supabaseAdmin.from("order_attribution").upsert(row, { onConflict: "order_id" });
+    const row = { order_id: orderId, ...attribution };
+    await supabaseAdmin.from("order_attribution").upsert(row as never, { onConflict: "order_id" });
 
 
     // Liga a sessão de analytics existente ao pedido (sem criar sessões novas).
