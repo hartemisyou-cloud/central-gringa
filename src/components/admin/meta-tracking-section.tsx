@@ -44,12 +44,9 @@ export function MetaTrackingSection() {
   const test = useServerFn(adminTestMetaConnection);
   const retry = useServerFn(adminRetryMetaEvents);
   const sendTest = useServerFn(adminSendTestMetaPurchase);
-  const sendOrderTest = useServerFn(adminSendTestMetaPurchaseForOrder);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [testResults, setTestResults] = useState<Record<string, string>>({});
   const [testingStore, setTestingStore] = useState<string | null>(null);
-  const [orderRefs, setOrderRefs] = useState<Record<string, string>>({});
-  const [orderTesting, setOrderTesting] = useState<string | null>(null);
 
   const settings = useQuery({
     queryKey: ["admin", "meta"],
