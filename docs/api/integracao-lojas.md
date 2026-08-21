@@ -62,11 +62,28 @@ Para doações (sem entrega física) a única opção é `no-shipping` com valor
   "items": [{ "productId": "uuid", "quantity": 1 }],
   "customer": { "firstName": "Maria", "lastName": "Silva", "email": "maria@ex.com", "phone": "11999998888" },
   "address": { "postalCode": "01310100", "street": "Av Paulista", "number": "1000", "district": "Bela Vista", "city": "Sao Paulo", "state": "SP" },
-  "shippingOptionId": "no-shipping"
+  "shippingOptionId": "no-shipping",
+  "attribution": {
+    "utm_source": "facebook",
+    "utm_medium": "paid",
+    "utm_campaign": "campanha-1",
+    "utm_content": "anuncio-a",
+    "utm_term": "termo",
+    "gclid": "...", "fbclid": "...", "ttclid": "...", "msclkid": "...",
+    "gbraid": "...", "wbraid": "...", "fbp": "...", "fbc": "...",
+    "referrer": "https://...", "landing_page": "https://...", "click_id": "...",
+    "checkout_session_id": "...", "anonymous_session_id": "..."
+  }
 }
 ```
 
-Resposta: `orderId`, `orderNumber`, `publicToken`, `totals`.
+`attribution` é **totalmente opcional** — todos os campos são individualmente opcionais e
+qualquer chave fora da lista acima é ignorada. Quando enviada, a atribuição é persistida no
+pedido e replicada no `metadata` do PaymentIntent (usado pela UTMify no evento
+`payment_intent.succeeded`), e as UTMs são preservadas na `paymentUrl` retornada.
+
+Resposta: `orderId`, `orderNumber`, `publicToken`, `paymentUrl`, `totals`.
+
 
 ## 4. Iniciar pagamento
 
