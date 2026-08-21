@@ -203,7 +203,7 @@ async function buildPayload(
   const event: Record<string, unknown> = {
     event_name: "Purchase",
     event_time: Math.floor(new Date(context.paidAt ?? Date.now()).getTime() / 1000),
-    event_id: purchaseEventId(context.orderId),
+    event_id: extra.eventIdOverride ?? purchaseEventId(context.orderId),
     action_source: "website",
     user_data: userData,
     custom_data: customData,
