@@ -16,6 +16,7 @@ import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
 import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
 import { createCheckoutTracker } from "@/lib/analytics/client";
+import { initPixel, trackInitiateCheckout, trackPageView } from "@/lib/meta/pixel";
 
 /** Normaliza o tipo do botão expresso da Stripe para o vocabulário de eventos. */
 function normalizeExpress(type: string): string {
@@ -34,6 +35,7 @@ interface Session {
   currency: string;
   label: string;
   subtitle: string | null;
+  metaPixelId: string | null;
 }
 
 export const Route = createFileRoute("/pay/$token")({
@@ -169,6 +171,19 @@ function PaymentForm({ session }: { session: Session }) {
     tracker.track("checkout_started");
     return () => tracker.dispose();
   }, [tracker]);
+
+  // Meta Pixel (navegador): apenas o pixel público da loja.
+  // PageView no carregamento e InitiateCheckout com valor/moeda REAIS do pedido.
+  useEffect(() => {
+    if (!session.metaPixelId) return;
+    initPixel(session.metaPixelId);
+    trackPageView();
+    trackInitiateCheckout({
+      value: Number((session.amountCents / 100).toFixed(2)),
+      currency: session.currency,
+    });
+    tracker.track("meta_initiate_checkout");
+  }, [session.metaPixelId, session.amountCents, session.currency, tracker]);
 
   const returnUrl =
     typeof window !== "undefined"
