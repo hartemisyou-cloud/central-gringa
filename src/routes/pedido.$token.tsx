@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
@@ -6,6 +7,8 @@ import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 import { getStorefrontOrderStatus } from "@/lib/storefront.functions";
 import { formatMoney, ORDER_STATUS_LABEL } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { loadOrderTracking } from "@/lib/meta.functions";
+import { initPixel, trackPurchase } from "@/lib/meta/pixel";
 
 export const Route = createFileRoute("/pedido/$token")({
   head: () => ({
@@ -39,6 +42,8 @@ function OrderStatusPage() {
         ? false
         : 4000,
   });
+
+  useMetaPurchase(token, data?.status ?? null);
 
   const status = data?.status ?? "PENDING_PAYMENT";
   const paid = status === "PAID";
@@ -104,4 +109,41 @@ function OrderStatusPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Purchase do navegador na página de obrigado.
+ * - só dispara com o pedido REALMENTE aprovado (status consultado no servidor);
+ * - valor e moeda vêm do pedido — nunca há valor fixo;
+ * - eventID = order_id, igual ao event_id da Conversions API (deduplicação);
+ * - guarda client-side evita reenvio no refresh; a dedupe definitiva é o event_id.
+ */
+function useMetaPurchase(token: string, status: string | null) {
+  const fired = useRef(false);
+  const fetchTracking = useServerFn(loadOrderTracking);
+
+  const { data: tracking } = useQuery({
+    queryKey: ["order-tracking", token, status],
+    queryFn: () => fetchTracking({ data: { token } }),
+    enabled: status === "PAID",
+  });
+
+  useEffect(() => {
+    if (!tracking?.paid || !tracking.pixelId || fired.current) return;
+    const key = `meta_purchase_${tracking.orderId}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      // storage indisponível: a dedupe pelo event_id continua valendo.
+    }
+    fired.current = true;
+    initPixel(tracking.pixelId);
+    trackPurchase({
+      orderId: tracking.orderId,
+      value: tracking.value,
+      currency: tracking.currency,
+      contents: tracking.contents,
+    });
+  }, [tracking]);
 }

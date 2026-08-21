@@ -40,6 +40,11 @@ export const EVENT_TYPES = [
   "payment_error",
   "checkout_abandoned",
   "webhook_received",
+  // Meta Pixel / Conversions API
+  "meta_initiate_checkout",
+  "meta_purchase_browser",
+  "meta_capi_succeeded",
+  "meta_capi_failed",
 ] as const;
 
 export type AnalyticsEventType = (typeof EVENT_TYPES)[number];
@@ -51,6 +56,8 @@ export const SERVER_ONLY_EVENTS: ReadonlySet<string> = new Set([
   "payment_canceled",
   "payment_intent_created",
   "webhook_received",
+  "meta_capi_succeeded",
+  "meta_capi_failed",
 ]);
 
 export const clientEventSchema = z.object({

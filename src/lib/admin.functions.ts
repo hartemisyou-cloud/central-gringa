@@ -61,3 +61,65 @@ export const adminRevokeApiKey = createServerFn({ method: "POST" })
     await revokeApiKey(data.keyId);
     return { ok: true as const };
   });
+
+/* ------------------------------------------------------------------ */
+/* Tracking → Meta (Pixel + Conversions API), por loja                  */
+/* ------------------------------------------------------------------ */
+
+export const adminListMetaSettings = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireAdmin } = await import("./admin/session.server");
+  await requireAdmin();
+  const { listMetaSettings } = await import("./meta/config.server");
+  return listMetaSettings();
+});
+
+export const adminSaveMetaSettings = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      storeId: string;
+      pixelId: string;
+      accessToken?: string;
+      testEventCode?: string;
+      enabled: boolean;
+    }) =>
+      z
+        .object({
+          storeId: z.string().uuid(),
+          pixelId: z.string().trim().max(40).default(""),
+          accessToken: z.string().trim().min(20).max(400).optional(),
+          testEventCode: z.string().trim().max(40).optional(),
+          enabled: z.boolean(),
+        })
+        .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { saveMetaSettings } = await import("./meta/config.server");
+    await saveMetaSettings({
+      storeId: data.storeId,
+      pixelId: data.pixelId || null,
+      ...(data.accessToken ? { accessToken: data.accessToken } : {}),
+      testEventCode: data.testEventCode || null,
+      enabled: data.enabled,
+    });
+    return { ok: true as const };
+  });
+
+export const adminTestMetaConnection = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { testMetaConnection } = await import("./meta/capi.server");
+    return testMetaConnection(data.storeId);
+  });
+
+export const adminRetryMetaEvents = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { retryFailedMetaEvents } = await import("./meta/capi.server");
+    return retryFailedMetaEvents(data.storeId);
+  });
