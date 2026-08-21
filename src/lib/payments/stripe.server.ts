@@ -184,6 +184,37 @@ export class StripeService {
   retrieveRefund(id: string): Promise<StripeRefund> {
     return this.request<StripeRefund>("GET", `/refunds/${encodeURIComponent(id)}`);
   }
+
+  /**
+   * Checkout Session em ui_mode "custom" (Payment Element controlado pela loja).
+   * Nunca envia `payment_method_types`: a Stripe decide os métodos elegíveis
+   * (cartão, Apple Pay, Google Pay, Link) via automatic_payment_methods.
+   */
+  createCheckoutSession(
+    params: StripeParams,
+    idempotencyKey: string,
+  ): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>(
+      "POST",
+      "/checkout/sessions",
+      params,
+      idempotencyKey,
+    );
+  }
+
+  retrieveCheckoutSession(id: string): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>(
+      "GET",
+      `/checkout/sessions/${encodeURIComponent(id)}`,
+    );
+  }
+
+  expireCheckoutSession(id: string): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>(
+      "POST",
+      `/checkout/sessions/${encodeURIComponent(id)}/expire`,
+    );
+  }
 }
 
 /** Extrai t= e v1= do header Stripe-Signature. */
