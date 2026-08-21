@@ -149,7 +149,7 @@ export class StripeService {
       automatic_payment_methods: { enabled: true },
     };
     if (params.paymentMethodConfiguration) {
-      body.payment_method_configuration = params.paymentMethodConfiguration;
+      body["payment_method_configuration"] = params.paymentMethodConfiguration;
     }
     return this.request<StripePaymentIntent>("POST", "/payment_intents", body, idempotencyKey);
   }
