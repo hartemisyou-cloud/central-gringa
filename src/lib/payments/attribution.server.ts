@@ -109,11 +109,12 @@ export async function enrichOrderAttribution(
     Object.assign(row, client);
 
     if (Object.keys(row).length <= 1) return;
-    await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from("order_attribution")
       .upsert(row as never, { onConflict: "order_id" });
-  } catch {
-    // silencioso por design
+    if (error) console.error("[attribution] enrich failed", error.message);
+  } catch (error) {
+    console.error("[attribution] enrich threw", (error as Error).message);
   }
 }
 
