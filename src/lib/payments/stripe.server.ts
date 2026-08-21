@@ -12,6 +12,9 @@ import { PaymentError } from "./errors";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_VERSION = "2024-06-20";
+// `ui_mode: custom` + Adaptive Pricing exigem uma versão mais nova da API.
+// Usada SOMENTE nas Checkout Sessions; PaymentIntents seguem em 2024-06-20.
+const CHECKOUT_SESSION_API_VERSION = "2025-03-31.basil";
 
 export type StripeParams = Record<string, unknown>;
 
@@ -111,10 +114,11 @@ export class StripeService {
     path: string,
     params?: StripeParams,
     idempotencyKey?: string,
+    apiVersion: string = STRIPE_VERSION,
   ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
-      "Stripe-Version": STRIPE_VERSION,
+      "Stripe-Version": apiVersion,
     };
     let url = `${STRIPE_API}${path}`;
     let body: string | undefined;
@@ -223,6 +227,7 @@ export class StripeService {
       "/checkout/sessions",
       params,
       idempotencyKey,
+      CHECKOUT_SESSION_API_VERSION,
     );
   }
 
@@ -230,6 +235,9 @@ export class StripeService {
     return this.request<StripeCheckoutSession>(
       "GET",
       `/checkout/sessions/${encodeURIComponent(id)}`,
+      undefined,
+      undefined,
+      CHECKOUT_SESSION_API_VERSION,
     );
   }
 
@@ -237,6 +245,9 @@ export class StripeService {
     return this.request<StripeCheckoutSession>(
       "POST",
       `/checkout/sessions/${encodeURIComponent(id)}/expire`,
+      undefined,
+      undefined,
+      CHECKOUT_SESSION_API_VERSION,
     );
   }
 }
