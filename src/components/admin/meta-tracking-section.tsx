@@ -368,7 +368,10 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
       ) : null}
 
       {notFound ? (
-        <p className="text-sm text-muted-foreground">Nenhum pedido PAID disponível para teste.</p>
+        <p className="text-sm text-muted-foreground">
+          Nenhum pedido desta loja disponível para teste.
+        </p>
+
       ) : null}
 
       {order?.found ? (
