@@ -30,6 +30,7 @@ export const storefrontCheckoutSchema = z.object({
     state: z.string().trim().length(2),
   }),
   shippingOptionId: z.string().trim().min(1).max(40),
+  attribution: attributionSchema,
 });
 
 export const storefrontTokenSchema = z.object({
