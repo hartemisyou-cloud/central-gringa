@@ -8,6 +8,7 @@ import {
   adminListMetaSettings,
   adminRetryMetaEvents,
   adminSaveMetaSettings,
+  adminSendTestMetaPurchase,
   adminTestMetaConnection,
 } from "@/lib/admin.functions";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,10 @@ export function MetaTrackingSection() {
   const save = useServerFn(adminSaveMetaSettings);
   const test = useServerFn(adminTestMetaConnection);
   const retry = useServerFn(adminRetryMetaEvents);
+  const sendTest = useServerFn(adminSendTestMetaPurchase);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [testResults, setTestResults] = useState<Record<string, string>>({});
+  const [testingStore, setTestingStore] = useState<string | null>(null);
 
   const settings = useQuery({
     queryKey: ["admin", "meta"],
@@ -191,7 +195,48 @@ export function MetaTrackingSection() {
                 >
                   <RefreshCw className="size-4" /> Reprocessar pendentes
                 </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={testingStore === store.storeId}
+                  onClick={async () => {
+                    setTestingStore(store.storeId);
+                    try {
+                      const result = await sendTest({ data: { storeId: store.storeId } });
+                      const line = `HTTP ${result.httpStatus ?? "—"} · event_id ${result.eventId}${
+                        result.testEventCode ? ` · test_event_code ${result.testEventCode}` : ""
+                      } · ${result.message}`;
+                      setTestResults((current) => ({ ...current, [store.storeId]: line }));
+                      if (result.ok) toast.success("Purchase de teste enviado à Meta.");
+                      else toast.error(result.message);
+                    } catch {
+                      setTestResults((current) => ({
+                        ...current,
+                        [store.storeId]: "Falha ao contatar a Meta.",
+                      }));
+                      toast.error("Falha ao enviar o evento de teste.");
+                    } finally {
+                      setTestingStore(null);
+                    }
+                  }}
+                >
+                  {testingStore === store.storeId ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    "Enviar Purchase de teste para Meta"
+                  )}
+                </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Evento de teste: USD 20,00, enviado apenas server-side com o Test Event Code da
+                loja. Não cria pedido, cobrança, PaymentIntent nem envio à UTMify — sem impacto
+                financeiro.
+              </p>
+              {testResults[store.storeId] ? (
+                <p className="break-all rounded-md bg-muted p-2 font-mono text-xs">
+                  {testResults[store.storeId]}
+                </p>
+              ) : null}
               {draft.testEventCode ? (
                 <p className="text-xs text-amber-600">
                   Test Event Code ativo — remova antes de operar em produção.
