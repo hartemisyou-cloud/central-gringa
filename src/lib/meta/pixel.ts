@@ -79,6 +79,11 @@ export function trackViewContent(input: CommerceEventInput): void {
   window.fbq?.("track", "ViewContent", commercePayload(input));
 }
 
+/** Item adicionado ao carrinho na vitrine. */
+export function trackAddToCart(input: CommerceEventInput): void {
+  window.fbq?.("track", "AddToCart", commercePayload(input));
+}
+
 /** Intenção real de pagamento (clique em pagar / carteira expressa). */
 export function trackInitiateCheckout(input: CommerceEventInput): void {
   window.fbq?.("track", "InitiateCheckout", commercePayload(input));
