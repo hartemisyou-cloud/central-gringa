@@ -1,5 +1,8 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getOrderAttribution } from "@/lib/payments/attribution.server";
+import {
+  getOrderAttributionRecord,
+  type OrderAttributionRecord,
+} from "@/lib/payments/attribution.server";
 import type { Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
 import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
@@ -296,7 +299,7 @@ export async function sendPurchaseForOrder(input: {
     }
 
 
-    const payload = await buildPayload(context, settings, {
+    const payload = await buildPayload(context, {
       clientIp: input.clientIp ?? null,
       userAgent: input.userAgent ?? null,
     });
