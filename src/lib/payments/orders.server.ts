@@ -214,7 +214,8 @@ export async function createOrder(input: {
   });
 
   const { saveOrderAttribution } = await import("./attribution.server");
-  const attribution = await saveOrderAttribution(order.id, input.attribution);
+  const attribution = await saveOrderAttribution(order.id, input.attribution, input.clientContext);
+
 
   return { order, totals, publicToken: order.public_token, attribution };
 
