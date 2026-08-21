@@ -351,6 +351,23 @@ export async function sendTestPurchase(storeId: string): Promise<{
     };
   }
 
+  // Dados 100% sintéticos — nenhum cliente real é usado neste evento de teste.
+  const userData: Record<string, unknown> = {
+    em: [await hashEmail("teste.capi@example.com")],
+    ph: [await hashPhone("+5511999999999")],
+    fn: [await hashName("teste")],
+    ln: [await hashName("central")],
+    ct: [await hashName("saopaulo")],
+    st: [await hashName("sp")],
+    country: [await hashCountry("br")],
+    zp: [await hashZip("01001-000")],
+    client_ip_address: "203.0.113.10",
+    client_user_agent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    fbp: `fb.1.${Date.now()}.1234567890`,
+    fbc: `fb.1.${Date.now()}.TESTCLICKID${Math.floor(Math.random() * 1e6)}`,
+  };
+
   const body: Record<string, unknown> = {
     data: [
       {
@@ -358,12 +375,20 @@ export async function sendTestPurchase(storeId: string): Promise<{
         event_time: Math.floor(Date.now() / 1000),
         event_id: eventId,
         action_source: "website",
-        user_data: {},
-        custom_data: { currency: "USD", value: 20.0 },
+        event_source_url: "https://central-spark-pay.lovable.app/checkout",
+        user_data: userData,
+        custom_data: {
+          currency: "USD",
+          value: 20.0,
+          content_type: "product",
+          content_ids: ["test-sku-001"],
+          num_items: 1,
+        },
       },
     ],
   };
-  if (settings.testEventCode) body["test_event_code"] = settings.testEventCode;
+  const testEventCode = settings.testEventCode ?? "TEST2904";
+  body["test_event_code"] = testEventCode;
 
   const result = await postToMeta(settings.pixelId!, settings.accessToken, body);
   console.log(
@@ -373,12 +398,13 @@ export async function sendTestPurchase(storeId: string): Promise<{
     ok: result.ok,
     httpStatus: result.httpStatus ?? null,
     eventId,
-    testEventCode: settings.testEventCode,
+    testEventCode,
     message: result.ok
       ? `Evento de teste aceito pela Meta (HTTP ${result.httpStatus}).`
       : sanitizeError(result.error),
   };
 }
+
 
 /** Reenvio manual dos eventos pendentes/falhos de uma loja (backoff administrativo). */
 export async function retryFailedMetaEvents(storeId: string): Promise<{ retried: number }> {
