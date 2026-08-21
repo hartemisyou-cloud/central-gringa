@@ -150,6 +150,26 @@ export const adminFindLatestPaidOrder = createServerFn({ method: "POST" })
     return findLatestPaidOrder(data.storeId);
   });
 
+/** Pedido PAID mais recente da loja COM registro em order_attribution (leitura). */
+export const adminFindPaidOrderWithAttribution = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { findLatestPaidOrderWithAttribution } = await import("./meta/capi.server");
+    return findLatestPaidOrderWithAttribution(data.storeId);
+  });
+
+/** Purchase somente como Test Event, usando os dados reais desse pedido PAID. */
+export const adminSendTestMetaPurchaseAttributed = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { sendTestPurchaseFromAttributedOrder } = await import("./meta/capi.server");
+    return sendTestPurchaseFromAttributedOrder(data.storeId);
+  });
+
 export const adminRetryMetaEvents = createServerFn({ method: "POST" })
   .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
