@@ -241,6 +241,77 @@ export function MetaTrackingSection() {
                   {testResults[store.storeId]}
                 </p>
               ) : null}
+
+              <div className="space-y-2 rounded-md border border-dashed p-3">
+                <Label>Testar fluxo completo com um pedido real</Label>
+                <p className="text-xs text-muted-foreground">
+                  Informe o número do pedido (ou o token público) já existente. Enviamos à Meta o
+                  MESMO payload que a produção enviaria — fbp, fbc, IP, User-Agent, UTMs, e-mail e
+                  telefone hashados, event_source_url e order_id — apenas acrescentando o Test Event
+                  Code. Não cria pedido nem cobrança na Stripe, não altera o pedido, não dispara
+                  UTMify e não consome a deduplicação do Purchase real.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    className="max-w-xs"
+                    value={orderRefs[store.storeId] ?? ""}
+                    onChange={(event) =>
+                      setOrderRefs((current) => ({
+                        ...current,
+                        [store.storeId]: event.target.value,
+                      }))
+                    }
+                    placeholder="ORD-000123 ou token público"
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={orderTesting === store.storeId || !(orderRefs[store.storeId] ?? "").trim()}
+                    onClick={async () => {
+                      setOrderTesting(store.storeId);
+                      try {
+                        const result = await sendOrderTest({
+                          data: {
+                            storeId: store.storeId,
+                            orderRef: (orderRefs[store.storeId] ?? "").trim(),
+                          },
+                        });
+                        const line = [
+                          `HTTP ${result.httpStatus ?? "—"}`,
+                          `pedido ${result.orderNumber ?? "—"} (${result.orderStatus ?? "—"})`,
+                          `event_id ${result.eventId || "—"}`,
+                          `test_event_code ${result.testEventCode ?? "—"}`,
+                          `value ${result.fields["value"] ?? "—"} ${result.fields["currency"] ?? ""}`,
+                          `fbp ${result.fields["fbp"] ? "sim" : "não"}`,
+                          `fbc ${result.fields["fbc"] ? "sim" : "não"}`,
+                          `ip ${result.fields["client_ip_address"] ? "sim" : "não"}`,
+                          `ua ${result.fields["client_user_agent"] ? "sim" : "não"}`,
+                          `em ${result.fields["em"] ? "sim" : "não"}`,
+                          `ph ${result.fields["ph"] ? "sim" : "não"}`,
+                          `url ${result.fields["event_source_url"] ?? "—"}`,
+                          `utm_source ${result.fields["utm_source"] ?? "—"}`,
+                          `utm_campaign ${result.fields["utm_campaign"] ?? "—"}`,
+                          result.message,
+                        ].join(" · ");
+                        setTestResults((current) => ({ ...current, [store.storeId]: line }));
+                        if (result.ok) toast.success("Purchase de teste enviado à Meta.");
+                        else toast.error(result.message);
+                      } catch {
+                        toast.error("Falha ao executar o teste de fluxo.");
+                      } finally {
+                        setOrderTesting(null);
+                      }
+                    }}
+                  >
+                    {orderTesting === store.storeId ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      "Enviar Purchase de teste deste pedido"
+                    )}
+                  </Button>
+                </div>
+              </div>
+
               {draft.testEventCode ? (
                 <p className="text-xs text-amber-600">
                   Test Event Code ativo — remova antes de operar em produção.
