@@ -88,7 +88,9 @@ export async function createOrder(input: {
   customer: CustomerInput;
   address: AddressInput;
   shippingOptionId: string;
+  attribution?: Attribution | undefined;
 }) {
+
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
