@@ -23,6 +23,27 @@ async function logEvent(payment: PaymentRow, type: string, message: string) {
   });
 }
 
+/** Espelha o estado financeiro definitivo no analytics (fonte: servidor). */
+async function trackPayment(
+  payment: PaymentRow,
+  type: "payment_succeeded" | "payment_failed" | "payment_canceled",
+  extra: { paymentMethod?: string | null; declineCode?: string | null } = {},
+) {
+  const { recordServerEvent } = await import("@/lib/analytics/ingest.server");
+  await recordServerEvent({
+    eventId: `${type}:${payment.id}`,
+    type,
+    storeId: payment.store_id,
+    integrationId: payment.integration_id,
+    orderId: payment.order_id,
+    paymentIntentId: payment.provider_payment_id,
+    paymentMethod: extra.paymentMethod ?? payment.payment_method,
+    currency: payment.currency,
+    amountCents: payment.amount_cents,
+    declineCode: extra.declineCode ?? null,
+  });
+}
+
 async function findPayment(providerPaymentId: string): Promise<PaymentRow | null> {
   const { data } = await supabaseAdmin
     .from("payments")
@@ -52,6 +73,7 @@ async function applyEvent(event: StripeEvent): Promise<string> {
       await markOrder(payment.order_id, "PAID");
       await supabaseAdmin.rpc("commit_order_stock", { _order_id: payment.order_id });
       await logEvent(payment, "PAYMENT_SUCCEEDED", "Pagamento confirmado pela Stripe");
+      await trackPayment(payment, "payment_succeeded", { paymentMethod: method?.type ?? null });
       return "Pagamento confirmado.";
     }
     case "payment_intent.payment_failed": {
@@ -65,6 +87,11 @@ async function applyEvent(event: StripeEvent): Promise<string> {
       await markOrder(payment.order_id, "PAYMENT_FAILED");
       await supabaseAdmin.rpc("release_order_stock", { _order_id: payment.order_id });
       await logEvent(payment, "PAYMENT_FAILED", "Pagamento recusado");
+      await trackPayment(payment, "payment_failed", {
+        declineCode: (object["last_payment_error"] as { decline_code?: string; code?: string } | null)?.decline_code ??
+          (object["last_payment_error"] as { code?: string } | null)?.code ??
+          null,
+      });
       return "Pagamento recusado.";
     }
     case "payment_intent.canceled": {
@@ -74,6 +101,7 @@ async function applyEvent(event: StripeEvent): Promise<string> {
       await markOrder(payment.order_id, "CANCELLED");
       await supabaseAdmin.rpc("release_order_stock", { _order_id: payment.order_id });
       await logEvent(payment, "PAYMENT_CANCELLED", "Pagamento cancelado");
+      await trackPayment(payment, "payment_canceled");
       return "Pagamento cancelado.";
     }
     case "charge.refunded": {
