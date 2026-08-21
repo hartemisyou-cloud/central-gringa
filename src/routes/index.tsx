@@ -5,6 +5,7 @@ import { ShoppingBag, ShieldCheck, Truck, Minus, Plus } from "lucide-react";
 import { getStorefrontProducts, type StorefrontProduct } from "@/lib/storefront.functions";
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
+import { useStorefrontTracking } from "@/hooks/useStorefrontTracking";
 import { Button } from "@/components/ui/button";
 
 const productsQuery = queryOptions({
