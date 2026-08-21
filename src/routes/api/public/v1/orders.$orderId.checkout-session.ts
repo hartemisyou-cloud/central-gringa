@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 
 /**
  * Cria (ou reaproveita) uma Stripe Checkout Session em ui_mode "custom"
@@ -18,7 +19,6 @@ export const Route = createFileRoute("/api/public/v1/orders/$orderId/checkout-se
           request,
           { bucket: "checkout-session-create", limit: 20, windowSeconds: 60 },
           async (store) => {
-            const { z } = await import("zod");
             const schema = z
               .object({
                 returnUrl: z.string().trim().max(1000).optional(),
