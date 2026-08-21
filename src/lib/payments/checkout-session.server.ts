@@ -284,6 +284,7 @@ export async function createOrderCheckoutSession(input: {
   const idempotencyKey =
     previousSessions && previousSessions > 0 ? `cs_${order.id}:${previousSessions}` : `cs_${order.id}`;
 
+  console.log("[qa-debug] cs params", JSON.stringify(params));
   const session = await stripe.createCheckoutSession(params, idempotencyKey);
   if (!session.client_secret) {
     throw new PaymentError("PROVIDER_ERROR", "Checkout Session criada sem client_secret.");
