@@ -12,9 +12,9 @@ type QueuedEvent = {
   eventId: string;
   type: string;
   occurredAt: string;
-  paymentMethod?: string;
-  errorCode?: string;
-  metadata?: Record<string, string | number | boolean>;
+  paymentMethod?: string | undefined;
+  errorCode?: string | undefined;
+  metadata?: Record<string, string | number | boolean> | undefined;
 };
 
 function uid(): string {

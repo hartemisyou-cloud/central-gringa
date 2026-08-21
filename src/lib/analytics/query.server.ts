@@ -9,13 +9,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 export interface AnalyticsFilters {
   from: string;
   to: string;
-  storeId?: string | null;
-  integrationId?: string | null;
-  currency?: string | null;
-  country?: string | null;
-  deviceType?: string | null;
-  paymentMethod?: string | null;
-  amountCents?: number | null;
+  storeId?: string | null | undefined;
+  integrationId?: string | null | undefined;
+  currency?: string | null | undefined;
+  country?: string | null | undefined;
+  deviceType?: string | null | undefined;
+  paymentMethod?: string | null | undefined;
+  amountCents?: number | null | undefined;
 }
 
 type EventRow = {
