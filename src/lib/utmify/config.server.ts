@@ -26,14 +26,22 @@ export interface UtmifySettingsSummary {
   enabled: boolean;
   isTest: boolean;
   hasApiToken: boolean;
+  /** Estado das VENDAS — derivado exclusivamente de utmify_events. */
   status: "DISABLED" | "NOT_CONFIGURED" | "CONFIGURED" | "CONNECTED" | "ERROR";
   lastSuccessAt: string | null;
   lastOrderNumber: string | null;
+  /** Último erro de VENDA (utmify_events), nunca o teste de conexão. */
   lastError: string | null;
   lastErrorAt: string | null;
   sentCount: number;
   lastSentAt: string | null;
+  /** Estado isolado do botão "Testar conexão" (utmify_settings). */
+  connectionStatus: "UNKNOWN" | "OK" | "ERROR";
+  connectionError: string | null;
+  connectionErrorAt: string | null;
+  connectionSuccessAt: string | null;
 }
+
 
 /** Config completa (token decifrado) — uso exclusivo do servidor. */
 export async function getUtmifySettingsWithToken(
