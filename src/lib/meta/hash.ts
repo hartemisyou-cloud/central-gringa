@@ -38,3 +38,17 @@ export async function hashName(value: string | null | undefined): Promise<string
   if (!normalized) return undefined;
   return sha256(normalized);
 }
+
+/** CEP/ZIP: somente dígitos (ou minúsculo alfanumérico), sem espaços. */
+export async function hashZip(value: string | null | undefined): Promise<string | undefined> {
+  const normalized = (value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!normalized) return undefined;
+  return sha256(normalized);
+}
+
+/** País: código ISO-2 minúsculo. */
+export async function hashCountry(value: string | null | undefined): Promise<string | undefined> {
+  const normalized = (value ?? "").trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (!normalized) return undefined;
+  return sha256(normalized);
+}
