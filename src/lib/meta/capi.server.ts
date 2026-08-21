@@ -566,20 +566,8 @@ export async function findLatestPaidOrder(storeId: string): Promise<{
     .limit(1)
     .maybeSingle();
 
-  let data = paid;
-  if (!data) {
-    // Fallback somente-leitura: pedido real mais recente com pagamento em curso
-    // ou concluído. Serve apenas de referência para montar o Purchase de teste.
-    const { data: fallback } = await supabaseAdmin
-      .from("orders")
-      .select(select)
-      .eq("store_id", storeId)
-      .in("status", ["PARTIALLY_REFUNDED", "REFUNDED", "PAYMENT_PROCESSING", "PENDING_PAYMENT"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    data = fallback;
-  }
+  const data = paid;
+
 
   if (!data) {
     return { found: false, orderId: null, orderNumber: null, status: null, maskedToken: null, paidAt: null };
