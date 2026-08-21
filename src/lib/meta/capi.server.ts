@@ -17,7 +17,7 @@ import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
  * - falha da Meta NUNCA altera o status do pagamento nem lança para o webhook.
  */
 
-const GRAPH_VERSION = "v21.0";
+export const GRAPH_VERSION = "v21.0";
 const MAX_ATTEMPTS = 4;
 
 /**
@@ -33,14 +33,14 @@ export type MetaSendResult =
   | { ok: true; skipped?: string; httpStatus?: number; metaEventId?: string | null }
   | { ok: false; error: string; httpStatus?: number; permanent?: boolean };
 
-function sanitizeError(message: string): string {
+export function sanitizeError(message: string): string {
   return message
     .replace(/EAA[A-Za-z0-9_-]{10,}/g, "[token]")
     .replace(/access_token=[^&\s"]+/gi, "access_token=[redacted]")
     .slice(0, 500);
 }
 
-interface OrderContext {
+export interface OrderContext {
   orderId: string;
   storeId: string;
   orderNumber: string;
@@ -61,7 +61,7 @@ interface OrderContext {
   storeDomain: string | null;
 }
 
-async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
+export async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
@@ -133,7 +133,7 @@ function eventSourceUrl(
   return undefined;
 }
 
-async function buildPayload(
+export async function buildPayload(
   context: OrderContext,
   extra: {
     clientIp?: string | null;
