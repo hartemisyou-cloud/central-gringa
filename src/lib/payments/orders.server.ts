@@ -91,7 +91,12 @@ export async function createOrder(input: {
   address: AddressInput;
   shippingOptionId: string;
   attribution?: Attribution | undefined;
+  /** IP/User-Agent/URL reais do comprador (opcional, telemetria). */
+  clientContext?:
+    | { clientIp?: string | null; clientUserAgent?: string | null; eventSourceUrl?: string | null }
+    | undefined;
 }) {
+
 
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
