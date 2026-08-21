@@ -15,6 +15,15 @@ import { toast } from "sonner";
 import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
 import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
+import { createCheckoutTracker } from "@/lib/analytics/client";
+
+/** Normaliza o tipo do botão expresso da Stripe para o vocabulário de eventos. */
+function normalizeExpress(type: string): string {
+  if (type === "apple_pay") return "apple_pay";
+  if (type === "google_pay") return "google_pay";
+  if (type === "link") return "link";
+  return "card";
+}
 
 interface Session {
   orderNumber: string;
@@ -246,7 +255,15 @@ function PaymentForm({ session }: { session: Session }) {
 
       <div className="space-y-3">
         <h2 className="text-base font-medium">Forma de pagamento</h2>
-        <PaymentElement options={{ layout: "tabs" }} />
+        <PaymentElement
+          options={{ layout: "tabs" }}
+          onChange={(event) => {
+            const method = event.value.type === "card" ? "card" : event.value.type;
+            tracker.track("payment_method_selected", { paymentMethod: method });
+            if (method === "card") tracker.track("card_selected");
+            if (method === "link") tracker.track("link_selected");
+          }}
+        />
       </div>
 
       <button
