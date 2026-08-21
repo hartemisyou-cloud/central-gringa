@@ -540,9 +540,11 @@ export async function sendTestPurchaseFromOrder(input: {
 }
 
 /**
- * Busca (somente leitura) o pedido PAID mais recente da loja para servir de
- * referência ao teste CAPI. Não altera nada e devolve o token mascarado —
- * o token completo nunca é enviado ao navegador.
+ * Busca (somente leitura) um pedido da loja para servir de referência ao teste
+ * CAPI: prioriza o PAID mais recente e, quando a loja ainda não tem nenhum
+ * pedido PAID, cai para o pedido mais recente utilizável (ex.:
+ * PAYMENT_PROCESSING), devolvendo o status real. Não altera nada e o token
+ * completo nunca é enviado ao navegador (apenas mascarado).
  */
 export async function findLatestPaidOrder(storeId: string): Promise<{
   found: boolean;
@@ -552,9 +554,11 @@ export async function findLatestPaidOrder(storeId: string): Promise<{
   maskedToken: string | null;
   paidAt: string | null;
 }> {
-  const { data } = await supabaseAdmin
+  const select = "id, order_number, status, public_token, paid_at, created_at";
+
+  const { data: paid } = await supabaseAdmin
     .from("orders")
-    .select("id, order_number, status, public_token, paid_at, created_at")
+    .select(select)
     .eq("store_id", storeId)
     .eq("status", "PAID")
     .order("paid_at", { ascending: false, nullsFirst: false })
@@ -562,9 +566,25 @@ export async function findLatestPaidOrder(storeId: string): Promise<{
     .limit(1)
     .maybeSingle();
 
+  let data = paid;
+  if (!data) {
+    // Fallback somente-leitura: pedido real mais recente com pagamento em curso
+    // ou concluído. Serve apenas de referência para montar o Purchase de teste.
+    const { data: fallback } = await supabaseAdmin
+      .from("orders")
+      .select(select)
+      .eq("store_id", storeId)
+      .in("status", ["PARTIALLY_REFUNDED", "REFUNDED", "PAYMENT_PROCESSING", "PENDING_PAYMENT"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    data = fallback;
+  }
+
   if (!data) {
     return { found: false, orderId: null, orderNumber: null, status: null, maskedToken: null, paidAt: null };
   }
+
   const token = data.public_token ?? "";
   const masked = token ? `${token.slice(0, 4)}••••${token.slice(-4)}` : null;
   return {
