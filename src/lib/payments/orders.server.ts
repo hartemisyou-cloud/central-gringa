@@ -6,6 +6,8 @@ import { mapProviderStatus, providerFromIntegration } from "./provider.server";
 import { randomToken } from "./crypto.server";
 import type { StoreRow } from "./store-auth.server";
 import type { Database } from "@/integrations/supabase/types";
+import { mergeAttributionIntoMetadata, type Attribution } from "./attribution";
+
 
 type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"];
 
