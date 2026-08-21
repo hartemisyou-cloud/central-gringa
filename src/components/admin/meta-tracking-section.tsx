@@ -8,6 +8,7 @@ import {
   adminListMetaSettings,
   adminRetryMetaEvents,
   adminSaveMetaSettings,
+  adminSendTestMetaPurchase,
   adminTestMetaConnection,
 } from "@/lib/admin.functions";
 import { Badge } from "@/components/ui/badge";
