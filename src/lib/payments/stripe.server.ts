@@ -134,23 +134,24 @@ export class StripeService {
       metadata: Record<string, string>;
       description?: string;
       receipt_email?: string;
+      paymentMethodConfiguration?: string;
     },
     idempotencyKey: string,
   ): Promise<StripePaymentIntent> {
-    return this.request<StripePaymentIntent>(
-      "POST",
-      "/payment_intents",
-      {
-        amount: params.amount,
-        currency: params.currency.toLowerCase(),
-        description: params.description,
-        receipt_email: params.receipt_email,
-        metadata: params.metadata,
-        // Usa os métodos habilitados no dashboard da conta Stripe:
-        automatic_payment_methods: { enabled: true },
-      },
-      idempotencyKey,
-    );
+    const body: StripeParams = {
+      amount: params.amount,
+      currency: params.currency.toLowerCase(),
+      description: params.description,
+      receipt_email: params.receipt_email,
+      metadata: params.metadata,
+      // Deixa a Stripe determinar automaticamente os métodos elegíveis.
+      // NUNCA enviar payment_method_types aqui — isso restringiria o PI.
+      automatic_payment_methods: { enabled: true },
+    };
+    if (params.paymentMethodConfiguration) {
+      body.payment_method_configuration = params.paymentMethodConfiguration;
+    }
+    return this.request<StripePaymentIntent>("POST", "/payment_intents", body, idempotencyKey);
   }
 
   retrievePaymentIntent(id: string): Promise<StripePaymentIntent> {
