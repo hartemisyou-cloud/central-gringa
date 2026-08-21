@@ -242,6 +242,8 @@ export function MetaTrackingSection() {
 
               <PaidOrderTest storeId={store.storeId} />
 
+              <AttributedPaidOrderTest storeId={store.storeId} />
+
 
               {draft.testEventCode ? (
                 <p className="text-xs text-amber-600">
