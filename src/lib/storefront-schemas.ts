@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { attributionSchema } from "@/lib/payments/attribution";
+
 export const storefrontItemsSchema = z
   .array(z.object({ productId: z.string().uuid(), quantity: z.number().int().min(1).max(20) }))
   .min(1)
