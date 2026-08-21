@@ -107,6 +107,32 @@ function CheckoutPage() {
   const selectedShipping = quoteData?.shippingOptions.find((o) => o.id === shippingOptionId);
   const total = subtotal + (selectedShipping?.amountCents ?? 0);
 
+  // Tracking da vitrine: Pixel + captura de UTMs (usadas depois pela UTMify).
+  const tracking = useStorefrontTracking();
+  const currency = cartRows[0]?.product.currency ?? "BRL";
+  const metaEvent = useMemo(
+    () => ({
+      value: Number((total / 100).toFixed(2)),
+      currency,
+      contents: cartRows.map((row) => ({
+        id: row.product.id,
+        quantity: row.quantity,
+        item_price: Number((row.product.priceCents / 100).toFixed(2)),
+      })),
+      contentName: "Checkout Livraria Cristã",
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [total, currency, lines],
+  );
+
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    if (viewedRef.current || cartRows.length === 0) return;
+    viewedRef.current = true;
+    tracking.viewContent(metaEvent);
+  }, [tracking, metaEvent, cartRows.length]);
+
+
   const set = (key: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
