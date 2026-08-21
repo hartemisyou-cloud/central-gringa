@@ -1324,6 +1324,119 @@ export type Database = {
         }
         Relationships: []
       }
+      utmify_events: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          event_status: string
+          http_status: number | null
+          id: string
+          last_error: string | null
+          order_id: string | null
+          order_number: string | null
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          event_status?: string
+          http_status?: number | null
+          id?: string
+          last_error?: string | null
+          order_id?: string | null
+          order_number?: string | null
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          event_status?: string
+          http_status?: number | null
+          id?: string
+          last_error?: string | null
+          order_id?: string | null
+          order_number?: string | null
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utmify_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "utmify_events_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      utmify_settings: {
+        Row: {
+          api_token_ciphertext: string | null
+          api_token_last4: string | null
+          created_at: string
+          enabled: boolean
+          id: string
+          is_test: boolean
+          last_error: string | null
+          last_error_at: string | null
+          last_order_number: string | null
+          last_success_at: string | null
+          store_id: string
+          updated_at: string
+          webhook_id: string | null
+        }
+        Insert: {
+          api_token_ciphertext?: string | null
+          api_token_last4?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          is_test?: boolean
+          last_error?: string | null
+          last_error_at?: string | null
+          last_order_number?: string | null
+          last_success_at?: string | null
+          store_id: string
+          updated_at?: string
+          webhook_id?: string | null
+        }
+        Update: {
+          api_token_ciphertext?: string | null
+          api_token_last4?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          is_test?: boolean
+          last_error?: string | null
+          last_error_at?: string | null
+          last_order_number?: string | null
+          last_success_at?: string | null
+          store_id?: string
+          updated_at?: string
+          webhook_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utmify_settings_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_events: {
         Row: {
           error_message: string | null

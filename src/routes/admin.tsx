@@ -15,6 +15,7 @@ import {
   adminStatus,
 } from "@/lib/admin.functions";
 import { MetaTrackingSection } from "@/components/admin/meta-tracking-section";
+import { UtmifySection } from "@/components/admin/utmify-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -287,6 +288,8 @@ function AdminDashboard() {
         </Card>
 
         <MetaTrackingSection />
+
+        <UtmifySection />
 
         <Card>
           <CardHeader>

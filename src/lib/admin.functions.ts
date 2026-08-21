@@ -123,3 +123,65 @@ export const adminRetryMetaEvents = createServerFn({ method: "POST" })
     const { retryFailedMetaEvents } = await import("./meta/capi.server");
     return retryFailedMetaEvents(data.storeId);
   });
+
+/* ------------------------------------------------------------------ */
+/* Tracking → UTMify (API direta), por loja                             */
+/* ------------------------------------------------------------------ */
+
+export const adminListUtmifySettings = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireAdmin } = await import("./admin/session.server");
+  await requireAdmin();
+  const { listUtmifySettings } = await import("./utmify/config.server");
+  return listUtmifySettings();
+});
+
+export const adminSaveUtmifySettings = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      storeId: string;
+      webhookId: string;
+      apiToken?: string;
+      enabled: boolean;
+      isTest: boolean;
+    }) =>
+      z
+        .object({
+          storeId: z.string().uuid(),
+          webhookId: z.string().trim().max(80).default(""),
+          apiToken: z.string().trim().min(10).max(400).optional(),
+          enabled: z.boolean(),
+          isTest: z.boolean(),
+        })
+        .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { saveUtmifySettings } = await import("./utmify/config.server");
+    await saveUtmifySettings({
+      storeId: data.storeId,
+      webhookId: data.webhookId || null,
+      ...(data.apiToken ? { apiToken: data.apiToken } : {}),
+      enabled: data.enabled,
+      isTest: data.isTest,
+    });
+    return { ok: true as const };
+  });
+
+export const adminTestUtmifyConnection = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { testUtmifyConnection } = await import("./utmify/api.server");
+    return testUtmifyConnection(data.storeId);
+  });
+
+export const adminRetryUtmifyEvents = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { retryFailedUtmifyEvents } = await import("./utmify/api.server");
+    return retryFailedUtmifyEvents(data.storeId);
+  });
