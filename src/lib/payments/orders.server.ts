@@ -341,6 +341,21 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     metadata: { attempt } as never,
   });
 
+  const { recordServerEvent } = await import("@/lib/analytics/ingest.server");
+  await recordServerEvent({
+    eventId: `pi-created:${created.providerPaymentId}`,
+    type: "payment_intent_created",
+    storeId: order.store_id,
+    integrationId: integration.id,
+    orderId: order.id,
+    publicToken: order.public_token,
+    paymentIntentId: created.providerPaymentId,
+    currency: order.currency,
+    amountCents: order.total_cents,
+    metadata: { attempt },
+  });
+
+
   return {
     paymentId: payment.id,
     clientSecret: created.clientSecret,

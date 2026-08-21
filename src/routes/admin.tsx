@@ -1,9 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Copy, KeyRound, Loader2, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { BarChart3, Copy, KeyRound, Loader2, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 
 import {
   adminCreateApiKey,
@@ -168,17 +168,25 @@ function AdminDashboard() {
             <KeyRound className="size-5 text-primary" />
             <h1 className="text-lg font-semibold">Painel administrativo</h1>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={async () => {
-              await logout();
-              queryClient.clear();
-              await queryClient.invalidateQueries({ queryKey: ["admin"] });
-            }}
-          >
-            <LogOut className="size-4" /> Sair
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/analytics">
+                <BarChart3 className="size-4" /> Analytics
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await logout();
+                queryClient.clear();
+                await queryClient.invalidateQueries({ queryKey: ["admin"] });
+              }}
+            >
+              <LogOut className="size-4" /> Sair
+            </Button>
+          </div>
+
         </div>
       </header>
 

@@ -12,12 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
+import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
 import { Route as PagamentoTokenRouteImport } from './routes/pagamento.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as PedidoTokenRouteImport } from './routes/pedido.$token'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
 import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quote'
+import { Route as ApiPublicV1AnalyticsEventsRouteImport } from './routes/api/public/v1/analytics.events'
 import { Route as ApiPublicWebhooksStripeIntegrationIdRouteImport } from './routes/api/public/webhooks/stripe.$integrationId'
 import { Route as ApiPublicV1CheckoutSessionPublicTokenRouteImport } from './routes/api/public/v1/checkout.session.$publicToken'
 import { Route as ApiPublicV1OrdersOrderIdPaymentRouteImport } from './routes/api/public/v1/orders.$orderId.payment'
@@ -36,6 +38,11 @@ const AdminRoute = AdminRouteImport.update({
 const CheckoutRoute = CheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
+  id: '/admin_/analytics',
+  path: '/admin/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PagamentoTokenRoute = PagamentoTokenRouteImport.update({
@@ -68,6 +75,12 @@ const ApiPublicV1QuoteRoute = ApiPublicV1QuoteRouteImport.update({
   path: '/api/public/v1/quote',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicV1AnalyticsEventsRoute =
+  ApiPublicV1AnalyticsEventsRouteImport.update({
+    id: '/api/public/v1/analytics/events',
+    path: '/api/public/v1/analytics/events',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicWebhooksStripeIntegrationIdRoute =
   ApiPublicWebhooksStripeIntegrationIdRouteImport.update({
     id: '/api/public/webhooks/stripe/$integrationId',
@@ -97,12 +110,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
+  '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
@@ -112,12 +127,14 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
+  '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
@@ -128,12 +145,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/admin_/analytics': typeof AdminAnalyticsRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
+  '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
@@ -145,12 +164,14 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/admin/analytics'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
+    | '/api/public/v1/analytics/events'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
     | '/api/public/v1/orders/$orderId/payment'
@@ -160,12 +181,14 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/admin/analytics'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
+    | '/api/public/v1/analytics/events'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
     | '/api/public/v1/orders/$orderId/payment'
@@ -175,12 +198,14 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/admin_/analytics'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
+    | '/api/public/v1/analytics/events'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
     | '/api/public/v1/orders/$orderId/payment'
@@ -191,12 +216,14 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   CheckoutRoute: typeof CheckoutRoute
+  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   PagamentoTokenRoute: typeof PagamentoTokenRoute
   PayTokenRoute: typeof PayTokenRoute
   PedidoTokenRoute: typeof PedidoTokenRoute
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
   ApiPublicV1QuoteRoute: typeof ApiPublicV1QuoteRoute
+  ApiPublicV1AnalyticsEventsRoute: typeof ApiPublicV1AnalyticsEventsRoute
   ApiPublicWebhooksStripeIntegrationIdRoute: typeof ApiPublicWebhooksStripeIntegrationIdRoute
   ApiPublicV1CheckoutSessionPublicTokenRoute: typeof ApiPublicV1CheckoutSessionPublicTokenRoute
 }
@@ -222,6 +249,13 @@ declare module '@tanstack/react-router' {
       path: '/checkout'
       fullPath: '/checkout'
       preLoaderRoute: typeof CheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/analytics': {
+      id: '/admin_/analytics'
+      path: '/admin/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pagamento/$token': {
@@ -264,6 +298,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/v1/quote'
       fullPath: '/api/public/v1/quote'
       preLoaderRoute: typeof ApiPublicV1QuoteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/analytics/events': {
+      id: '/api/public/v1/analytics/events'
+      path: '/api/public/v1/analytics/events'
+      fullPath: '/api/public/v1/analytics/events'
+      preLoaderRoute: typeof ApiPublicV1AnalyticsEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/webhooks/stripe/$integrationId': {
@@ -315,12 +356,14 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   CheckoutRoute: CheckoutRoute,
+  AdminAnalyticsRoute: AdminAnalyticsRoute,
   PagamentoTokenRoute: PagamentoTokenRoute,
   PayTokenRoute: PayTokenRoute,
   PedidoTokenRoute: PedidoTokenRoute,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,
   ApiPublicV1QuoteRoute: ApiPublicV1QuoteRoute,
+  ApiPublicV1AnalyticsEventsRoute: ApiPublicV1AnalyticsEventsRoute,
   ApiPublicWebhooksStripeIntegrationIdRoute:
     ApiPublicWebhooksStripeIntegrationIdRoute,
   ApiPublicV1CheckoutSessionPublicTokenRoute:
