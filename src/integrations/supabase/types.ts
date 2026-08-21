@@ -446,6 +446,119 @@ export type Database = {
           },
         ]
       }
+      meta_conversion_events: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          event_id: string
+          event_name: string
+          http_status: number | null
+          id: string
+          last_error: string | null
+          meta_event_id: string | null
+          order_id: string | null
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          event_id: string
+          event_name: string
+          http_status?: number | null
+          id?: string
+          last_error?: string | null
+          meta_event_id?: string | null
+          order_id?: string | null
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          event_id?: string
+          event_name?: string
+          http_status?: number | null
+          id?: string
+          last_error?: string | null
+          meta_event_id?: string | null
+          order_id?: string | null
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_conversion_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_conversion_events_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_tracking_settings: {
+        Row: {
+          access_token_ciphertext: string | null
+          access_token_last4: string | null
+          created_at: string
+          enabled: boolean
+          id: string
+          last_error: string | null
+          last_error_at: string | null
+          last_success_at: string | null
+          pixel_id: string | null
+          store_id: string
+          test_event_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token_ciphertext?: string | null
+          access_token_last4?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_success_at?: string | null
+          pixel_id?: string | null
+          store_id: string
+          test_event_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token_ciphertext?: string | null
+          access_token_last4?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_success_at?: string | null
+          pixel_id?: string | null
+          store_id?: string
+          test_event_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_tracking_settings_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_attribution: {
         Row: {
           anonymous_session_id: string | null
