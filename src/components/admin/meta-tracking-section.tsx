@@ -6,6 +6,8 @@ import { Loader2, RefreshCw, Share2 } from "lucide-react";
 
 import {
   adminFindLatestPaidOrder,
+  adminFindPaidOrderWithAttribution,
+  adminSendTestMetaPurchaseAttributed,
   adminListMetaSettings,
   adminRetryMetaEvents,
   adminSaveMetaSettings,
@@ -424,6 +426,123 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
             UTMs: source={String(result.fields["utm_source"] ?? "—")} · campaign=
             {String(result.fields["utm_campaign"] ?? "—")}
           </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type AttributedOrder = Awaited<ReturnType<typeof adminFindPaidOrderWithAttribution>>;
+type AttributedResult = Awaited<ReturnType<typeof adminSendTestMetaPurchaseAttributed>>;
+
+const NONE = "Nenhum pedido PAID com dados de atribuição disponível para teste.";
+const show = (value: string | null | undefined) => (value && value.length > 0 ? value : "—");
+
+/**
+ * Diagnóstico: valida a atribuição Meta com um pedido PAID real já existente.
+ * Somente leitura no pedido — nenhum PaymentIntent, cobrança, webhook, UTMify,
+ * mudança de status/paid_at ou gravação de evento de produção.
+ */
+function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
+  const findOrder = useServerFn(adminFindPaidOrderWithAttribution);
+  const sendTest = useServerFn(adminSendTestMetaPurchaseAttributed);
+  const [order, setOrder] = useState<AttributedOrder | null>(null);
+  const [result, setResult] = useState<AttributedResult | null>(null);
+  const [empty, setEmpty] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "loading" | "sending">("idle");
+
+  async function preview() {
+    setPhase("loading");
+    setResult(null);
+    setEmpty(false);
+    setOrder(null);
+    try {
+      const found = await findOrder({ data: { storeId } });
+      if (!found.found) setEmpty(true);
+      else setOrder(found);
+    } catch {
+      toast.error("Falha ao buscar pedido PAID com atribuição.");
+    } finally {
+      setPhase("idle");
+    }
+  }
+
+  async function send() {
+    setPhase("sending");
+    setResult(null);
+    try {
+      const response = await sendTest({ data: { storeId } });
+      setResult(response);
+      if (response.order) setOrder(response.order);
+      if (response.message === NONE) setEmpty(true);
+      if (response.ok) toast.success("Test Event enviado à Meta.");
+      else toast.error(response.message);
+    } catch {
+      toast.error("Falha ao enviar o Test Event.");
+    } finally {
+      setPhase("idle");
+    }
+  }
+
+  const attribution = order?.attribution;
+
+  return (
+    <div className="space-y-3 rounded-md border border-dashed p-3">
+      <Label>Testar Purchase com pedido PAID</Label>
+      <p className="text-xs text-muted-foreground">
+        Usa o pedido PAID mais recente desta loja que possua registro de atribuição, enviando o
+        Purchase apenas como Test Event (test_event_code da loja) com os dados exatamente como
+        estão armazenados. O pedido não é alterado e nada de produção é disparado.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" disabled={phase !== "idle"} onClick={preview}>
+          {phase === "loading" ? <Loader2 className="size-4 animate-spin" /> : "Pré-visualizar dados"}
+        </Button>
+        <Button size="sm" variant="secondary" disabled={phase !== "idle"} onClick={send}>
+          {phase === "sending" ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            "Testar Purchase com pedido PAID"
+          )}
+        </Button>
+      </div>
+
+      {empty ? <p className="text-sm text-muted-foreground">{NONE}</p> : null}
+
+      {order?.found && attribution ? (
+        <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
+          <p>order_number: #{show(order.orderNumber)}</p>
+          <p>status: {show(order.status)}</p>
+          <p className="break-all">fbc: {show(attribution.fbc)}</p>
+          <p className="break-all">fbp: {show(attribution.fbp)}</p>
+          <p>client_ip: {show(attribution.client_ip)}</p>
+          <p className="break-all">client_user_agent: {show(attribution.client_user_agent)}</p>
+          <p className="break-all">event_source_url: {show(attribution.event_source_url)}</p>
+          <p>utm_source: {show(attribution.utm_source)}</p>
+          <p>utm_medium: {show(attribution.utm_medium)}</p>
+          <p>utm_campaign: {show(attribution.utm_campaign)}</p>
+          <p>utm_content: {show(attribution.utm_content)}</p>
+          <p>utm_term: {show(attribution.utm_term)}</p>
+        </div>
+      ) : null}
+
+      {result && result.message !== NONE ? (
+        <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
+          <p className={result.ok ? "text-emerald-600" : "text-destructive"}>
+            {result.ok ? "✓ Test Event enviado" : `✗ ${result.message}`}
+          </p>
+          <p>HTTP: {result.httpStatus ?? "—"}</p>
+          <p className="break-all">event_id: {show(result.eventId)}</p>
+          <p>value: {result.value ?? "—"}</p>
+          <p>currency: {show(result.currency)}</p>
+          <p className="pt-1">Atribuição enviada:</p>
+          {Object.entries(result.sentAttribution).map(([key, value]) => (
+            <p key={key} className="break-all">
+              {key}: {show(value)}
+            </p>
+          ))}
+          <p className="break-all pt-1">Resposta da Meta: {show(result.metaResponse)}</p>
         </div>
       ) : null}
     </div>
