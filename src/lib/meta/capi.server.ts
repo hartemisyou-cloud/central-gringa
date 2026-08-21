@@ -210,10 +210,12 @@ async function buildPayload(
   };
   if (url) event["event_source_url"] = url;
 
-  // PRODUÇÃO: nunca enviar test_event_code. Vendas reais precisam entrar no
-  // fluxo normal de eventos da Meta; o Test Event Code existe apenas para o
-  // botão de teste do painel (sendTestPurchase).
-  return { data: [event] } as Record<string, unknown>;
+  // PRODUÇÃO: nunca enviar test_event_code. `extra.testEventCode` só é
+  // preenchido pelos botões de teste do painel admin — o caminho do webhook
+  // (sendPurchaseForOrder) nunca passa esse campo.
+  const body: Record<string, unknown> = { data: [event] };
+  if (extra.testEventCode) body["test_event_code"] = extra.testEventCode;
+  return body;
 }
 
 async function postToMeta(
