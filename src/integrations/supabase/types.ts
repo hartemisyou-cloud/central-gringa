@@ -849,6 +849,7 @@ export type Database = {
           id: string
           last_validated_at: string | null
           name: string
+          payment_method_configuration_id: string | null
           publishable_key: string
           secret_key_ciphertext: string | null
           secret_key_last4: string | null
@@ -864,6 +865,7 @@ export type Database = {
           id?: string
           last_validated_at?: string | null
           name: string
+          payment_method_configuration_id?: string | null
           publishable_key: string
           secret_key_ciphertext?: string | null
           secret_key_last4?: string | null
@@ -879,6 +881,7 @@ export type Database = {
           id?: string
           last_validated_at?: string | null
           name?: string
+          payment_method_configuration_id?: string | null
           publishable_key?: string
           secret_key_ciphertext?: string | null
           secret_key_last4?: string | null
