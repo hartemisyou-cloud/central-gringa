@@ -80,6 +80,109 @@ export type Database = {
           },
         ]
       }
+      analytics_events: {
+        Row: {
+          amount_cents: number | null
+          anonymous_session_id: string | null
+          browser: string | null
+          checkout_session_id: string | null
+          country: string | null
+          currency: string | null
+          decline_category: string | null
+          decline_code: string | null
+          device_type: string | null
+          event_id: string
+          event_type: string
+          id: string
+          integration_id: string | null
+          metadata: Json
+          occurred_at: string
+          operating_system: string | null
+          order_id: string | null
+          payment_intent_id: string | null
+          payment_method: string | null
+          public_token: string | null
+          received_at: string
+          referrer: string | null
+          source: string
+          store_id: string | null
+        }
+        Insert: {
+          amount_cents?: number | null
+          anonymous_session_id?: string | null
+          browser?: string | null
+          checkout_session_id?: string | null
+          country?: string | null
+          currency?: string | null
+          decline_category?: string | null
+          decline_code?: string | null
+          device_type?: string | null
+          event_id: string
+          event_type: string
+          id?: string
+          integration_id?: string | null
+          metadata?: Json
+          occurred_at?: string
+          operating_system?: string | null
+          order_id?: string | null
+          payment_intent_id?: string | null
+          payment_method?: string | null
+          public_token?: string | null
+          received_at?: string
+          referrer?: string | null
+          source?: string
+          store_id?: string | null
+        }
+        Update: {
+          amount_cents?: number | null
+          anonymous_session_id?: string | null
+          browser?: string | null
+          checkout_session_id?: string | null
+          country?: string | null
+          currency?: string | null
+          decline_category?: string | null
+          decline_code?: string | null
+          device_type?: string | null
+          event_id?: string
+          event_type?: string
+          id?: string
+          integration_id?: string | null
+          metadata?: Json
+          occurred_at?: string
+          operating_system?: string | null
+          order_id?: string | null
+          payment_intent_id?: string | null
+          payment_method?: string | null
+          public_token?: string | null
+          received_at?: string
+          referrer?: string | null
+          source?: string
+          store_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_events_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "stripe_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analytics_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analytics_events_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -180,6 +283,118 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "carts_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checkout_sessions: {
+        Row: {
+          amount_cents: number | null
+          anonymous_session_id: string
+          attempted_at: string | null
+          browser: string | null
+          checkout_session_id: string
+          country: string | null
+          currency: string | null
+          device_type: string | null
+          first_seen_at: string
+          id: string
+          integration_id: string | null
+          last_seen_at: string
+          operating_system: string | null
+          order_id: string | null
+          payment_intent_id: string | null
+          public_token: string | null
+          referrer: string | null
+          started_at: string | null
+          status: string
+          store_id: string | null
+          succeeded_at: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          viewed_at: string | null
+        }
+        Insert: {
+          amount_cents?: number | null
+          anonymous_session_id: string
+          attempted_at?: string | null
+          browser?: string | null
+          checkout_session_id: string
+          country?: string | null
+          currency?: string | null
+          device_type?: string | null
+          first_seen_at?: string
+          id?: string
+          integration_id?: string | null
+          last_seen_at?: string
+          operating_system?: string | null
+          order_id?: string | null
+          payment_intent_id?: string | null
+          public_token?: string | null
+          referrer?: string | null
+          started_at?: string | null
+          status?: string
+          store_id?: string | null
+          succeeded_at?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          viewed_at?: string | null
+        }
+        Update: {
+          amount_cents?: number | null
+          anonymous_session_id?: string
+          attempted_at?: string | null
+          browser?: string | null
+          checkout_session_id?: string
+          country?: string | null
+          currency?: string | null
+          device_type?: string | null
+          first_seen_at?: string
+          id?: string
+          integration_id?: string | null
+          last_seen_at?: string
+          operating_system?: string | null
+          order_id?: string | null
+          payment_intent_id?: string | null
+          public_token?: string | null
+          referrer?: string | null
+          started_at?: string | null
+          status?: string
+          store_id?: string | null
+          succeeded_at?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          viewed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkout_sessions_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "stripe_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checkout_sessions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checkout_sessions_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
