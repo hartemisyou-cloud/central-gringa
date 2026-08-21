@@ -40,7 +40,7 @@ function utcDate(value: string | null | undefined): string | null {
 }
 
 /** Mapeamento estrito — nenhum tipo inventado. */
-function mapPaymentMethod(method: string | null): string {
+export function mapPaymentMethod(method: string | null): string {
   switch ((method ?? "").toLowerCase()) {
     case "card":
     case "apple_pay":
@@ -57,7 +57,7 @@ function mapPaymentMethod(method: string | null): string {
   }
 }
 
-interface OrderContext {
+export interface OrderContext {
   orderId: string;
   storeId: string;
   orderNumber: string;
@@ -133,7 +133,7 @@ async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
  * Mapeia pedido + order_attribution para o formato da UTMify.
  * Campos ausentes ficam `null` — nada é inventado nem preenchido com falsos.
  */
-function buildSalePayload(
+export function buildSalePayload(
   context: OrderContext,
   attribution: Attribution,
   options: { isTest: boolean; clientIp?: string | null },
