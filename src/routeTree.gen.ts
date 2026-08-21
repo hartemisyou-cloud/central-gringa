@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
+import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
 import { Route as PagamentoTokenRouteImport } from './routes/pagamento.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as PedidoTokenRouteImport } from './routes/pedido.$token'
@@ -37,6 +38,11 @@ const AdminRoute = AdminRouteImport.update({
 const CheckoutRoute = CheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
+  id: '/admin_/analytics',
+  path: '/admin/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PagamentoTokenRoute = PagamentoTokenRouteImport.update({
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
@@ -120,6 +127,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
@@ -137,6 +145,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
+  '/admin_/analytics': typeof AdminAnalyticsRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
@@ -155,6 +164,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/admin/analytics'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/admin/analytics'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
+    | '/admin_/analytics'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
@@ -204,6 +216,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   CheckoutRoute: typeof CheckoutRoute
+  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   PagamentoTokenRoute: typeof PagamentoTokenRoute
   PayTokenRoute: typeof PayTokenRoute
   PedidoTokenRoute: typeof PedidoTokenRoute
@@ -236,6 +249,13 @@ declare module '@tanstack/react-router' {
       path: '/checkout'
       fullPath: '/checkout'
       preLoaderRoute: typeof CheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/analytics': {
+      id: '/admin_/analytics'
+      path: '/admin/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pagamento/$token': {
@@ -336,6 +356,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   CheckoutRoute: CheckoutRoute,
+  AdminAnalyticsRoute: AdminAnalyticsRoute,
   PagamentoTokenRoute: PagamentoTokenRoute,
   PayTokenRoute: PayTokenRoute,
   PedidoTokenRoute: PedidoTokenRoute,
