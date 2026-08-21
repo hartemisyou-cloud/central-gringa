@@ -77,8 +77,8 @@ describe("buildSalePayload", () => {
 
   it("não inventa UTMs quando não há atribuição", () => {
     const payload = buildSalePayload(order(), {}, opts);
-    expect(payload.trackingParameters.utm_source).toBeNull();
-    expect(payload.trackingParameters.utm_campaign).toBeNull();
+    expect(payload.trackingParameters['utm_source']).toBeNull();
+    expect(payload.trackingParameters['utm_campaign']).toBeNull();
   });
 
   it("não vaza dados sensíveis e preserva moedas não-BRL", () => {
