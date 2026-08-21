@@ -564,7 +564,10 @@ export type Database = {
           anonymous_session_id: string | null
           checkout_session_id: string | null
           click_id: string | null
+          client_ip: string | null
+          client_user_agent: string | null
           created_at: string
+          event_source_url: string | null
           fbc: string | null
           fbclid: string | null
           fbp: string | null
@@ -588,7 +591,10 @@ export type Database = {
           anonymous_session_id?: string | null
           checkout_session_id?: string | null
           click_id?: string | null
+          client_ip?: string | null
+          client_user_agent?: string | null
           created_at?: string
+          event_source_url?: string | null
           fbc?: string | null
           fbclid?: string | null
           fbp?: string | null
@@ -612,7 +618,10 @@ export type Database = {
           anonymous_session_id?: string | null
           checkout_session_id?: string | null
           click_id?: string | null
+          client_ip?: string | null
+          client_user_agent?: string | null
           created_at?: string
+          event_source_url?: string | null
           fbc?: string | null
           fbclid?: string | null
           fbp?: string | null
