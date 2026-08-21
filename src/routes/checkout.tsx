@@ -159,6 +159,7 @@ function CheckoutPage() {
       return;
     }
     setSubmitting(true);
+    tracking.initiateCheckout(metaEvent);
     try {
       const result = await checkout({
         data: {
