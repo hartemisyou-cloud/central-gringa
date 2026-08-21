@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { ArrowLeft, Loader2, Lock } from "lucide-react";
@@ -17,6 +17,8 @@ import {
 } from "@/lib/storefront.functions";
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
+import { useStorefrontTracking } from "@/hooks/useStorefrontTracking";
+import { readAttribution } from "@/lib/tracking/attribution-client";
 import { storePaymentSession } from "@/routes/pagamento.$token";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,6 +107,32 @@ function CheckoutPage() {
   const selectedShipping = quoteData?.shippingOptions.find((o) => o.id === shippingOptionId);
   const total = subtotal + (selectedShipping?.amountCents ?? 0);
 
+  // Tracking da vitrine: Pixel + captura de UTMs (usadas depois pela UTMify).
+  const tracking = useStorefrontTracking();
+  const currency = cartRows[0]?.product.currency ?? "BRL";
+  const metaEvent = useMemo(
+    () => ({
+      value: Number((total / 100).toFixed(2)),
+      currency,
+      contents: cartRows.map((row) => ({
+        id: row.product.id,
+        quantity: row.quantity,
+        item_price: Number((row.product.priceCents / 100).toFixed(2)),
+      })),
+      contentName: "Checkout Livraria Cristã",
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [total, currency, lines],
+  );
+
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    if (viewedRef.current || cartRows.length === 0) return;
+    viewedRef.current = true;
+    tracking.viewContent(metaEvent);
+  }, [tracking, metaEvent, cartRows.length]);
+
+
   const set = (key: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
@@ -131,6 +159,7 @@ function CheckoutPage() {
       return;
     }
     setSubmitting(true);
+    tracking.initiateCheckout(metaEvent);
     try {
       const result = await checkout({
         data: {
@@ -151,6 +180,7 @@ function CheckoutPage() {
             state: form.state.trim().toUpperCase(),
           },
           shippingOptionId,
+          attribution: readAttribution(),
         },
       });
       setSession(result);
