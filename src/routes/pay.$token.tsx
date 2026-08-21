@@ -208,10 +208,10 @@ function PaymentForm({ session }: { session: Session }) {
   // registra IP e User-Agent reais para o Purchase da CAPI.
   const captured = useRef(false);
   useEffect(() => {
-    if (captured.current) return;
-    captured.current = true;
     // pequeno atraso: dá tempo do Pixel gravar os cookies _fbp/_fbc.
     const timer = window.setTimeout(() => {
+      if (captured.current) return;
+      captured.current = true;
       const attribution = captureAttribution();
       void captureHostedAttribution({
         data: {
