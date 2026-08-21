@@ -135,7 +135,14 @@ function eventSourceUrl(
 
 async function buildPayload(
   context: OrderContext,
-  extra: { clientIp?: string | null; userAgent?: string | null } = {},
+  extra: {
+    clientIp?: string | null;
+    userAgent?: string | null;
+    /** Só usado pelo modo de teste do painel; produção nunca passa isto. */
+    eventIdOverride?: string;
+    /** Só usado pelo modo de teste do painel; produção nunca passa isto. */
+    testEventCode?: string | null;
+  } = {},
 ) {
   const record: OrderAttributionRecord = await getOrderAttributionRecord(context.orderId).catch(
     () => ({}) as OrderAttributionRecord,
