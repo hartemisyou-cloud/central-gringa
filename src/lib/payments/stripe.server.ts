@@ -66,6 +66,30 @@ export interface StripeAccount {
   charges_enabled?: boolean;
 }
 
+export interface StripeCheckoutSession {
+  id: string;
+  object?: string;
+  client_secret?: string | null;
+  status?: string | null;
+  url?: string | null;
+  mode?: string;
+  currency?: string | null;
+  amount_total?: number | null;
+  amount_subtotal?: number | null;
+  expires_at?: number | null;
+  livemode?: boolean;
+  payment_intent?: string | null;
+  client_reference_id?: string | null;
+  customer_email?: string | null;
+  metadata?: Record<string, string>;
+  currency_conversion?: {
+    amount_total?: number | null;
+    amount_subtotal?: number | null;
+    source_currency?: string | null;
+    fx_rate?: string | null;
+  } | null;
+}
+
 export interface StripeEvent {
   id: string;
   type: string;
