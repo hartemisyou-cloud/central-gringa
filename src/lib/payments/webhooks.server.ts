@@ -54,6 +54,93 @@ async function findPayment(providerPaymentId: string): Promise<PaymentRow | null
   return data;
 }
 
+/**
+ * Confirmação definitiva do pagamento — ÚNICO caminho para PAID.
+ * Usada tanto por `payment_intent.succeeded` quanto por
+ * `checkout.session.completed`. Idempotente: um pagamento já SUCCEEDED
+ * não reprocessa estoque, Meta CAPI nem UTMify.
+ */
+async function confirmPaymentSucceeded(
+  payment: PaymentRow,
+  paymentMethod: string | null,
+): Promise<string> {
+  if (payment.status === "SUCCEEDED") return "Já processado.";
+  await supabaseAdmin
+    .from("payments")
+    .update({ status: "SUCCEEDED", payment_method: paymentMethod })
+    .eq("id", payment.id);
+  await markOrder(payment.order_id, "PAID");
+  await supabaseAdmin.rpc("commit_order_stock", { _order_id: payment.order_id });
+  await logEvent(payment, "PAYMENT_SUCCEEDED", "Pagamento confirmado pela Stripe");
+  await trackPayment(payment, "payment_succeeded", { paymentMethod });
+  // Meta CAPI: integração independente. Uma falha aqui NUNCA altera o
+  // estado financeiro do pedido nem interrompe o webhook (UTMify inclusive).
+  try {
+    const { sendPurchaseForOrder } = await import("@/lib/meta/capi.server");
+    await sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id });
+  } catch (error) {
+    console.error("[meta-capi] purchase dispatch failed", (error as Error).message);
+  }
+  // UTMify (API direta): independente do webhook Stripe → UTMify existente,
+  // que continua ativo. Idempotente por (store_id, order_id, "paid").
+  try {
+    const { sendSaleForOrder } = await import("@/lib/utmify/api.server");
+    await sendSaleForOrder({ orderId: payment.order_id, storeId: payment.store_id });
+  } catch (error) {
+    console.error("[utmify] sale dispatch failed", (error as Error).message);
+  }
+  return "Pagamento confirmado.";
+}
+
+/**
+ * Garante uma linha em `payments` para o PaymentIntent criado por uma
+ * Checkout Session (fluxo novo). Nunca duplica: se já existir, devolve-a.
+ */
+async function ensureCheckoutSessionPayment(
+  session: Record<string, unknown>,
+  paymentIntentId: string,
+): Promise<PaymentRow | null> {
+  const existing = await findPayment(paymentIntentId);
+  if (existing) return existing;
+
+  const { data: local } = await supabaseAdmin
+    .from("stripe_checkout_sessions")
+    .select("*")
+    .eq("session_id", String(session["id"]))
+    .maybeSingle();
+  if (!local) return null;
+
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("id, store_id, environment, currency, total_cents")
+    .eq("id", local.order_id)
+    .maybeSingle();
+  if (!order) return null;
+
+  const { count } = await supabaseAdmin
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("order_id", order.id);
+
+  const { data: inserted } = await supabaseAdmin
+    .from("payments")
+    .insert({
+      store_id: order.store_id,
+      order_id: order.id,
+      integration_id: local.integration_id,
+      provider_payment_id: paymentIntentId,
+      amount_cents: order.total_cents,
+      currency: order.currency,
+      environment: order.environment,
+      attempt: (count ?? 0) + 1,
+      idempotency_key: `checkout:${local.session_id}`,
+    })
+    .select("*")
+    .single();
+
+  return inserted ?? (await findPayment(paymentIntentId));
+}
+
 async function applyEvent(event: StripeEvent): Promise<string> {
   const object = event.data.object as Record<string, unknown>;
 
@@ -61,36 +148,45 @@ async function applyEvent(event: StripeEvent): Promise<string> {
     case "payment_intent.succeeded": {
       const payment = await findPayment(String(object["id"]));
       if (!payment) return "Pagamento não encontrado localmente (ignorado).";
-      if (payment.status === "SUCCEEDED") return "Já processado.";
       const charges = object["charges"] as { data?: Array<Record<string, unknown>> } | undefined;
       const method = charges?.data?.[0]?.["payment_method_details"] as
         | { type?: string }
         | undefined;
+      return confirmPaymentSucceeded(payment, method?.type ?? null);
+    }
+    case "checkout.session.completed":
+    case "checkout.session.async_payment_succeeded": {
+      const sessionId = String(object["id"]);
+      const paymentIntentId =
+        typeof object["payment_intent"] === "string" ? object["payment_intent"] : null;
+
       await supabaseAdmin
-        .from("payments")
-        .update({ status: "SUCCEEDED", payment_method: method?.type ?? null })
-        .eq("id", payment.id);
-      await markOrder(payment.order_id, "PAID");
-      await supabaseAdmin.rpc("commit_order_stock", { _order_id: payment.order_id });
-      await logEvent(payment, "PAYMENT_SUCCEEDED", "Pagamento confirmado pela Stripe");
-      await trackPayment(payment, "payment_succeeded", { paymentMethod: method?.type ?? null });
-      // Meta CAPI: integração independente. Uma falha aqui NUNCA altera o
-      // estado financeiro do pedido nem interrompe o webhook (UTMify inclusive).
-      try {
-        const { sendPurchaseForOrder } = await import("@/lib/meta/capi.server");
-        await sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id });
-      } catch (error) {
-        console.error("[meta-capi] purchase dispatch failed", (error as Error).message);
-      }
-      // UTMify (API direta): independente do webhook Stripe → UTMify existente,
-      // que continua ativo. Idempotente por (store_id, order_id, "paid").
-      try {
-        const { sendSaleForOrder } = await import("@/lib/utmify/api.server");
-        await sendSaleForOrder({ orderId: payment.order_id, storeId: payment.store_id });
-      } catch (error) {
-        console.error("[utmify] sale dispatch failed", (error as Error).message);
-      }
-      return "Pagamento confirmado.";
+        .from("stripe_checkout_sessions")
+        .update({
+          status: String(object["status"] ?? "complete"),
+          payment_intent_id: paymentIntentId,
+          amount_total: Number(object["amount_total"] ?? 0) || null,
+          currency: (object["currency"] as string | null) ?? null,
+          presented_amount_total:
+            ((object["currency_conversion"] as { amount_total?: number } | null)?.amount_total ??
+              null) as number | null,
+          presented_currency: (object["currency"] as string | null) ?? null,
+        })
+        .eq("session_id", sessionId);
+
+      if (object["payment_status"] !== "paid") return "Checkout Session ainda não paga.";
+      if (!paymentIntentId) return "Checkout Session sem payment_intent (ignorado).";
+
+      const payment = await ensureCheckoutSessionPayment(object, paymentIntentId);
+      if (!payment) return "Pedido da Checkout Session não encontrado (ignorado).";
+      return confirmPaymentSucceeded(payment, null);
+    }
+    case "checkout.session.expired": {
+      await supabaseAdmin
+        .from("stripe_checkout_sessions")
+        .update({ status: "expired" })
+        .eq("session_id", String(object["id"]));
+      return "Checkout Session expirada.";
     }
     case "payment_intent.payment_failed": {
       const payment = await findPayment(String(object["id"]));
