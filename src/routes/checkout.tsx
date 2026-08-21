@@ -180,6 +180,7 @@ function CheckoutPage() {
             state: form.state.trim().toUpperCase(),
           },
           shippingOptionId,
+          attribution: readAttribution(),
         },
       });
       setSession(result);
