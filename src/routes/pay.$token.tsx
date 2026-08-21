@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import {
   Elements,
@@ -16,7 +16,12 @@ import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
 import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
 import { createCheckoutTracker } from "@/lib/analytics/client";
-import { initPixel, trackInitiateCheckout, trackPageView } from "@/lib/meta/pixel";
+import {
+  initPixel,
+  trackInitiateCheckout,
+  trackPageView,
+  trackViewContent,
+} from "@/lib/meta/pixel";
 
 /** Normaliza o tipo do botão expresso da Stripe para o vocabulário de eventos. */
 function normalizeExpress(type: string): string {
@@ -36,6 +41,7 @@ interface Session {
   label: string;
   subtitle: string | null;
   metaPixelId: string | null;
+  items: Array<{ id: string; name: string; quantity: number; unitAmount: number }>;
 }
 
 export const Route = createFileRoute("/pay/$token")({
@@ -172,18 +178,39 @@ function PaymentForm({ session }: { session: Session }) {
     return () => tracker.dispose();
   }, [tracker]);
 
-  // Meta Pixel (navegador): apenas o pixel público da loja.
-  // PageView no carregamento e InitiateCheckout com valor/moeda REAIS do pedido.
+  // Meta Pixel (navegador): apenas o pixel público da loja, e somente quando
+  // a loja tem Meta Tracking habilitado. Nenhum Access Token chega ao browser.
+  const metaEvent = useMemo(
+    () => ({
+      value: Number((session.amountCents / 100).toFixed(2)),
+      currency: session.currency,
+      contents: (session.items ?? []).map((item) => ({
+        id: item.id,
+        quantity: item.quantity,
+        item_price: item.unitAmount,
+      })),
+      contentName: session.label,
+    }),
+    [session.amountCents, session.currency, session.items, session.label],
+  );
+
+  // PageView + ViewContent uma única vez por carregamento da página.
   useEffect(() => {
     if (!session.metaPixelId) return;
     initPixel(session.metaPixelId);
     trackPageView();
-    trackInitiateCheckout({
-      value: Number((session.amountCents / 100).toFixed(2)),
-      currency: session.currency,
-    });
+    trackViewContent(metaEvent);
+  }, [session.metaPixelId, metaEvent]);
+
+  // InitiateCheckout só com intenção real de pagamento (submit/carteira),
+  // uma única vez — nunca a cada render.
+  const initiated = useRef(false);
+  const fireInitiateCheckout = useCallback(() => {
+    if (!session.metaPixelId || initiated.current) return;
+    initiated.current = true;
+    trackInitiateCheckout(metaEvent);
     tracker.track("meta_initiate_checkout");
-  }, [session.metaPixelId, session.amountCents, session.currency, tracker]);
+  }, [session.metaPixelId, metaEvent, tracker]);
 
   const returnUrl =
     typeof window !== "undefined"
@@ -195,6 +222,7 @@ function PaymentForm({ session }: { session: Session }) {
     confirm: () => Promise<{ error?: { message?: string; code?: string } | undefined }>,
   ) {
     setProcessing(true);
+    fireInitiateCheckout();
     tracker.track("payment_submitted", { paymentMethod: method });
     const { error } = await confirm();
     setProcessing(false);
@@ -244,6 +272,7 @@ function PaymentForm({ session }: { session: Session }) {
           }}
           onClick={({ expressPaymentType, resolve }) => {
             tracker.track(`${normalizeExpress(expressPaymentType)}_clicked`);
+            fireInitiateCheckout();
             resolve();
           }}
           onConfirm={({ expressPaymentType }) => {

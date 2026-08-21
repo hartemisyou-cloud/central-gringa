@@ -17,6 +17,15 @@ import { hashEmail, hashName, hashPhone } from "./hash";
 const GRAPH_VERSION = "v21.0";
 const MAX_ATTEMPTS = 4;
 
+/**
+ * event_id determinístico do Purchase: `purchase_{order_id}`.
+ * O mesmo valor é reutilizado em TODOS os retries e seria o mesmo usado por um
+ * eventual Purchase de navegador — é ele que garante a deduplicação na Meta.
+ */
+export function purchaseEventId(orderId: string): string {
+  return `purchase_${orderId}`;
+}
+
 export type MetaSendResult =
   | { ok: true; skipped?: string; httpStatus?: number; metaEventId?: string | null }
   | { ok: false; error: string; httpStatus?: number; permanent?: boolean };
@@ -35,6 +44,7 @@ interface OrderContext {
   currency: string;
   valueCents: number;
   paidAt: string | null;
+  status: string;
   publicToken: string;
   email: string | null;
   phone: string | null;
@@ -52,7 +62,7 @@ async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
-      "id, store_id, order_number, currency, total_cents, paid_at, public_token, customers:customer_id(email, phone, first_name, last_name), addresses:shipping_address_id(city, state, postal_code, country), order_items(product_id, quantity, total_cents), stores:store_id(domain)",
+      "id, store_id, order_number, currency, total_cents, paid_at, status, public_token, customers:customer_id(email, phone, first_name, last_name), addresses:shipping_address_id(city, state, postal_code, country), order_items(product_id, quantity, total_cents), stores:store_id(domain)",
     )
     .eq("id", orderId)
     .maybeSingle();
@@ -78,6 +88,7 @@ async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
     currency: order.currency,
     valueCents: order.total_cents,
     paidAt: order.paid_at,
+    status: order.status,
     publicToken: order.public_token,
     email: customer?.email ?? null,
     phone: customer?.phone ?? null,
@@ -129,6 +140,12 @@ async function buildPayload(
   if (ct) userData["ct"] = [ct];
   const st = await hashName(context.state);
   if (st) userData["st"] = [st];
+  const country = await hashName(context.country);
+  if (country) userData["country"] = [country];
+  if (context.postalCode) {
+    const zip = context.postalCode.replace(/\D/g, "");
+    if (zip) userData["zp"] = [zip];
+  }
   if (attribution.fbc) userData["fbc"] = attribution.fbc;
   if (attribution.fbp) userData["fbp"] = attribution.fbp;
   if (extra.clientIp) userData["client_ip_address"] = extra.clientIp;
@@ -146,6 +163,8 @@ async function buildPayload(
       item_price: Number((item.totalCents / item.quantity / 100).toFixed(2)),
     }));
     customData["content_type"] = "product";
+    customData["content_ids"] = context.items.map((item) => item.productId);
+    customData["num_items"] = context.items.reduce((total, item) => total + item.quantity, 0);
   }
   for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const) {
     const value = attribution[key];
@@ -157,7 +176,7 @@ async function buildPayload(
   const event: Record<string, unknown> = {
     event_name: "Purchase",
     event_time: Math.floor(new Date(context.paidAt ?? Date.now()).getTime() / 1000),
-    event_id: context.orderId,
+    event_id: purchaseEventId(context.orderId),
     action_source: "website",
     user_data: userData,
     custom_data: customData,
@@ -219,12 +238,17 @@ export async function sendPurchaseForOrder(input: {
     const settings = await getMetaSettingsWithToken(input.storeId);
     if (!settings) return { ok: true, skipped: "meta_disabled" };
 
-    // Idempotência: uma linha por (store_id, event_id, event_name).
+    const context = await loadOrderContext(input.orderId);
+    if (!context) return { ok: true, skipped: "order_not_found" };
+    // PAID é a única fonte de verdade para Purchase.
+    if (context.status !== "PAID") return { ok: true, skipped: "order_not_paid" };
+
+    // Idempotência: uma linha por (store_id, order_id, event_name = Purchase).
     const { data: existing } = await supabaseAdmin
       .from("meta_conversion_events")
       .select("id, status, attempt_count")
       .eq("store_id", input.storeId)
-      .eq("event_id", input.orderId)
+      .eq("order_id", input.orderId)
       .eq("event_name", "Purchase")
       .maybeSingle();
 
@@ -241,7 +265,7 @@ export async function sendPurchaseForOrder(input: {
           store_id: input.storeId,
           order_id: input.orderId,
           event_name: "Purchase",
-          event_id: input.orderId,
+          event_id: purchaseEventId(input.orderId),
           status: "PENDING",
         })
         .select("id")
@@ -253,8 +277,6 @@ export async function sendPurchaseForOrder(input: {
       rowId = inserted.id;
     }
 
-    const context = await loadOrderContext(input.orderId);
-    if (!context) return { ok: true, skipped: "order_not_found" };
 
     const payload = await buildPayload(context, settings, {
       clientIp: input.clientIp ?? null,
@@ -296,7 +318,7 @@ export async function sendPurchaseForOrder(input: {
     }).catch(() => undefined);
 
     console.log(
-      `[meta-capi] store=${input.storeId} order=${input.orderId} event=Purchase event_id=${input.orderId} status=${result.ok ? "SENT" : "FAILED"} http=${result.httpStatus ?? "n/a"} at=${new Date().toISOString()}`,
+      `[meta-capi] store=${input.storeId} order=${input.orderId} event=Purchase event_id=${purchaseEventId(input.orderId)} status=${result.ok ? "SENT" : "FAILED"} http=${result.httpStatus ?? "n/a"} at=${new Date().toISOString()}`,
     );
 
     return result;

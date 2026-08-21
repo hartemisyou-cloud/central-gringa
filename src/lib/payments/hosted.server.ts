@@ -15,6 +15,8 @@ export interface HostedPaymentSession {
   storeName: string;
   /** Configuração pública do Meta Pixel (nunca inclui Access Token). */
   metaPixelId: string | null;
+  /** Itens reais do pedido, usados nos eventos de navegador do Pixel. */
+  items: Array<{ id: string; name: string; quantity: number; unitAmount: number }>;
 }
 
 /**
@@ -29,7 +31,7 @@ export async function getHostedPaymentSession(
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
-      "id, store_id, order_number, status, total_cents, currency, order_items(product_name, quantity)",
+      "id, store_id, order_number, status, total_cents, currency, order_items(product_id, product_name, quantity, total_cents)",
     )
     .eq("public_token", publicToken)
     .maybeSingle();
@@ -75,5 +77,11 @@ export async function getHostedPaymentSession(
     subtitle: store.name ?? null,
     storeName: store.name ?? "",
     metaPixelId: meta.pixelId,
+    items: items.map((item) => ({
+      id: item.product_id,
+      name: item.product_name,
+      quantity: item.quantity,
+      unitAmount: Number((item.total_cents / Math.max(item.quantity, 1) / 100).toFixed(2)),
+    })),
   };
 }

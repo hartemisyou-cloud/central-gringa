@@ -1,7 +1,9 @@
 /**
  * Meta Pixel (navegador).
  * Recebe SOMENTE o pixel_id público — o Access Token nunca chega aqui.
- * Todos os eventos usam valor/moeda reais do pedido; nada é fixo.
+ * Eventos de navegador: PageView, ViewContent e InitiateCheckout.
+ * Purchase NÃO é disparado pelo navegador: ele é enviado exclusivamente
+ * pela Conversions API quando orders.status = PAID.
  */
 
 type Fbq = ((...args: unknown[]) => void) & { queue?: unknown[]; loaded?: boolean };
@@ -13,11 +15,23 @@ declare global {
   }
 }
 
+export interface PixelContent {
+  id: string;
+  quantity: number;
+  item_price: number;
+}
+
+export interface CommerceEventInput {
+  value: number;
+  currency: string;
+  contents?: PixelContent[] | undefined;
+  contentName?: string | null | undefined;
+}
+
 export function initPixel(pixelId: string): void {
   if (typeof window === "undefined" || !pixelId) return;
   if (!window.fbq) {
     const fbq: Fbq = function (...args: unknown[]) {
-      // eslint-disable-next-line prefer-spread
       (fbq.queue = fbq.queue ?? []).push(args);
     } as Fbq;
     window.fbq = fbq;
@@ -27,9 +41,9 @@ export function initPixel(pixelId: string): void {
     script.src = "https://connect.facebook.net/en_US/fbevents.js";
     document.head.appendChild(script);
   }
-  const existing = (window.fbq as Fbq & { _initialized?: Set<string> })._initialized;
-  const initialized = existing ?? new Set<string>();
-  (window.fbq as Fbq & { _initialized?: Set<string> })._initialized = initialized;
+  const holder = window.fbq as Fbq & { _initialized?: Set<string> };
+  const initialized = holder._initialized ?? new Set<string>();
+  holder._initialized = initialized;
   if (initialized.has(pixelId)) return;
   initialized.add(pixelId);
   window.fbq("init", pixelId);
@@ -39,31 +53,33 @@ export function trackPageView(): void {
   window.fbq?.("track", "PageView");
 }
 
-export function trackInitiateCheckout(input: { value: number; currency: string }): void {
-  window.fbq?.("track", "InitiateCheckout", {
-    value: input.value,
-    currency: input.currency.toUpperCase(),
-  });
-}
-
-/**
- * Purchase do navegador.
- * `eventID` é SEMPRE o order_id — idêntico ao event_id enviado pela CAPI,
- * o que permite a deduplicação na Meta.
- */
-export function trackPurchase(input: {
-  orderId: string;
-  value: number;
-  currency: string;
-  contents?: Array<{ id: string; quantity: number; item_price: number }>;
-}): void {
+/** Monta o payload padrão de e-commerce com dados reais (nunca valores fixos). */
+function commercePayload(input: CommerceEventInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     value: input.value,
     currency: input.currency.toUpperCase(),
   };
-  if (input.contents && input.contents.length > 0) {
-    payload["contents"] = input.contents;
+  const contents = input.contents ?? [];
+  if (contents.length > 0) {
+    payload["content_ids"] = contents.map((item) => item.id);
+    payload["contents"] = contents.map((item) => ({
+      id: item.id,
+      quantity: item.quantity,
+      item_price: item.item_price,
+    }));
     payload["content_type"] = "product";
+    payload["num_items"] = contents.reduce((total, item) => total + item.quantity, 0);
   }
-  window.fbq?.("track", "Purchase", payload, { eventID: input.orderId });
+  if (input.contentName) payload["content_name"] = input.contentName;
+  return payload;
+}
+
+/** Visualização do checkout, com valor/moeda reais do pedido. */
+export function trackViewContent(input: CommerceEventInput): void {
+  window.fbq?.("track", "ViewContent", commercePayload(input));
+}
+
+/** Intenção real de pagamento (clique em pagar / carteira expressa). */
+export function trackInitiateCheckout(input: CommerceEventInput): void {
+  window.fbq?.("track", "InitiateCheckout", commercePayload(input));
 }
