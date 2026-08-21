@@ -56,7 +56,8 @@ export const captureHostedAttribution = createServerFn({ method: "POST" })
         eventSourceUrl: data.pageUrl ?? null,
       });
       return { ok: true as const };
-    } catch {
+    } catch (error) {
+      console.error("[attribution] capture failed", (error as Error).message);
       return { ok: false as const };
     }
   });
