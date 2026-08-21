@@ -13,6 +13,7 @@ export interface CreatePaymentInput {
   description?: string;
   receiptEmail?: string;
   idempotencyKey: string;
+  paymentMethodConfiguration?: string;
 }
 
 export interface ProviderPayment {
@@ -64,6 +65,9 @@ export class StripePaymentProvider implements PaymentProvider {
         metadata: input.metadata,
         ...(input.description ? { description: input.description } : {}),
         ...(input.receiptEmail ? { receipt_email: input.receiptEmail } : {}),
+        ...(input.paymentMethodConfiguration
+          ? { paymentMethodConfiguration: input.paymentMethodConfiguration }
+          : {}),
       },
       input.idempotencyKey,
     );
