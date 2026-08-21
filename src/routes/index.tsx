@@ -168,7 +168,7 @@ function Storefront() {
                       <Button
                         className="w-full"
                         disabled={soldOut}
-                        onClick={() => add(product.id)}
+                        onClick={() => handleAdd(product)}
                       >
                         {soldOut ? "Indisponível" : "Adicionar"}
                       </Button>
