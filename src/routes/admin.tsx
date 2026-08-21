@@ -1,9 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Copy, KeyRound, Loader2, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { BarChart3, Copy, KeyRound, Loader2, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 
 import {
   adminCreateApiKey,
