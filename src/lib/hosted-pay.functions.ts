@@ -47,7 +47,7 @@ export const captureHostedAttribution = createServerFn({ method: "POST" })
         .select("id")
         .eq("public_token", data.token)
         .maybeSingle();
-      if (!order) return { ok: false as const, reason: "order_not_found" };
+      if (!order) return { ok: false as const };
 
       const { enrichOrderAttribution } = await import("@/lib/payments/attribution.server");
       await enrichOrderAttribution(order.id, data.attribution ?? {}, {
@@ -55,8 +55,8 @@ export const captureHostedAttribution = createServerFn({ method: "POST" })
         clientUserAgent,
         eventSourceUrl: data.pageUrl ?? null,
       });
-      return { ok: true as const, reason: "saved" };
-    } catch (error) {
-      return { ok: false as const, reason: (error as Error).message.slice(0, 200) };
+      return { ok: true as const };
+    } catch {
+      return { ok: false as const };
     }
   });
