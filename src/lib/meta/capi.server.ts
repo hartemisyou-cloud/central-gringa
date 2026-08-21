@@ -238,6 +238,11 @@ export async function sendPurchaseForOrder(input: {
     const settings = await getMetaSettingsWithToken(input.storeId);
     if (!settings) return { ok: true, skipped: "meta_disabled" };
 
+    const context = await loadOrderContext(input.orderId);
+    if (!context) return { ok: true, skipped: "order_not_found" };
+    // PAID é a única fonte de verdade para Purchase.
+    if (context.status !== "PAID") return { ok: true, skipped: "order_not_paid" };
+
     // Idempotência: uma linha por (store_id, order_id, event_name = Purchase).
     const { data: existing } = await supabaseAdmin
       .from("meta_conversion_events")
@@ -272,10 +277,6 @@ export async function sendPurchaseForOrder(input: {
       rowId = inserted.id;
     }
 
-    const context = await loadOrderContext(input.orderId);
-    if (!context) return { ok: true, skipped: "order_not_found" };
-    // PAID é a única fonte de verdade para Purchase.
-    if (context.status !== "PAID") return { ok: true, skipped: "order_not_paid" };
 
     const payload = await buildPayload(context, settings, {
       clientIp: input.clientIp ?? null,
