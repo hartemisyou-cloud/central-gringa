@@ -37,6 +37,19 @@ export const Route = createFileRoute("/")({
 function Storefront() {
   const { data: products } = useSuspenseQuery(productsQuery);
   const { lines, hydrated, add, setQuantity } = useCart();
+  const tracking = useStorefrontTracking();
+
+  const handleAdd = (product: StorefrontProduct) => {
+    add(product.id);
+    tracking.addToCart({
+      value: Number((product.priceCents / 100).toFixed(2)),
+      currency: product.currency,
+      contents: [
+        { id: product.id, quantity: 1, item_price: Number((product.priceCents / 100).toFixed(2)) },
+      ],
+      contentName: product.name,
+    });
+  };
 
   const quantityOf = (id: string) => lines.find((line) => line.productId === id)?.quantity ?? 0;
   const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
