@@ -74,6 +74,14 @@ async function applyEvent(event: StripeEvent): Promise<string> {
       await supabaseAdmin.rpc("commit_order_stock", { _order_id: payment.order_id });
       await logEvent(payment, "PAYMENT_SUCCEEDED", "Pagamento confirmado pela Stripe");
       await trackPayment(payment, "payment_succeeded", { paymentMethod: method?.type ?? null });
+      // Meta CAPI: integração independente. Uma falha aqui NUNCA altera o
+      // estado financeiro do pedido nem interrompe o webhook (UTMify inclusive).
+      try {
+        const { sendPurchaseForOrder } = await import("@/lib/meta/capi.server");
+        await sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id });
+      } catch (error) {
+        console.error("[meta-capi] purchase dispatch failed", (error as Error).message);
+      }
       return "Pagamento confirmado.";
     }
     case "payment_intent.payment_failed": {

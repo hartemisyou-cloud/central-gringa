@@ -13,6 +13,8 @@ export interface HostedPaymentSession {
   label: string;
   subtitle: string | null;
   storeName: string;
+  /** Configuração pública do Meta Pixel (nunca inclui Access Token). */
+  metaPixelId: string | null;
 }
 
 /**
@@ -59,6 +61,9 @@ export async function getHostedPaymentSession(
       : first.product_name
     : `Pedido ${order.order_number}`;
 
+  const { getPublicMetaConfig } = await import("@/lib/meta/config.server");
+  const meta = await getPublicMetaConfig(order.store_id).catch(() => ({ pixelId: null }));
+
   return {
     orderNumber: order.order_number,
     publicToken,
@@ -69,5 +74,6 @@ export async function getHostedPaymentSession(
     label,
     subtitle: store.name ?? null,
     storeName: store.name ?? "",
+    metaPixelId: meta.pixelId,
   };
 }
