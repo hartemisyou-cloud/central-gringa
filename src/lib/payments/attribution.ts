@@ -55,6 +55,54 @@ export const attributionSchema = z
   .strip()
   .optional();
 
+/**
+ * Contexto real do navegador do comprador, aceito no mesmo objeto `attribution`
+ * do body. Não é atribuição de marketing: vive em colunas próprias do pedido.
+ */
+export const CLIENT_CONTEXT_KEYS = [
+  "client_ip",
+  "client_user_agent",
+  "event_source_url",
+] as const;
+export type ClientContextKey = (typeof CLIENT_CONTEXT_KEYS)[number];
+
+/** Schema tolerante: atribuição de marketing + contexto do navegador. */
+export const attributionWithContextSchema = z
+  .object({
+    ...(Object.fromEntries(ATTRIBUTION_KEYS.map((key) => [key, field(key)])) as {
+      [K in AttributionKey]: z.ZodOptional<z.ZodString>;
+    }),
+    client_ip: z.string().trim().max(100).optional(),
+    client_user_agent: z.string().trim().max(500).optional(),
+    event_source_url: z.string().trim().max(500).optional(),
+  })
+  .strip()
+  .optional();
+
+export type AttributionWithContext = Attribution & {
+  client_ip?: string | undefined;
+  client_user_agent?: string | undefined;
+  event_source_url?: string | undefined;
+};
+
+/** Separa a atribuição de marketing do contexto de navegador enviado no body. */
+export function splitAttributionPayload(input: AttributionWithContext | undefined | null): {
+  attribution: Attribution;
+  context: { clientIp?: string; clientUserAgent?: string; eventSourceUrl?: string };
+} {
+  const attribution = normalizeAttribution(input as Attribution | undefined);
+  const context: { clientIp?: string; clientUserAgent?: string; eventSourceUrl?: string } = {};
+  const ip = input?.client_ip?.trim();
+  const ua = input?.client_user_agent?.trim();
+  const url = input?.event_source_url?.trim();
+  if (ip) context.clientIp = ip;
+  if (ua) context.clientUserAgent = ua;
+  if (url) context.eventSourceUrl = url;
+  return { attribution, context };
+}
+
+
+
 /** Remove caracteres de controle e valores vazios; nunca lança. */
 export function normalizeAttribution(input: Attribution | undefined | null): Attribution {
   const out: Attribution = {};
