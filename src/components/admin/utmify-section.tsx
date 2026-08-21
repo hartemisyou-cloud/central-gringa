@@ -6,6 +6,7 @@ import { Activity, Loader2, RefreshCw } from "lucide-react";
 
 import {
   adminListUtmifySettings,
+  adminResendUtmifyOrder,
   adminRetryUtmifyEvents,
   adminSaveUtmifySettings,
   adminTestUtmifyConnection,
