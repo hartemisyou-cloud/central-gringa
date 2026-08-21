@@ -213,7 +213,7 @@ async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
   }
   const { data } = await supabaseAdmin
     .from("stripe_integrations")
-    .select("*")
+    .select("id, name, environment, publishable_key, secret_key_ciphertext, status, connection_error, payment_method_configuration_id")
     .eq("id", store.stripe_integration_id)
     .maybeSingle();
   if (!data) throw new PaymentError("CONFIG_ERROR", "Integração de pagamento não encontrada.");
