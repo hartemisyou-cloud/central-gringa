@@ -1,5 +1,8 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getOrderAttribution } from "@/lib/payments/attribution.server";
+import {
+  getOrderAttributionRecord,
+  type OrderAttributionRecord,
+} from "@/lib/payments/attribution.server";
 import type { Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
 import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
@@ -107,25 +110,38 @@ async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
   };
 }
 
-function eventSourceUrl(context: OrderContext, landingPage?: string | undefined): string | undefined {
+/**
+ * URL real da conversão. Prioridade:
+ * 1) URL do checkout/sessão onde a compra aconteceu (capturada no navegador);
+ * 2) landing page da atribuição;
+ * 3) fallback: página do pedido no domínio da loja.
+ */
+function eventSourceUrl(
+  context: OrderContext,
+  attribution: OrderAttributionRecord,
+): string | undefined {
+  const captured = attribution.event_source_url;
+  if (captured && /^https?:\/\//.test(captured)) return captured;
+  const landing = attribution.landing_page;
+  if (landing && /^https?:\/\//.test(landing)) return landing;
   if (context.storeDomain) {
     const base = context.storeDomain.startsWith("http")
       ? context.storeDomain
       : `https://${context.storeDomain}`;
     return `${base.replace(/\/$/, "")}/pedido/${context.publicToken}`;
   }
-  if (landingPage && /^https?:\/\//.test(landingPage)) return landingPage;
   return undefined;
 }
 
 async function buildPayload(
   context: OrderContext,
-  settings: { testEventCode: string | null },
   extra: { clientIp?: string | null; userAgent?: string | null } = {},
 ) {
-  const attribution: Attribution = await getOrderAttribution(context.orderId).catch(
-    () => ({}) as Attribution,
+  const record: OrderAttributionRecord = await getOrderAttributionRecord(context.orderId).catch(
+    () => ({}) as OrderAttributionRecord,
   );
+  const attribution: Attribution = record;
+
 
   const userData: Record<string, unknown> = {};
   const em = await hashEmail(context.email);
@@ -148,8 +164,12 @@ async function buildPayload(
   }
   if (attribution.fbc) userData["fbc"] = attribution.fbc;
   if (attribution.fbp) userData["fbp"] = attribution.fbp;
-  if (extra.clientIp) userData["client_ip_address"] = extra.clientIp;
-  if (extra.userAgent) userData["client_user_agent"] = extra.userAgent;
+  // IP e User-Agent do contexto real da compra: o webhook da Stripe não os
+  // possui, então usamos o que foi capturado no checkout e persistido.
+  const clientIp = extra.clientIp ?? record.client_ip ?? null;
+  const userAgent = extra.userAgent ?? record.client_user_agent ?? null;
+  if (clientIp) userData["client_ip_address"] = clientIp;
+  if (userAgent) userData["client_user_agent"] = userAgent;
 
   const customData: Record<string, unknown> = {
     currency: context.currency.toUpperCase(),
@@ -171,7 +191,7 @@ async function buildPayload(
     if (value) customData[key] = value;
   }
 
-  const url = eventSourceUrl(context, attribution.landing_page);
+  const url = eventSourceUrl(context, record);
 
   const event: Record<string, unknown> = {
     event_name: "Purchase",
@@ -183,9 +203,10 @@ async function buildPayload(
   };
   if (url) event["event_source_url"] = url;
 
-  const body: Record<string, unknown> = { data: [event] };
-  if (settings.testEventCode) body["test_event_code"] = settings.testEventCode;
-  return body;
+  // PRODUÇÃO: nunca enviar test_event_code. Vendas reais precisam entrar no
+  // fluxo normal de eventos da Meta; o Test Event Code existe apenas para o
+  // botão de teste do painel (sendTestPurchase).
+  return { data: [event] } as Record<string, unknown>;
 }
 
 async function postToMeta(
@@ -278,7 +299,7 @@ export async function sendPurchaseForOrder(input: {
     }
 
 
-    const payload = await buildPayload(context, settings, {
+    const payload = await buildPayload(context, {
       clientIp: input.clientIp ?? null,
       userAgent: input.userAgent ?? null,
     });

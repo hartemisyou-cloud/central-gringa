@@ -14,8 +14,9 @@ import { toast } from "sonner";
 
 import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
-import { loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
+import { captureHostedAttribution, loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
 import { createCheckoutTracker } from "@/lib/analytics/client";
+import { captureAttribution } from "@/lib/tracking/attribution-client";
 import {
   initPixel,
   trackInitiateCheckout,
@@ -201,6 +202,28 @@ function PaymentForm({ session }: { session: Session }) {
     trackPageView();
     trackViewContent(metaEvent);
   }, [session.metaPixelId, metaEvent]);
+
+  // Atribuição no checkout hospedado: preserva fbclid/UTMs que chegam direto
+  // nesta URL e envia fbp/fbc + URL real da conversão ao servidor, que também
+  // registra IP e User-Agent reais para o Purchase da CAPI.
+  const captured = useRef(false);
+  useEffect(() => {
+    // pequeno atraso: dá tempo do Pixel gravar os cookies _fbp/_fbc.
+    const timer = window.setTimeout(() => {
+      if (captured.current) return;
+      captured.current = true;
+      const attribution = captureAttribution();
+      void captureHostedAttribution({
+        data: {
+          token: session.publicToken,
+          attribution,
+          pageUrl: window.location.href.slice(0, 500),
+        },
+      }).catch(() => undefined);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [session.publicToken]);
+
 
   // InitiateCheckout só com intenção real de pagamento (submit/carteira),
   // uma única vez — nunca a cada render.
