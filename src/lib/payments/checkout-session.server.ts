@@ -296,12 +296,13 @@ export async function createOrderCheckoutSession(input: {
     mode: "payment",
     ui_mode: "custom",
     adaptive_pricing: { enabled: true },
-    currency: order.currency.toLowerCase(),
+    // `currency` de nível de Session NÃO é enviada: a moeda-base vem do
+    // price_data de cada line item, deixando a Stripe escolher a moeda de
+    // apresentação (Adaptive Pricing) conforme a localização do comprador.
     line_items: lineItems,
-    // A Checkout Session NÃO aceita `automatic_payment_methods` (a Stripe
-    // rejeita com parameter_unknown). O comportamento equivalente é obtido
-    // omitindo `payment_method_types`: a Stripe então habilita automaticamente
-    // todos os métodos elegíveis (cartão, Apple Pay, Google Pay, Link).
+    // Sem `payment_method_types`, sem `automatic_payment_methods` e sem
+    // `payment_method_configuration`: a Stripe habilita automaticamente todos
+    // os métodos elegíveis para a moeda apresentada.
     client_reference_id: order.public_token,
     metadata,
     payment_intent_data: paymentIntentData,
@@ -316,9 +317,7 @@ export async function createOrderCheckoutSession(input: {
   if (customerPhone) {
     (params["metadata"] as Record<string, string>)["customer_phone"] = customerPhone;
   }
-  if (integration.payment_method_configuration_id) {
-    params["payment_method_configuration"] = integration.payment_method_configuration_id;
-  }
+
 
 
   // Idempotência na Stripe: chamadas simultâneas para o mesmo pedido devolvem
@@ -337,6 +336,36 @@ export async function createOrderCheckoutSession(input: {
   if (!session.client_secret) {
     throw new PaymentError("PROVIDER_ERROR", "Checkout Session criada sem client_secret.");
   }
+
+  // ── Instrumentação TEMPORÁRIA (diagnóstico de Adaptive Pricing) ──────────
+  // Nenhum dado sensível (secret keys, tokens, dados de cartão) é registrado.
+  console.log(
+    "[checkout-session][diag]",
+    JSON.stringify({
+      session_id: session.id,
+      ui_mode: (session as unknown as StripeParams)["ui_mode"] ?? null,
+      currency: session.currency ?? null,
+      adaptive_pricing: (session as unknown as StripeParams)["adaptive_pricing"] ?? null,
+      currency_conversion: session.currency_conversion ?? null,
+      presentment_details: (session as unknown as StripeParams)["presentment_details"] ?? null,
+      customer_email: (session as unknown as StripeParams)["customer_email"] ?? null,
+      line_items: lineItems.map((li) => {
+        const price = li["price_data"] as StripeParams | undefined;
+        const product = price?.["product_data"] as StripeParams | undefined;
+        const meta = (product?.["metadata"] ?? {}) as Record<string, string>;
+        return {
+          price_id: li["price"] ?? null,
+          product_id: meta["product_id"] ?? null,
+          sku: meta["sku"] ?? null,
+          slug: meta["slug"] ?? null,
+          unit_amount: price?.["unit_amount"] ?? null,
+          currency: price?.["currency"] ?? null,
+          quantity: li["quantity"] ?? null,
+        };
+      }),
+    }),
+  );
+
 
   await supabaseAdmin.from("stripe_checkout_sessions").upsert(
     {
