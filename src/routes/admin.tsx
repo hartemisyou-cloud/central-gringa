@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import {
   BarChart3,
   Copy,
+  Eye,
+
   KeyRound,
   Loader2,
   LogOut,
