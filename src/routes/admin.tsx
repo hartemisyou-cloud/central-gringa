@@ -3,7 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { BarChart3, Copy, KeyRound, Loader2, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import {
+  BarChart3,
+  Copy,
+  KeyRound,
+  Loader2,
+  LogOut,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 
 import {
   adminCreateApiKey,
@@ -12,6 +21,7 @@ import {
   adminLogin,
   adminLogout,
   adminRevokeApiKey,
+  adminRotateApiKey,
   adminStatus,
 } from "@/lib/admin.functions";
 import { MetaTrackingSection } from "@/components/admin/meta-tracking-section";
@@ -134,6 +144,7 @@ function AdminDashboard() {
   const logout = useServerFn(adminLogout);
   const createKey = useServerFn(adminCreateApiKey);
   const revokeKey = useServerFn(adminRevokeApiKey);
+  const rotateKey = useServerFn(adminRotateApiKey);
 
   const stores = useQuery({ queryKey: ["admin", "stores"], queryFn: () => adminListStores() });
   const keys = useQuery({ queryKey: ["admin", "keys"], queryFn: () => adminListApiKeys() });
@@ -161,6 +172,17 @@ function AdminDashboard() {
     },
     onError: () => toast.error("Não foi possível revogar a credencial."),
   });
+
+  const rotateMutation = useMutation({
+    mutationFn: (keyId: string) => rotateKey({ data: { keyId } }),
+    onSuccess: async (result) => {
+      setFreshKey(result.fullKey);
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      toast.success("Nova credencial gerada. Copie agora — não será exibida novamente.");
+    },
+    onError: () => toast.error("Não foi possível rotacionar a credencial."),
+  });
+
 
   return (
     <main className="min-h-screen bg-muted/40">
@@ -294,7 +316,12 @@ function AdminDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Credenciais</CardTitle>
-            <CardDescription>Somente o prefixo público é armazenado em claro.</CardDescription>
+            <CardDescription>
+              O valor completo nunca é armazenado — o banco guarda apenas o hash. Aqui aparecem o
+              identificador, o prefixo público e as lojas atendidas por cada credencial. Para obter
+              um valor utilizável, rotacione a chave (gera uma nova com os mesmos escopos e revoga a
+              anterior).
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -302,7 +329,9 @@ function AdminDashboard() {
                 <TableRow>
                   <TableHead>Loja</TableHead>
                   <TableHead>Identificação</TableHead>
+                  <TableHead>Key ID</TableHead>
                   <TableHead>Prefixo</TableHead>
+                  <TableHead>Lojas atendidas</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Último uso</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -313,7 +342,26 @@ function AdminDashboard() {
                   <TableRow key={key.id}>
                     <TableCell>{key.storeName}</TableCell>
                     <TableCell>{key.label}</TableCell>
-                    <TableCell className="font-mono text-xs">{key.keyPrefix}…</TableCell>
+                    <TableCell className="font-mono text-xs">{key.keyId}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <code className="font-mono text-xs">{key.keyPrefix}…</code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          onClick={() => {
+                            navigator.clipboard.writeText(key.keyPrefix);
+                            toast.success("Prefixo copiado.");
+                          }}
+                        >
+                          <Copy className="size-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {key.scopes.length ? key.scopes.join(", ") : "—"}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={key.status === "ACTIVE" ? "default" : "secondary"}>
                         {key.status === "ACTIVE" ? "ativa" : "revogada"}
@@ -322,23 +370,33 @@ function AdminDashboard() {
                     <TableCell className="text-sm text-muted-foreground">
                       {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString("pt-BR") : "—"}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="space-x-1 text-right">
                       {key.status === "ACTIVE" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={revokeMutation.isPending}
-                          onClick={() => revokeMutation.mutate(key.id)}
-                        >
-                          <Trash2 className="size-4" /> Revogar
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={rotateMutation.isPending}
+                            onClick={() => rotateMutation.mutate(key.id)}
+                          >
+                            <RefreshCw className="size-4" /> Rotacionar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={revokeMutation.isPending}
+                            onClick={() => revokeMutation.mutate(key.id)}
+                          >
+                            <Trash2 className="size-4" /> Revogar
+                          </Button>
+                        </>
                       )}
                     </TableCell>
                   </TableRow>
                 ))}
                 {!keys.isLoading && (keys.data ?? []).length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       Nenhuma credencial cadastrada.
                     </TableCell>
                   </TableRow>

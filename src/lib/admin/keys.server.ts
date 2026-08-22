@@ -17,7 +17,9 @@ export interface AdminApiKey {
   storeId: string;
   storeName: string;
   label: string;
+  keyId: string;
   keyPrefix: string;
+  scopes: string[];
   status: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
@@ -48,21 +50,96 @@ export async function listStores(): Promise<AdminStore[]> {
 export async function listApiKeys(): Promise<AdminApiKey[]> {
   const { data, error } = await supabaseAdmin
     .from("store_api_keys")
-    .select("id, store_id, label, key_prefix, status, last_used_at, revoked_at, created_at, stores(name)")
+    .select(
+      "id, store_id, label, key_id, key_prefix, status, last_used_at, revoked_at, created_at, stores(name)",
+    )
     .order("created_at", { ascending: false });
   if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível carregar as credenciais.");
+
+  const { data: scopeRows } = await supabaseAdmin
+    .from("store_api_key_scopes")
+    .select("api_key_id, stores(slug)");
+
+  const scopesByKey = new Map<string, string[]>();
+  for (const row of scopeRows ?? []) {
+    const slug = (row as { stores?: { slug?: string } | null }).stores?.slug;
+    if (!slug) continue;
+    const list = scopesByKey.get(row.api_key_id) ?? [];
+    list.push(slug);
+    scopesByKey.set(row.api_key_id, list);
+  }
 
   return (data ?? []).map((row) => ({
     id: row.id,
     storeId: row.store_id,
     storeName: (row as { stores?: { name?: string } | null }).stores?.name ?? "—",
     label: row.label,
+    keyId: row.key_id,
     keyPrefix: row.key_prefix,
+    scopes: (scopesByKey.get(row.id) ?? []).sort(),
     status: row.status,
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
     createdAt: row.created_at,
   }));
+}
+
+/**
+ * Rotaciona uma credencial: cria uma nova chave para a mesma loja, replicando
+ * label e escopos, e revoga a anterior. O valor completo só existe na resposta.
+ */
+export async function rotateApiKey(keyId: string): Promise<{ fullKey: string; keyPrefix: string }> {
+  const { data: current } = await supabaseAdmin
+    .from("store_api_keys")
+    .select("id, store_id, label, status, stores(environment, name)")
+    .eq("id", keyId)
+    .maybeSingle();
+  if (!current) throw new PaymentError("NOT_FOUND", "Credencial não encontrada.");
+
+  const environment =
+    (current as { stores?: { environment?: "test" | "live" } | null }).stores?.environment ?? "live";
+
+  const generated = generateStoreApiKey(environment);
+  const keyHash = await sha256Hex(generated.fullKey);
+
+  const { data: inserted, error } = await supabaseAdmin
+    .from("store_api_keys")
+    .insert({
+      store_id: current.store_id,
+      label: current.label,
+      key_id: generated.keyId,
+      key_prefix: generated.prefix,
+      key_hash: keyHash,
+      status: "ACTIVE",
+    })
+    .select("id")
+    .single();
+  if (error || !inserted) {
+    throw new PaymentError("CONFIG_ERROR", "Não foi possível rotacionar a credencial.");
+  }
+
+  const { data: scopeRows } = await supabaseAdmin
+    .from("store_api_key_scopes")
+    .select("store_id")
+    .eq("api_key_id", current.id);
+
+  if (scopeRows?.length) {
+    await supabaseAdmin.from("store_api_key_scopes").insert(
+      scopeRows.map((row) => ({ api_key_id: inserted.id, store_id: row.store_id })),
+    );
+  }
+
+  await revokeApiKey(current.id);
+
+  await recordAudit({
+    actorEmail: "admin-panel",
+    action: "api_key.rotated",
+    resourceType: "store_api_key",
+    resourceId: generated.keyId,
+    metadata: { replaced: current.id, label: current.label },
+  });
+
+  return { fullKey: generated.fullKey, keyPrefix: generated.prefix };
 }
 
 /**
