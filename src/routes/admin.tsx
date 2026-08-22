@@ -164,6 +164,17 @@ function AdminDashboard() {
     onError: () => toast.error("Não foi possível revogar a credencial."),
   });
 
+  const rotateMutation = useMutation({
+    mutationFn: (keyId: string) => rotateKey({ data: { keyId } }),
+    onSuccess: async (result) => {
+      setFreshKey(result.fullKey);
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      toast.success("Nova credencial gerada. Copie agora — não será exibida novamente.");
+    },
+    onError: () => toast.error("Não foi possível rotacionar a credencial."),
+  });
+
+
   return (
     <main className="min-h-screen bg-muted/40">
       <header className="border-b bg-background">
