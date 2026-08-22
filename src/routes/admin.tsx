@@ -22,6 +22,7 @@ import {
   adminLogout,
   adminRevokeApiKey,
   adminRotateApiKey,
+  adminRevealApiKey,
   adminStatus,
 } from "@/lib/admin.functions";
 import { MetaTrackingSection } from "@/components/admin/meta-tracking-section";
@@ -145,6 +146,7 @@ function AdminDashboard() {
   const createKey = useServerFn(adminCreateApiKey);
   const revokeKey = useServerFn(adminRevokeApiKey);
   const rotateKey = useServerFn(adminRotateApiKey);
+  const revealKey = useServerFn(adminRevealApiKey);
 
   const stores = useQuery({ queryKey: ["admin", "stores"], queryFn: () => adminListStores() });
   const keys = useQuery({ queryKey: ["admin", "keys"], queryFn: () => adminListApiKeys() });
@@ -171,6 +173,18 @@ function AdminDashboard() {
       toast.success("Credencial revogada.");
     },
     onError: () => toast.error("Não foi possível revogar a credencial."),
+  });
+
+  const revealMutation = useMutation({
+    mutationFn: (keyId: string) => revealKey({ data: { keyId } }),
+    onSuccess: (result) => {
+      setFreshKey(result.fullKey);
+      toast.success("Chave completa exibida abaixo.");
+    },
+    onError: () =>
+      toast.error(
+        "Esta credencial foi criada antes do armazenamento cifrado. Rotacione para obter o valor completo.",
+      ),
   });
 
   const rotateMutation = useMutation({
@@ -390,6 +404,16 @@ function AdminDashboard() {
                     <TableCell className="space-x-1 text-right">
                       {key.status === "ACTIVE" && (
                         <>
+                          {key.canReveal && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={revealMutation.isPending}
+                              onClick={() => revealMutation.mutate(key.id)}
+                            >
+                              <Eye className="size-4" /> Ver chave
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
