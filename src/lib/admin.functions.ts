@@ -71,6 +71,17 @@ export const adminRotateApiKey = createServerFn({ method: "POST" })
     return rotateApiKey(data.keyId);
   });
 
+export const adminRevealApiKey = createServerFn({ method: "POST" })
+  .inputValidator((data: { keyId: string }) => z.object({ keyId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { revealApiKey } = await import("./admin/keys.server");
+    return revealApiKey(data.keyId);
+  });
+
+
+
 /* ------------------------------------------------------------------ */
 /* Tracking → Meta (Pixel + Conversions API), por loja                  */
 /* ------------------------------------------------------------------ */
