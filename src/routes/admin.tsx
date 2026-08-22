@@ -12,6 +12,7 @@ import {
   adminLogin,
   adminLogout,
   adminRevokeApiKey,
+  adminRotateApiKey,
   adminStatus,
 } from "@/lib/admin.functions";
 import { MetaTrackingSection } from "@/components/admin/meta-tracking-section";
@@ -134,6 +135,7 @@ function AdminDashboard() {
   const logout = useServerFn(adminLogout);
   const createKey = useServerFn(adminCreateApiKey);
   const revokeKey = useServerFn(adminRevokeApiKey);
+  const rotateKey = useServerFn(adminRotateApiKey);
 
   const stores = useQuery({ queryKey: ["admin", "stores"], queryFn: () => adminListStores() });
   const keys = useQuery({ queryKey: ["admin", "keys"], queryFn: () => adminListApiKeys() });
