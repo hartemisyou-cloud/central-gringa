@@ -289,23 +289,40 @@ function AdminDashboard() {
                 <p className="text-sm font-medium">
                   Copie e guarde agora — não será exibida novamente.
                 </p>
+                <textarea
+                  readOnly
+                  rows={3}
+                  value={freshKey}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-full resize-none break-all rounded bg-background px-3 py-2 font-mono text-xs leading-relaxed"
+                />
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 overflow-x-auto rounded bg-background px-3 py-2 text-xs">
-                    {freshKey}
-                  </code>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(freshKey);
-                      toast.success("Credencial copiada.");
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(freshKey);
+                      } catch {
+                        const el = document.createElement("textarea");
+                        el.value = freshKey;
+                        document.body.appendChild(el);
+                        el.select();
+                        document.execCommand("copy");
+                        el.remove();
+                      }
+                      toast.success(`Credencial copiada (${freshKey.length} caracteres).`);
                     }}
                   >
-                    <Copy className="size-4" />
+                    <Copy className="size-4" /> Copiar chave completa
                   </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {freshKey.length} caracteres
+                  </span>
                 </div>
               </div>
             )}
+
           </CardContent>
         </Card>
 
