@@ -1165,6 +1165,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          encrypted_key: string | null
           id: string
           key_hash: string
           key_id: string
@@ -1178,6 +1179,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          encrypted_key?: string | null
           id?: string
           key_hash: string
           key_id: string
@@ -1191,6 +1193,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          encrypted_key?: string | null
           id?: string
           key_hash?: string
           key_id?: string

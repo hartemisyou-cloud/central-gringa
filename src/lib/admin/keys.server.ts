@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PaymentError } from "@/lib/payments/errors";
-import { generateStoreApiKey, sha256Hex } from "@/lib/payments/crypto.server";
+import { encryptSecret, decryptSecret, generateStoreApiKey, sha256Hex } from "@/lib/payments/crypto.server";
 import { recordAudit } from "@/lib/payments/audit.server";
 
 export interface AdminStore {
@@ -20,6 +20,7 @@ export interface AdminApiKey {
   keyId: string;
   keyPrefix: string;
   scopes: string[];
+  canReveal: boolean;
   status: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
@@ -51,7 +52,7 @@ export async function listApiKeys(): Promise<AdminApiKey[]> {
   const { data, error } = await supabaseAdmin
     .from("store_api_keys")
     .select(
-      "id, store_id, label, key_id, key_prefix, status, last_used_at, revoked_at, created_at, stores(name)",
+      "id, store_id, label, key_id, key_prefix, encrypted_key, status, last_used_at, revoked_at, created_at, stores(name)",
     )
     .order("created_at", { ascending: false });
   if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível carregar as credenciais.");
@@ -77,6 +78,7 @@ export async function listApiKeys(): Promise<AdminApiKey[]> {
     keyId: row.key_id,
     keyPrefix: row.key_prefix,
     scopes: (scopesByKey.get(row.id) ?? []).sort(),
+    canReveal: Boolean((row as { encrypted_key?: string | null }).encrypted_key),
     status: row.status,
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
@@ -110,6 +112,7 @@ export async function rotateApiKey(keyId: string): Promise<{ fullKey: string; ke
       key_id: generated.keyId,
       key_prefix: generated.prefix,
       key_hash: keyHash,
+      encrypted_key: await encryptSecret(generated.fullKey),
       status: "ACTIVE",
     })
     .select("id")
@@ -166,6 +169,7 @@ export async function createApiKey(input: { storeId: string; label: string }): P
     key_id: generated.keyId,
     key_prefix: generated.prefix,
     key_hash: keyHash,
+    encrypted_key: await encryptSecret(generated.fullKey),
     status: "ACTIVE",
   });
   if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível criar a credencial.");
@@ -195,4 +199,36 @@ export async function revokeApiKey(keyId: string): Promise<void> {
     resourceId: keyId,
     metadata: {},
   });
+}
+
+/**
+ * Revela o valor completo de uma credencial, quando ela foi criada já com
+ * armazenamento cifrado. Chaves antigas (somente hash) não podem ser reveladas.
+ */
+export async function revealApiKey(keyId: string): Promise<{ fullKey: string }> {
+  const { data } = await supabaseAdmin
+    .from("store_api_keys")
+    .select("id, key_id, encrypted_key")
+    .eq("id", keyId)
+    .maybeSingle();
+  if (!data) throw new PaymentError("NOT_FOUND", "Credencial não encontrada.");
+  const encrypted = (data as { encrypted_key?: string | null }).encrypted_key;
+  if (!encrypted) {
+    throw new PaymentError(
+      "NOT_FOUND",
+      "Esta credencial foi criada antes do armazenamento cifrado. Rotacione para obter um valor visível.",
+    );
+  }
+
+  const fullKey = await decryptSecret(encrypted);
+
+  await recordAudit({
+    actorEmail: "admin-panel",
+    action: "api_key.revealed",
+    resourceType: "store_api_key",
+    resourceId: data.key_id,
+    metadata: {},
+  });
+
+  return { fullKey };
 }
