@@ -350,9 +350,9 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
 
   // Atribuição persistida no pedido -> metadata do PaymentIntent.
   // Só campos presentes são adicionados; o metadata base nunca é alterado.
-  const { getOrderAttribution } = await import("./attribution.server");
-  const attribution = await getOrderAttribution(order.id).catch(() => ({}));
+  // (já carregada em paralelo no início da função)
   const paymentIntentMetadata = mergeAttributionIntoMetadata(baseMetadata, attribution);
+
 
 
   try {
