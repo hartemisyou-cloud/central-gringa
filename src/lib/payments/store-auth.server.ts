@@ -25,11 +25,24 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
     throw new PaymentError("UNAUTHORIZED", "Credencial da loja malformada.");
   }
 
-  const { data: keyRow } = await supabaseAdmin
-    .from("store_api_keys")
-    .select("id, store_id, key_hash, status")
-    .eq("key_id", keyId)
-    .maybeSingle();
+  // Uma credencial pode atender várias lojas (chave unificada). A loja padrão é
+  // a dona da chave; para as demais, a loja é escolhida via `x-store-slug`
+  // e só é aceita se estiver no escopo autorizado da credencial.
+  const requestedSlug = request.headers.get("x-store-slug")?.trim().toLowerCase() || null;
+
+  // As duas leituras são independentes (uma usa o key_id, outra o slug) e
+  // nenhuma escreve — podem ir em paralelo. A ORDEM DAS VALIDAÇÕES abaixo
+  // permanece exatamente a mesma de antes.
+  const [{ data: keyRow }, requestedResult] = await Promise.all([
+    supabaseAdmin
+      .from("store_api_keys")
+      .select("id, store_id, key_hash, status")
+      .eq("key_id", keyId)
+      .maybeSingle(),
+    requestedSlug
+      ? supabaseAdmin.from("stores").select("*").eq("slug", requestedSlug).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
 
   if (!keyRow || keyRow.status !== "ACTIVE") {
     throw new PaymentError("UNAUTHORIZED", "Credencial da loja inválida ou revogada.");
@@ -40,18 +53,10 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
     throw new PaymentError("UNAUTHORIZED", "Credencial da loja inválida ou revogada.");
   }
 
-  // Uma credencial pode atender várias lojas (chave unificada). A loja padrão é
-  // a dona da chave; para as demais, a loja é escolhida via `x-store-slug`
-  // e só é aceita se estiver no escopo autorizado da credencial.
-  const requestedSlug = request.headers.get("x-store-slug")?.trim().toLowerCase() || null;
-  let storeId = keyRow.store_id;
+  let store: StoreRow | null = null;
 
   if (requestedSlug) {
-    const { data: requested } = await supabaseAdmin
-      .from("stores")
-      .select("id")
-      .eq("slug", requestedSlug)
-      .maybeSingle();
+    const requested = requestedResult.data as StoreRow | null;
     if (!requested) throw new PaymentError("NOT_FOUND", "Loja informada não existe.");
 
     if (requested.id !== keyRow.store_id) {
@@ -65,24 +70,33 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
         throw new PaymentError("FORBIDDEN", "Credencial não autorizada para esta loja.");
       }
     }
-    storeId = requested.id;
+    // A linha completa já veio na consulta por slug: dispensa o SELECT por id.
+    store = requested;
+  } else {
+    const { data } = await supabaseAdmin
+      .from("stores")
+      .select("*")
+      .eq("id", keyRow.store_id)
+      .maybeSingle();
+    store = data;
   }
-
-  const { data: store } = await supabaseAdmin
-    .from("stores")
-    .select("*")
-    .eq("id", storeId)
-    .maybeSingle();
 
   if (!store || store.status !== "ACTIVE") {
     throw new PaymentError("FORBIDDEN", "Loja inativa.");
   }
 
-
-  await supabaseAdmin
-    .from("store_api_keys")
-    .update({ last_used_at: new Date().toISOString() })
-    .eq("id", keyRow.id);
+  // Telemetria não-crítica: sai do caminho crítico via waitUntil (com fallback
+  // para await em ambientes sem ExecutionContext).
+  const { runInBackground } = await import("./background.server");
+  await runInBackground(
+    async () => {
+      await supabaseAdmin
+        .from("store_api_keys")
+        .update({ last_used_at: new Date().toISOString() })
+        .eq("id", keyRow.id);
+    },
+    "store_api_keys.last_used_at",
+  );
 
   return store;
 }
