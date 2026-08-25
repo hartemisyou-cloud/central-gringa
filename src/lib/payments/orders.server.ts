@@ -221,15 +221,21 @@ export async function createOrder(input: {
 
 }
 
-async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
-  if (!store.stripe_integration_id) {
-    throw new PaymentError("CONFIG_ERROR", "Loja sem integração de pagamento configurada.");
-  }
-  const { data } = await supabaseAdmin
+/** Leitura pura da integração da loja (sem validação) — permite paralelizar. */
+function fetchIntegrationForStore(store: StoreRow) {
+  if (!store.stripe_integration_id) return Promise.resolve({ data: null });
+  return supabaseAdmin
     .from("stripe_integrations")
     .select("*")
     .eq("id", store.stripe_integration_id)
     .maybeSingle();
+}
+
+/** Validações da integração — ordem e mensagens idênticas às anteriores. */
+function validateIntegration(store: StoreRow, data: IntegrationRow | null): IntegrationRow {
+  if (!store.stripe_integration_id) {
+    throw new PaymentError("CONFIG_ERROR", "Loja sem integração de pagamento configurada.");
+  }
   if (!data) throw new PaymentError("CONFIG_ERROR", "Integração de pagamento não encontrada.");
   if (data.status !== "ACTIVE") {
     throw new PaymentError("CONFIG_ERROR", "Integração de pagamento inativa.");
@@ -242,6 +248,12 @@ async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
   }
   return data;
 }
+
+async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
+  const { data } = await fetchIntegrationForStore(store);
+  return validateIntegration(store, data as IntegrationRow | null);
+}
+
 
 /**
  * Cria (ou reaproveita) o pagamento de um pedido.
