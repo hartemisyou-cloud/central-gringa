@@ -28,6 +28,8 @@ export const Route = createFileRoute("/")({
         content:
           "Compre com frete calculado, estoque em tempo real e pagamento seguro processado pela API central.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(productsQuery),
@@ -116,6 +118,8 @@ function Storefront() {
                       src={product.imageUrl}
                       alt={product.name}
                       loading="lazy"
+                      width={1024}
+                      height={1024}
                       className="size-full object-cover"
                     />
                   ) : (
@@ -126,7 +130,7 @@ function Storefront() {
                 </div>
                 <div className="flex flex-1 flex-col gap-3 p-4">
                   <div>
-                    {product.category ? (
+                    {product.category && product.category.toLowerCase() !== "parceiros" ? (
                       <p className="text-xs uppercase tracking-wider text-muted-foreground">
                         {product.category}
                       </p>
