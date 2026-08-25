@@ -261,26 +261,41 @@ async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
  * índice único no banco impedem cobranças duplicadas.
  */
 export async function createOrderPayment(input: { store: StoreRow; orderId: string }) {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select("*")
-    .eq("id", input.orderId)
-    .eq("store_id", input.store.id) // isolamento entre lojas (anti-IDOR)
-    .maybeSingle();
+  // As quatro leituras abaixo são independentes entre si (todas dependem apenas
+  // de `store` e `orderId`, já conhecidos) e nenhuma escreve. Rodam em paralelo;
+  // a ORDEM DAS VALIDAÇÕES e as mensagens de erro permanecem exatamente as mesmas.
+  const { getOrderAttribution } = await import("./attribution.server");
+  const [orderResult, integrationResult, existingResult, attribution] = await Promise.all([
+    supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("id", input.orderId)
+      .eq("store_id", input.store.id) // isolamento entre lojas (anti-IDOR)
+      .maybeSingle(),
+    fetchIntegrationForStore(input.store),
+    supabaseAdmin
+      .from("payments")
+      .select("*")
+      .eq("order_id", input.orderId)
+      .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
+      .maybeSingle(),
+    getOrderAttribution(input.orderId).catch(() => ({})),
+  ]);
+
+  const order = orderResult.data;
   if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
   if (!["PENDING_PAYMENT", "PAYMENT_PROCESSING"].includes(order.status)) {
     throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
   }
 
-  const integration = await integrationForStore(input.store);
+  const integration = validateIntegration(
+    input.store,
+    integrationResult.data as IntegrationRow | null,
+  );
   const provider = await providerFromIntegration(integration);
 
-  const { data: existing } = await supabaseAdmin
-    .from("payments")
-    .select("*")
-    .eq("order_id", order.id)
-    .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
-    .maybeSingle();
+  const existing = existingResult.data;
+
 
   if (existing?.provider_payment_id) {
     const remote = await provider.retrievePayment(existing.provider_payment_id);
