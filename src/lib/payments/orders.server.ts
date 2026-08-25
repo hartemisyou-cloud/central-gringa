@@ -382,28 +382,35 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     })
     .eq("id", payment.id);
 
-  await supabaseAdmin.from("orders").update({ status: "PAYMENT_PROCESSING" }).eq("id", order.id);
-  await supabaseAdmin.from("payment_events").insert({
-    order_id: order.id,
-    payment_id: payment.id,
-    type: "PAYMENT_CREATED",
-    message: "Pagamento criado no provedor",
-    metadata: { attempt } as never,
-  });
+  // Pós-processamento não bloqueante: nada abaixo é pré-requisito do
+  // clientSecret devolvido ao checkout. Vai para ctx.waitUntil (com await de
+  // fallback fora do Worker), preservando o mesmo trabalho e a mesma ordem.
+  const { runInBackground } = await import("./background.server");
+  await runInBackground(async () => {
+    await supabaseAdmin.from("orders").update({ status: "PAYMENT_PROCESSING" }).eq("id", order.id);
+    await supabaseAdmin.from("payment_events").insert({
+      order_id: order.id,
+      payment_id: payment.id,
+      type: "PAYMENT_CREATED",
+      message: "Pagamento criado no provedor",
+      metadata: { attempt } as never,
+    });
 
-  const { recordServerEvent } = await import("@/lib/analytics/ingest.server");
-  await recordServerEvent({
-    eventId: `pi-created:${created.providerPaymentId}`,
-    type: "payment_intent_created",
-    storeId: order.store_id,
-    integrationId: integration.id,
-    orderId: order.id,
-    publicToken: order.public_token,
-    paymentIntentId: created.providerPaymentId,
-    currency: order.currency,
-    amountCents: order.total_cents,
-    metadata: { attempt },
-  });
+    const { recordServerEvent } = await import("@/lib/analytics/ingest.server");
+    await recordServerEvent({
+      eventId: `pi-created:${created.providerPaymentId}`,
+      type: "payment_intent_created",
+      storeId: order.store_id,
+      integrationId: integration.id,
+      orderId: order.id,
+      publicToken: order.public_token,
+      paymentIntentId: created.providerPaymentId,
+      currency: order.currency,
+      amountCents: order.total_cents,
+      metadata: { attempt },
+    });
+  }, "payment.post-create");
+
 
 
   return {
