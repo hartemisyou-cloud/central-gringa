@@ -221,15 +221,21 @@ export async function createOrder(input: {
 
 }
 
-async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
-  if (!store.stripe_integration_id) {
-    throw new PaymentError("CONFIG_ERROR", "Loja sem integração de pagamento configurada.");
-  }
-  const { data } = await supabaseAdmin
+/** Leitura pura da integração da loja (sem validação) — permite paralelizar. */
+function fetchIntegrationForStore(store: StoreRow) {
+  if (!store.stripe_integration_id) return Promise.resolve({ data: null });
+  return supabaseAdmin
     .from("stripe_integrations")
     .select("*")
     .eq("id", store.stripe_integration_id)
     .maybeSingle();
+}
+
+/** Validações da integração — ordem e mensagens idênticas às anteriores. */
+function validateIntegration(store: StoreRow, data: IntegrationRow | null): IntegrationRow {
+  if (!store.stripe_integration_id) {
+    throw new PaymentError("CONFIG_ERROR", "Loja sem integração de pagamento configurada.");
+  }
   if (!data) throw new PaymentError("CONFIG_ERROR", "Integração de pagamento não encontrada.");
   if (data.status !== "ACTIVE") {
     throw new PaymentError("CONFIG_ERROR", "Integração de pagamento inativa.");
@@ -243,32 +249,53 @@ async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
   return data;
 }
 
+async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
+  const { data } = await fetchIntegrationForStore(store);
+  return validateIntegration(store, data as IntegrationRow | null);
+}
+
+
 /**
  * Cria (ou reaproveita) o pagamento de um pedido.
  * Idempotente: chave estável `payment:create:{order_id}:{attempt}` na Stripe e
  * índice único no banco impedem cobranças duplicadas.
  */
 export async function createOrderPayment(input: { store: StoreRow; orderId: string }) {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select("*")
-    .eq("id", input.orderId)
-    .eq("store_id", input.store.id) // isolamento entre lojas (anti-IDOR)
-    .maybeSingle();
+  // As quatro leituras abaixo são independentes entre si (todas dependem apenas
+  // de `store` e `orderId`, já conhecidos) e nenhuma escreve. Rodam em paralelo;
+  // a ORDEM DAS VALIDAÇÕES e as mensagens de erro permanecem exatamente as mesmas.
+  const { getOrderAttribution } = await import("./attribution.server");
+  const [orderResult, integrationResult, existingResult, attribution] = await Promise.all([
+    supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("id", input.orderId)
+      .eq("store_id", input.store.id) // isolamento entre lojas (anti-IDOR)
+      .maybeSingle(),
+    fetchIntegrationForStore(input.store),
+    supabaseAdmin
+      .from("payments")
+      .select("*")
+      .eq("order_id", input.orderId)
+      .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
+      .maybeSingle(),
+    getOrderAttribution(input.orderId).catch(() => ({})),
+  ]);
+
+  const order = orderResult.data;
   if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
   if (!["PENDING_PAYMENT", "PAYMENT_PROCESSING"].includes(order.status)) {
     throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
   }
 
-  const integration = await integrationForStore(input.store);
+  const integration = validateIntegration(
+    input.store,
+    integrationResult.data as IntegrationRow | null,
+  );
   const provider = await providerFromIntegration(integration);
 
-  const { data: existing } = await supabaseAdmin
-    .from("payments")
-    .select("*")
-    .eq("order_id", order.id)
-    .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
-    .maybeSingle();
+  const existing = existingResult.data;
+
 
   if (existing?.provider_payment_id) {
     const remote = await provider.retrievePayment(existing.provider_payment_id);
@@ -323,9 +350,9 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
 
   // Atribuição persistida no pedido -> metadata do PaymentIntent.
   // Só campos presentes são adicionados; o metadata base nunca é alterado.
-  const { getOrderAttribution } = await import("./attribution.server");
-  const attribution = await getOrderAttribution(order.id).catch(() => ({}));
+  // (já carregada em paralelo no início da função)
   const paymentIntentMetadata = mergeAttributionIntoMetadata(baseMetadata, attribution);
+
 
 
   try {
@@ -355,28 +382,35 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     })
     .eq("id", payment.id);
 
-  await supabaseAdmin.from("orders").update({ status: "PAYMENT_PROCESSING" }).eq("id", order.id);
-  await supabaseAdmin.from("payment_events").insert({
-    order_id: order.id,
-    payment_id: payment.id,
-    type: "PAYMENT_CREATED",
-    message: "Pagamento criado no provedor",
-    metadata: { attempt } as never,
-  });
+  // Pós-processamento não bloqueante: nada abaixo é pré-requisito do
+  // clientSecret devolvido ao checkout. Vai para ctx.waitUntil (com await de
+  // fallback fora do Worker), preservando o mesmo trabalho e a mesma ordem.
+  const { runInBackground } = await import("./background.server");
+  await runInBackground(async () => {
+    await supabaseAdmin.from("orders").update({ status: "PAYMENT_PROCESSING" }).eq("id", order.id);
+    await supabaseAdmin.from("payment_events").insert({
+      order_id: order.id,
+      payment_id: payment.id,
+      type: "PAYMENT_CREATED",
+      message: "Pagamento criado no provedor",
+      metadata: { attempt } as never,
+    });
 
-  const { recordServerEvent } = await import("@/lib/analytics/ingest.server");
-  await recordServerEvent({
-    eventId: `pi-created:${created.providerPaymentId}`,
-    type: "payment_intent_created",
-    storeId: order.store_id,
-    integrationId: integration.id,
-    orderId: order.id,
-    publicToken: order.public_token,
-    paymentIntentId: created.providerPaymentId,
-    currency: order.currency,
-    amountCents: order.total_cents,
-    metadata: { attempt },
-  });
+    const { recordServerEvent } = await import("@/lib/analytics/ingest.server");
+    await recordServerEvent({
+      eventId: `pi-created:${created.providerPaymentId}`,
+      type: "payment_intent_created",
+      storeId: order.store_id,
+      integrationId: integration.id,
+      orderId: order.id,
+      publicToken: order.public_token,
+      paymentIntentId: created.providerPaymentId,
+      currency: order.currency,
+      amountCents: order.total_cents,
+      metadata: { attempt },
+    });
+  }, "payment.post-create");
+
 
 
   return {
