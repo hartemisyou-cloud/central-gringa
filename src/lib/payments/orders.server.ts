@@ -57,13 +57,15 @@ export async function quoteCart(input: {
   store: StoreRow;
   items: RequestedItem[];
   postalCode?: string;
+  /** Fluxo externo isento de frete (ex.: checkout parceiro). Não altera o produto. */
+  noShipping?: boolean | undefined;
 }) {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
   let shippingOptions: Awaited<ReturnType<ReturnType<typeof resolveShippingService>["quote"]>> = [];
-  if (priced.totalWeightGrams === 0) {
-    // Pedido sem entrega física (doações/itens digitais): frete não se aplica.
+  if (input.noShipping || priced.totalWeightGrams === 0) {
+    // Pedido sem entrega física (doações/itens digitais) ou fluxo isento de frete.
     shippingOptions = [NO_SHIPPING_OPTION];
   } else if (input.postalCode) {
     shippingOptions = await resolveShippingService().quote({
@@ -91,6 +93,8 @@ export async function createOrder(input: {
   address: AddressInput;
   shippingOptionId: string;
   attribution?: Attribution | undefined;
+  /** Fluxo externo isento de frete (ex.: checkout parceiro). Não altera o produto. */
+  noShipping?: boolean | undefined;
   /** IP/User-Agent/URL reais do comprador (opcional, telemetria). */
   clientContext?:
     | { clientIp?: string | null; clientUserAgent?: string | null; eventSourceUrl?: string | null }
@@ -101,16 +105,19 @@ export async function createOrder(input: {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
-  const options =
-    priced.totalWeightGrams === 0
-      ? [NO_SHIPPING_OPTION]
-      : await resolveShippingService().quote({
-          postalCode: normalizePostalCode(input.address.postalCode),
-          totalWeightGrams: priced.totalWeightGrams,
-          subtotalCents: priced.subtotalCents,
-          currency: priced.currency,
-        });
-  const option = options.find((entry) => entry.id === input.shippingOptionId);
+  const noShipping = input.noShipping === true || priced.totalWeightGrams === 0;
+  const options = noShipping
+    ? [NO_SHIPPING_OPTION]
+    : await resolveShippingService().quote({
+        postalCode: normalizePostalCode(input.address.postalCode),
+        totalWeightGrams: priced.totalWeightGrams,
+        subtotalCents: priced.subtotalCents,
+        currency: priced.currency,
+      });
+  // No fluxo isento, o id enviado pelo checkout externo é ignorado: frete sempre zero.
+  const option = noShipping
+    ? NO_SHIPPING_OPTION
+    : options.find((entry) => entry.id === input.shippingOptionId);
   if (!option) throw new PaymentError("INVALID_INPUT", "Opção de frete inválida.");
 
   const totals = buildTotals({ ...priced, shippingCents: option.amountCents });
@@ -140,7 +147,9 @@ export async function createOrder(input: {
       customer_id: customer.id,
       recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
       phone: input.customer.phone,
-      postal_code: normalizePostalCode(input.address.postalCode),
+      postal_code: noShipping
+        ? input.address.postalCode.replace(/\D/g, "").slice(0, 8) || input.address.postalCode
+        : normalizePostalCode(input.address.postalCode),
       street: input.address.street,
       number: input.address.number,
       complement: input.address.complement ?? null,

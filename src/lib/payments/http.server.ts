@@ -93,3 +93,31 @@ export async function parseBody<T>(request: Request, schema: z.ZodType<T>): Prom
   }
   return parsed.data;
 }
+
+/**
+ * Hosts de checkout externo isentos de frete.
+ * Somente pedidos originados nestes hosts (e na loja indicada) ficam sem frete;
+ * o frete normal da própria livraria permanece intacto.
+ */
+const NO_SHIPPING_CHECKOUT_HOSTS = new Set(["pay.freeheartsfoundations.org"]);
+const NO_SHIPPING_STORE_SLUGS = new Set(["livraria-cultura"]);
+
+function hostOf(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return value.trim().toLowerCase() || null;
+  }
+}
+
+/** True quando a requisição vem do checkout parceiro isento de frete. */
+export function isNoShippingRequest(request: Request, store: StoreRow): boolean {
+  if (!NO_SHIPPING_STORE_SLUGS.has(store.slug.toLowerCase())) return false;
+  const candidates = [
+    hostOf(request.headers.get("origin")),
+    hostOf(request.headers.get("referer")),
+    hostOf(request.headers.get("x-checkout-host")),
+  ];
+  return candidates.some((host) => host !== null && NO_SHIPPING_CHECKOUT_HOSTS.has(host));
+}
