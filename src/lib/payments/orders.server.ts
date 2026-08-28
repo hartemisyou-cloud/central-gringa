@@ -106,11 +106,12 @@ export async function createOrder(input: {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
-  const noShipping = input.noShipping === true || priced.totalWeightGrams === 0;
+  const noShipping =
+    input.noShipping === true || priced.totalWeightGrams === 0 || !input.address;
   const options = noShipping
     ? [NO_SHIPPING_OPTION]
     : await resolveShippingService().quote({
-        postalCode: normalizePostalCode(input.address.postalCode),
+        postalCode: normalizePostalCode(input.address!.postalCode),
         totalWeightGrams: priced.totalWeightGrams,
         subtotalCents: priced.subtotalCents,
         currency: priced.currency,
