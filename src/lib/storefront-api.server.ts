@@ -2,8 +2,8 @@ import { getRequest } from "@tanstack/react-start/server";
 
 // Domínio estável do projeto publicado. Serve o mesmo build sem depender de
 // DNS de domínio customizado nem do gate de login do preview.
-const STABLE_PROD_ORIGIN = "https://project--dfc262d1-6dc6-458b-a321-06bc42199114.lovable.app";
-const STABLE_DEV_ORIGIN = "https://project--dfc262d1-6dc6-458b-a321-06bc42199114-dev.lovable.app";
+const STABLE_PROD_ORIGIN = "https://project--58e066df-edbc-45e6-aad2-2061ff559727.lovable.app";
+const STABLE_DEV_ORIGIN = "https://project--58e066df-edbc-45e6-aad2-2061ff559727-dev.lovable.app";
 
 function isLocal(url: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(url);
@@ -20,12 +20,13 @@ function apiBaseUrls(): string[] {
     candidates.push(origin);
     if (configured && isLocal(configured)) candidates.push(configured);
   } else {
-    if (configured && !isLocal(configured)) candidates.push(configured);
-    // O preview `id-preview--*` fica atrás do login da Lovable; domínios
-    // customizados podem ainda não resolver de dentro do worker.
+    // A API central é este mesmo app: o próprio deploy vem primeiro.
+    // O preview `id-preview--*` fica atrás do login da Lovable, então usamos o
+    // domínio estável correspondente.
     const isPreview = /^https:\/\/id-preview--/i.test(origin);
     candidates.push(isPreview ? STABLE_DEV_ORIGIN : STABLE_PROD_ORIGIN);
     if (!isPreview) candidates.push(origin);
+    if (configured && !isLocal(configured)) candidates.push(configured);
   }
 
   return [...new Set(candidates)];
