@@ -60,6 +60,7 @@ export const Route = createFileRoute("/api/public/v1/orders")({
               customer: body.customer,
               address: body.address,
               shippingOptionId: body.shippingOptionId,
+              noShipping: isNoShippingRequest(request, store),
               attribution,
               clientContext,
             });
