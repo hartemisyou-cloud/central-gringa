@@ -142,28 +142,34 @@ export async function createOrder(input: {
     throw new PaymentError("INVALID_INPUT", "Não foi possível registrar os dados do cliente.");
   }
 
-  const { data: address, error: addressError } = await supabaseAdmin
-    .from("addresses")
-    .insert({
-      store_id: input.store.id,
-      customer_id: customer.id,
-      recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
-      phone: input.customer.phone,
-      postal_code: noShipping
-        ? input.address.postalCode.replace(/\D/g, "").slice(0, 8) || input.address.postalCode
-        : normalizePostalCode(input.address.postalCode),
-      street: input.address.street,
-      number: input.address.number,
-      complement: input.address.complement ?? null,
-      district: input.address.district,
-      city: input.address.city,
-      state: input.address.state,
-      country: input.address.country ?? "BR",
-    })
-    .select("id")
-    .single();
-  if (addressError || !address) {
-    throw new PaymentError("INVALID_INPUT", "Endereço de entrega inválido.");
+  // Pedido digital (eBook) sem endereço informado: não cria registro de entrega.
+  let addressId: string | null = null;
+  if (input.address) {
+    const addr = input.address;
+    const { data: address, error: addressError } = await supabaseAdmin
+      .from("addresses")
+      .insert({
+        store_id: input.store.id,
+        customer_id: customer.id,
+        recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
+        phone: input.customer.phone,
+        postal_code: noShipping
+          ? addr.postalCode.replace(/\D/g, "").slice(0, 8) || addr.postalCode
+          : normalizePostalCode(addr.postalCode),
+        street: addr.street,
+        number: addr.number,
+        complement: addr.complement ?? null,
+        district: addr.district,
+        city: addr.city,
+        state: addr.state,
+        country: addr.country ?? "BR",
+      })
+      .select("id")
+      .single();
+    if (addressError || !address) {
+      throw new PaymentError("INVALID_INPUT", "Endereço de entrega inválido.");
+    }
+    addressId = address.id;
   }
 
   const { data: order, error: orderError } = await supabaseAdmin
