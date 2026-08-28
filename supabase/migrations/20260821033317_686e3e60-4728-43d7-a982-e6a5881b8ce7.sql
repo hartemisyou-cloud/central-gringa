@@ -1,2 +1,0 @@
-ALTER TABLE public.stripe_integrations ADD COLUMN payment_method_configuration_id TEXT;
-COMMENT ON COLUMN public.stripe_integrations.payment_method_configuration_id IS 'Stripe Payment Method Configuration ID (pmc_...). Used when creating PaymentIntents; null uses the account default configuration.';

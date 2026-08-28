@@ -1,11 +1,11 @@
 {
-  "version": 1,
   "asset_id": "b56a00f6-153b-4fd6-810c-63706445ea47",
-  "project_id": "dfc262d1-6dc6-458b-a321-06bc42199114",
-  "url": "/__l5e/assets-v1/b56a00f6-153b-4fd6-810c-63706445ea47/kit-biblia-devocional.jpg",
-  "r2_key": "a/v1/dfc262d1-6dc6-458b-a321-06bc42199114/b56a00f6-153b-4fd6-810c-63706445ea47/kit-biblia-devocional.jpg",
-  "original_filename": "kit-biblia-devocional.jpg",
-  "size": 68427,
   "content_type": "image/jpeg",
-  "created_at": "2026-08-25T06:32:01Z"
+  "created_at": "2026-08-25T06:32:01Z",
+  "original_filename": "kit-biblia-devocional.jpg",
+  "project_id": "58e066df-edbc-45e6-aad2-2061ff559727",
+  "r2_key": "a/v1/58e066df-edbc-45e6-aad2-2061ff559727/b56a00f6-153b-4fd6-810c-63706445ea47/kit-biblia-devocional.jpg",
+  "size": 68427,
+  "url": "/__l5e/assets-v1/b56a00f6-153b-4fd6-810c-63706445ea47/kit-biblia-devocional.jpg",
+  "version": 1
 }

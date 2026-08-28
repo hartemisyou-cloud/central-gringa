@@ -1,11 +1,11 @@
 {
-  "version": 1,
   "asset_id": "d51ea1fd-1d3c-4626-8d4a-ac49b535d948",
-  "project_id": "dfc262d1-6dc6-458b-a321-06bc42199114",
-  "url": "/__l5e/assets-v1/d51ea1fd-1d3c-4626-8d4a-ac49b535d948/colecao-classicos.jpg",
-  "r2_key": "a/v1/dfc262d1-6dc6-458b-a321-06bc42199114/d51ea1fd-1d3c-4626-8d4a-ac49b535d948/colecao-classicos.jpg",
-  "original_filename": "colecao-classicos.jpg",
-  "size": 104616,
   "content_type": "image/jpeg",
-  "created_at": "2026-08-25T06:31:55Z"
+  "created_at": "2026-08-25T06:31:55Z",
+  "original_filename": "colecao-classicos.jpg",
+  "project_id": "58e066df-edbc-45e6-aad2-2061ff559727",
+  "r2_key": "a/v1/58e066df-edbc-45e6-aad2-2061ff559727/d51ea1fd-1d3c-4626-8d4a-ac49b535d948/colecao-classicos.jpg",
+  "size": 104616,
+  "url": "/__l5e/assets-v1/d51ea1fd-1d3c-4626-8d4a-ac49b535d948/colecao-classicos.jpg",
+  "version": 1
 }

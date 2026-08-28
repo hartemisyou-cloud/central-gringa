@@ -1,11 +1,11 @@
 {
-  "version": 1,
   "asset_id": "dc6f413d-03af-426b-a07a-ffa4bb313cb4",
-  "project_id": "dfc262d1-6dc6-458b-a321-06bc42199114",
-  "url": "/__l5e/assets-v1/dc6f413d-03af-426b-a07a-ffa4bb313cb4/biblia-ilustrada.jpg",
-  "r2_key": "a/v1/dfc262d1-6dc6-458b-a321-06bc42199114/dc6f413d-03af-426b-a07a-ffa4bb313cb4/biblia-ilustrada.jpg",
-  "original_filename": "biblia-ilustrada.jpg",
-  "size": 51231,
   "content_type": "image/jpeg",
-  "created_at": "2026-08-25T06:31:50Z"
+  "created_at": "2026-08-25T06:31:50Z",
+  "original_filename": "biblia-ilustrada.jpg",
+  "project_id": "58e066df-edbc-45e6-aad2-2061ff559727",
+  "r2_key": "a/v1/58e066df-edbc-45e6-aad2-2061ff559727/dc6f413d-03af-426b-a07a-ffa4bb313cb4/biblia-ilustrada.jpg",
+  "size": 51231,
+  "url": "/__l5e/assets-v1/dc6f413d-03af-426b-a07a-ffa4bb313cb4/biblia-ilustrada.jpg",
+  "version": 1
 }
