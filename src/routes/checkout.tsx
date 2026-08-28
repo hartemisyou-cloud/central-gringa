@@ -32,13 +32,13 @@ const productsQuery = queryOptions({
 export const Route = createFileRoute("/checkout")({
   head: () => ({
     meta: [
-      { title: "Checkout seguro — Livraria Cristã" },
+      { title: "Checkout seguro — Livraria Cultura" },
       {
         name: "description",
         content:
-          "Finalize sua compra na Livraria Cristã com frete calculado por CEP e pagamento protegido pela API central de pagamentos.",
+          "Finalize sua compra na Livraria Cultura com frete calculado por CEP e pagamento protegido pela API central de pagamentos.",
       },
-      { property: "og:title", content: "Checkout seguro — Livraria Cristã" },
+      { property: "og:title", content: "Checkout seguro — Livraria Cultura" },
       {
         property: "og:description",
         content: "Frete calculado por CEP e pagamento protegido pela API central de pagamentos.",
@@ -119,7 +119,7 @@ function CheckoutPage() {
         quantity: row.quantity,
         item_price: Number((row.product.priceCents / 100).toFixed(2)),
       })),
-      contentName: "Checkout Livraria Cristã",
+      contentName: "Checkout Livraria Cultura",
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [total, currency, lines],
