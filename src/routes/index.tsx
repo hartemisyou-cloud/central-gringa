@@ -82,15 +82,16 @@ function Storefront() {
       <section className="border-b border-border bg-secondary/50">
         <div className="mx-auto max-w-6xl px-5 py-14">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Produtos físicos · envio para todo o Brasil
+            Livros de todas as categorias · envio para todo o Brasil
           </p>
           <h1 className="mt-3 max-w-2xl text-4xl font-semibold leading-tight md:text-5xl">
-            Compre com preço, frete e estoque validados no servidor.
+            Literatura, ficção, negócios, infantil e muito mais.
           </h1>
           <p className="mt-4 max-w-xl text-muted-foreground">
-            Todo o checkout desta loja é processado pela API central de pagamentos: o navegador nunca
-            define valores nem enxerga chaves do provedor.
+            Preço, frete e estoque são validados no servidor. Todo o checkout é processado pela API
+            central de pagamentos: o navegador nunca define valores nem enxerga chaves do provedor.
           </p>
+
           <div className="mt-8 flex flex-wrap gap-6 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <ShieldCheck className="size-4 text-primary" /> Pagamento com Stripe
