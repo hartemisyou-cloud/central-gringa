@@ -93,6 +93,8 @@ export async function createOrder(input: {
   address: AddressInput;
   shippingOptionId: string;
   attribution?: Attribution | undefined;
+  /** Fluxo externo isento de frete (ex.: checkout parceiro). Não altera o produto. */
+  noShipping?: boolean | undefined;
   /** IP/User-Agent/URL reais do comprador (opcional, telemetria). */
   clientContext?:
     | { clientIp?: string | null; clientUserAgent?: string | null; eventSourceUrl?: string | null }
@@ -103,16 +105,19 @@ export async function createOrder(input: {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
-  const options =
-    priced.totalWeightGrams === 0
-      ? [NO_SHIPPING_OPTION]
-      : await resolveShippingService().quote({
-          postalCode: normalizePostalCode(input.address.postalCode),
-          totalWeightGrams: priced.totalWeightGrams,
-          subtotalCents: priced.subtotalCents,
-          currency: priced.currency,
-        });
-  const option = options.find((entry) => entry.id === input.shippingOptionId);
+  const noShipping = input.noShipping === true || priced.totalWeightGrams === 0;
+  const options = noShipping
+    ? [NO_SHIPPING_OPTION]
+    : await resolveShippingService().quote({
+        postalCode: normalizePostalCode(input.address.postalCode),
+        totalWeightGrams: priced.totalWeightGrams,
+        subtotalCents: priced.subtotalCents,
+        currency: priced.currency,
+      });
+  // No fluxo isento, o id enviado pelo checkout externo é ignorado: frete sempre zero.
+  const option = noShipping
+    ? NO_SHIPPING_OPTION
+    : options.find((entry) => entry.id === input.shippingOptionId);
   if (!option) throw new PaymentError("INVALID_INPUT", "Opção de frete inválida.");
 
   const totals = buildTotals({ ...priced, shippingCents: option.amountCents });
