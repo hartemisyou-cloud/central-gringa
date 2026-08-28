@@ -57,13 +57,15 @@ export async function quoteCart(input: {
   store: StoreRow;
   items: RequestedItem[];
   postalCode?: string;
+  /** Fluxo externo isento de frete (ex.: checkout parceiro). Não altera o produto. */
+  noShipping?: boolean | undefined;
 }) {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
   let shippingOptions: Awaited<ReturnType<ReturnType<typeof resolveShippingService>["quote"]>> = [];
-  if (priced.totalWeightGrams === 0) {
-    // Pedido sem entrega física (doações/itens digitais): frete não se aplica.
+  if (input.noShipping || priced.totalWeightGrams === 0) {
+    // Pedido sem entrega física (doações/itens digitais) ou fluxo isento de frete.
     shippingOptions = [NO_SHIPPING_OPTION];
   } else if (input.postalCode) {
     shippingOptions = await resolveShippingService().quote({
