@@ -20,12 +20,13 @@ function apiBaseUrls(): string[] {
     candidates.push(origin);
     if (configured && isLocal(configured)) candidates.push(configured);
   } else {
-    if (configured && !isLocal(configured)) candidates.push(configured);
-    // O preview `id-preview--*` fica atrás do login da Lovable; domínios
-    // customizados podem ainda não resolver de dentro do worker.
+    // A API central é este mesmo app: o próprio deploy vem primeiro.
+    // O preview `id-preview--*` fica atrás do login da Lovable, então usamos o
+    // domínio estável correspondente.
     const isPreview = /^https:\/\/id-preview--/i.test(origin);
     candidates.push(isPreview ? STABLE_DEV_ORIGIN : STABLE_PROD_ORIGIN);
     if (!isPreview) candidates.push(origin);
+    if (configured && !isLocal(configured)) candidates.push(configured);
   }
 
   return [...new Set(candidates)];
