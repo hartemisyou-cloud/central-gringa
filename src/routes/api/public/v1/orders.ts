@@ -31,8 +31,9 @@ export const Route = createFileRoute("/api/public/v1/orders")({
               z.object({
                 items: itemsSchema,
                 customer: customerSchema,
-                address: addressSchema,
-                shippingOptionId: z.string().trim().min(1).max(40),
+                // Produtos digitais (eBooks) não exigem endereço de entrega.
+                address: addressSchema.optional(),
+                shippingOptionId: z.string().trim().min(1).max(40).optional(),
                 attribution: attributionWithContextSchema,
               }),
             );
@@ -58,8 +59,8 @@ export const Route = createFileRoute("/api/public/v1/orders")({
               store,
               items: body.items,
               customer: body.customer,
-              address: body.address,
-              shippingOptionId: body.shippingOptionId,
+              ...(body.address ? { address: body.address } : {}),
+              shippingOptionId: body.shippingOptionId ?? "no-shipping",
               noShipping: isNoShippingRequest(request, store),
               attribution,
               clientContext,
