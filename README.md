@@ -10,15 +10,15 @@ A primeira integração será chamada *Loja 1*.
 
 # CONTEXTO DA LOJA 1
 
-A Loja 1 é um e-commerce de artigos religiosos.
+A Loja 1 é uma livraria generalista (e-commerce de livros de todas as categorias).
 
 Produtos iniciais:
 
-* Terços
+* Literatura, romance e ficção
 
-* Bíblias
+* Não ficção, negócios e desenvolvimento pessoal
 
-* Artigos religiosos relacionados
+* Infantil, jovem adulto, HQs e mangás
 
 São produtos físicos e precisam trabalhar com:
 
@@ -426,7 +426,7 @@ text
 
 Nome: Loja 1
 
-Tipo: E-commerce de artigos religiosos
+Tipo: Livraria generalista (e-commerce de livros)
 
 O domínio deve ser configurável.
 
@@ -592,9 +592,9 @@ Para Loja 1 precisamos suportar inicialmente:
 
 text
 
-Terços
+Livros de literatura e ficção
 
-Bíblias
+Livros de não ficção e infantis
 
 Um produto deve possuir pelo menos:
 
@@ -630,15 +630,15 @@ Exemplos futuros:
 
 text
 
-Bíblia Sagrada
+Clássicos da Literatura Brasileira
 
-Bíblia de Estudo
+Box Coleção Grandes Autores
 
-Terço de Madeira
+Romance: Estações de Nós
 
-Terço de Cristal
+HQ: Cidade de Neon — Vol. 1
 
-Terço Nossa Senhora
+O Jardim dos Sons — Infantil
 
 Não hardcode os produtos.
 
@@ -1614,9 +1614,9 @@ Produtos como:
 
 text
 
-Terço de Madeira        2x
+Romance: Estações de Nós   2x
 
-Bíblia Sagrada          1x
+Uma Breve História do Brasil  1x
 
 O usuário deverá conseguir entender claramente o valor final antes do pagamento.
 
@@ -1742,9 +1742,9 @@ text
 
 3. Loja 1 possui produtos.
 
-4. Cliente adiciona Bíblia ao carrinho.
+4. Cliente adiciona um romance ao carrinho.
 
-5. Cliente adiciona Terço ao carrinho.
+5. Cliente adiciona um livro infantil ao carrinho.
 
 6. Backend calcula preços.
 
