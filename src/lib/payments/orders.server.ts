@@ -147,7 +147,9 @@ export async function createOrder(input: {
       customer_id: customer.id,
       recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
       phone: input.customer.phone,
-      postal_code: normalizePostalCode(input.address.postalCode),
+      postal_code: noShipping
+        ? input.address.postalCode.replace(/\D/g, "").slice(0, 8) || input.address.postalCode
+        : normalizePostalCode(input.address.postalCode),
       street: input.address.street,
       number: input.address.number,
       complement: input.address.complement ?? null,
