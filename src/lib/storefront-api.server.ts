@@ -2,8 +2,8 @@ import { getRequest } from "@tanstack/react-start/server";
 
 // Domínio estável do projeto publicado. Serve o mesmo build sem depender de
 // DNS de domínio customizado nem do gate de login do preview.
-const STABLE_PROD_ORIGIN = "https://project--dfc262d1-6dc6-458b-a321-06bc42199114.lovable.app";
-const STABLE_DEV_ORIGIN = "https://project--dfc262d1-6dc6-458b-a321-06bc42199114-dev.lovable.app";
+const STABLE_PROD_ORIGIN = "https://project--58e066df-edbc-45e6-aad2-2061ff559727.lovable.app";
+const STABLE_DEV_ORIGIN = "https://project--58e066df-edbc-45e6-aad2-2061ff559727-dev.lovable.app";
 
 function isLocal(url: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(url);
