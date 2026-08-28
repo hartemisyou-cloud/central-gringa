@@ -90,7 +90,8 @@ export async function createOrder(input: {
   store: StoreRow;
   items: RequestedItem[];
   customer: CustomerInput;
-  address: AddressInput;
+  /** Opcional: pedidos 100% digitais (eBooks) não exigem endereço de entrega. */
+  address?: AddressInput | undefined;
   shippingOptionId: string;
   attribution?: Attribution | undefined;
   /** Fluxo externo isento de frete (ex.: checkout parceiro). Não altera o produto. */
