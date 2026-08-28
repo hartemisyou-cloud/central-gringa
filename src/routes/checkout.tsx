@@ -109,7 +109,7 @@ function CheckoutPage() {
 
   // Tracking da vitrine: Pixel + captura de UTMs (usadas depois pela UTMify).
   const tracking = useStorefrontTracking();
-  const currency = cartRows[0]?.product.currency ?? "BRL";
+  const currency = cartRows[0]?.product.currency ?? "USD";
   const metaEvent = useMemo(
     () => ({
       value: Number((total / 100).toFixed(2)),
