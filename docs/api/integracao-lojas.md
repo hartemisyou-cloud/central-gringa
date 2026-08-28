@@ -11,7 +11,7 @@ A chave só pode ser usada **no backend/BFF da loja**. Nunca no navegador.
 
 ```
 x-store-api-key: sk_live_b9DHfFufCHbB.LHK3KNXKZPXER8oRUK1L1Fkqj1PYPSR4h2fyKT2MWdpEcQ7e
-x-store-slug: livraria-crista (padrão) | coracoes-unidos | loja-2 | loja-3 | loja-4
+x-store-slug: livraria-cultura (padrão) | coracoes-unidos | loja-2 | loja-3 | loja-4
 content-type: application/json
 ```
 
@@ -110,7 +110,7 @@ const API = "https://central-spark-pay.lovable.app/api/public/v1";
 const headers = {
   "content-type": "application/json",
   "x-store-api-key": process.env.STORE_API_KEY!,
-  "x-store-slug": "livraria-crista",
+  "x-store-slug": "livraria-cultura",
 };
 
 const order = await fetch(`${API}/orders`, {
@@ -145,7 +145,7 @@ Para não renderizar o formulário na própria página, redirecione o cliente pa
 página de pagamento hospedada da Central (layout idêntico ao Stripe, com cartão,
 Link, Apple Pay e Google Pay):
 
-1. `POST /api/public/v1/orders` (com `x-store-key` e `x-store-slug: livraria-crista`)
+1. `POST /api/public/v1/orders` (com `x-store-key` e `x-store-slug: livraria-cultura`)
 2. A resposta agora inclui `paymentUrl`:
 
 ```json

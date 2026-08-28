@@ -1,11 +1,11 @@
 {
+  "version": 1,
   "asset_id": "8a4c6c17-64e7-4942-b1f5-3625d7b93b0c",
-  "content_type": "image/jpeg",
-  "created_at": "2026-08-25T06:31:53Z",
-  "original_filename": "biblioteca-premium.jpg",
-  "project_id": "58e066df-edbc-45e6-aad2-2061ff559727",
-  "r2_key": "a/v1/58e066df-edbc-45e6-aad2-2061ff559727/8a4c6c17-64e7-4942-b1f5-3625d7b93b0c/biblioteca-premium.jpg",
-  "size": 81874,
+  "project_id": "dfc262d1-6dc6-458b-a321-06bc42199114",
   "url": "/__l5e/assets-v1/8a4c6c17-64e7-4942-b1f5-3625d7b93b0c/biblioteca-premium.jpg",
-  "version": 1
+  "r2_key": "a/v1/dfc262d1-6dc6-458b-a321-06bc42199114/8a4c6c17-64e7-4942-b1f5-3625d7b93b0c/biblioteca-premium.jpg",
+  "original_filename": "biblioteca-premium.jpg",
+  "size": 81874,
+  "content_type": "image/jpeg",
+  "created_at": "2026-08-25T06:31:53Z"
 }

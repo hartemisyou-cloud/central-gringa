@@ -17,7 +17,7 @@ function order(overrides: Partial<OrderContext> = {}): OrderContext {
     document: null,
     country: "US",
     paymentMethod: "card",
-    items: [{ id: "prod-1", name: "Bíblia de Estudo", quantity: 1, priceInCents: 2000 }],
+    items: [{ id: "prod-1", name: "Dom Casmurro", quantity: 1, priceInCents: 2000 }],
     ...overrides,
   };
 }

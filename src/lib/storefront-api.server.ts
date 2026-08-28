@@ -45,7 +45,7 @@ export async function callCentralApi<T>(
   const apiKey = process.env["STORE_API_KEY"] ?? process.env["STORE1_API_KEY"];
   if (!apiKey) throw new Error("Credencial da loja não configurada no servidor.");
 
-  const slug = process.env["STORE_SLUG"]?.trim().toLowerCase() || "livraria-crista";
+  const slug = process.env["STORE_SLUG"]?.trim().toLowerCase() || "livraria-cultura";
 
   const requestInit: RequestInit = {
     method: init?.method ?? "GET",

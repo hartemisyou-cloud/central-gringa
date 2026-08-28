@@ -1,0 +1,1 @@
+UPDATE public.store_api_keys SET status = 'ACTIVE', revoked_at = NULL WHERE id = 'e56f9e43-5955-4b9d-a7ca-b2ae5523bd04';

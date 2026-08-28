@@ -16,18 +16,19 @@ const productsQuery = queryOptions({
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Livraria Cristã — Bíblias, livros e presentes cristãos" },
+      { title: "Livraria Cultura — Livros de todas as categorias" },
       {
         name: "description",
         content:
-          "Bíblias de estudo, devocionais, hinários, cruzes e presentes cristãos com frete calculado, estoque em tempo real e pagamento processado por API central com Stripe.",
+          "Literatura, romance, ficção, negócios, história, infantil, HQs e mais. Frete calculado por CEP, estoque em tempo real e pagamento seguro com Stripe.",
       },
-      { property: "og:title", content: "Livraria Cristã — Bíblias, livros e presentes cristãos" },
+      { property: "og:title", content: "Livraria Cultura — Livros de todas as categorias" },
       {
         property: "og:description",
         content:
-          "Compre com frete calculado, estoque em tempo real e pagamento seguro processado pela API central.",
+          "Catálogo amplo de livros com frete calculado, estoque em tempo real e pagamento seguro processado pela API central.",
       },
+
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -68,7 +69,7 @@ function Storefront() {
             <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
               <ShoppingBag className="size-4" />
             </span>
-            <span className="font-display text-lg font-semibold tracking-tight">Livraria Cristã</span>
+            <span className="font-display text-lg font-semibold tracking-tight">Livraria Cultura</span>
           </Link>
           <Button asChild size="sm" disabled={itemCount === 0}>
             <Link to="/checkout">
@@ -81,15 +82,16 @@ function Storefront() {
       <section className="border-b border-border bg-secondary/50">
         <div className="mx-auto max-w-6xl px-5 py-14">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Produtos físicos · envio para todo o Brasil
+            Livros de todas as categorias · envio para todo o Brasil
           </p>
           <h1 className="mt-3 max-w-2xl text-4xl font-semibold leading-tight md:text-5xl">
-            Compre com preço, frete e estoque validados no servidor.
+            Literatura, ficção, negócios, infantil e muito mais.
           </h1>
           <p className="mt-4 max-w-xl text-muted-foreground">
-            Todo o checkout desta loja é processado pela API central de pagamentos: o navegador nunca
-            define valores nem enxerga chaves do provedor.
+            Preço, frete e estoque são validados no servidor. Todo o checkout é processado pela API
+            central de pagamentos: o navegador nunca define valores nem enxerga chaves do provedor.
           </p>
+
           <div className="mt-8 flex flex-wrap gap-6 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <ShieldCheck className="size-4 text-primary" /> Pagamento com Stripe

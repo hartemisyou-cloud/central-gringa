@@ -12,7 +12,7 @@ A loja renderiza a página `/pay/$token` no domínio dela, mas todo o processame
 | GET    | `/api/public/v1/orders/status/{publicToken}`            | status pós-pagamento          |
 
 Base: `https://central-spark-pay.lovable.app`
-Headers: `x-store-api-key: <STORE_API_KEY>` e `x-store-slug: livraria-crista`.
+Headers: `x-store-api-key: <STORE_API_KEY>` e `x-store-slug: livraria-cultura`.
 **A chave nunca vai para o browser** — as chamadas saem do servidor (server function).
 
 Resposta de `checkout/session`:
@@ -27,8 +27,8 @@ Resposta de `checkout/session`:
     "amountCents": 5000,
     "currency": "BRL",
     "label": "Doação $50",
-    "subtitle": "Livraria Cristã",
-    "storeName": "Livraria Cristã"
+    "subtitle": "Livraria Cultura",
+    "storeName": "Livraria Cultura"
   }
 }
 ```
@@ -48,7 +48,7 @@ export async function callCentralApi<T>(
 ): Promise<T> {
   const apiKey = process.env["STORE_API_KEY"];
   if (!apiKey) throw new Error("STORE_API_KEY não configurada no servidor.");
-  const slug = process.env["STORE_SLUG"]?.trim().toLowerCase() ?? "livraria-crista";
+  const slug = process.env["STORE_SLUG"]?.trim().toLowerCase() ?? "livraria-cultura";
 
   const response = await fetch(`${BASE}/api/public/v1${path}`, {
     method: init?.method ?? "GET",
@@ -376,5 +376,5 @@ window.location.assign(`/pay/${publicToken}`); // página hospedada na própria 
 
 ```
 STORE_API_KEY=<chave unificada>
-STORE_SLUG=livraria-crista
+STORE_SLUG=livraria-cultura
 ```
