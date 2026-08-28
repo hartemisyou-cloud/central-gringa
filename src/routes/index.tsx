@@ -69,7 +69,7 @@ function Storefront() {
             <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
               <ShoppingBag className="size-4" />
             </span>
-            <span className="font-display text-lg font-semibold tracking-tight">Livraria Cristã</span>
+            <span className="font-display text-lg font-semibold tracking-tight">Livraria Cultura</span>
           </Link>
           <Button asChild size="sm" disabled={itemCount === 0}>
             <Link to="/checkout">
