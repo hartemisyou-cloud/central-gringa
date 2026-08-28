@@ -178,7 +178,7 @@ export async function createOrder(input: {
       store_id: input.store.id,
       order_number: orderNumber(),
       customer_id: customer.id,
-      shipping_address_id: address.id,
+      shipping_address_id: addressId,
       environment: input.store.environment,
       currency: totals.currency,
       subtotal_cents: totals.subtotalCents,
