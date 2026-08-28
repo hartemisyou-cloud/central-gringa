@@ -9,9 +9,14 @@ export const Route = createFileRoute("/api/public/v1/orders")({
         return preflight();
       },
       POST: async ({ request }) => {
-        const { withStore, parseBody, itemsSchema, customerSchema, addressSchema } = await import(
-          "@/lib/payments/http.server"
-        );
+        const {
+          withStore,
+          parseBody,
+          itemsSchema,
+          customerSchema,
+          addressSchema,
+          isNoShippingRequest,
+        } = await import("@/lib/payments/http.server");
         return withStore(
           request,
           { bucket: "orders", limit: 20, windowSeconds: 60 },
