@@ -16,18 +16,19 @@ const productsQuery = queryOptions({
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Livraria Cristã — Bíblias, livros e presentes cristãos" },
+      { title: "Livraria Cultura — Livros de todas as categorias" },
       {
         name: "description",
         content:
-          "Bíblias de estudo, devocionais, hinários, cruzes e presentes cristãos com frete calculado, estoque em tempo real e pagamento processado por API central com Stripe.",
+          "Literatura, romance, ficção, negócios, história, infantil, HQs e mais. Frete calculado por CEP, estoque em tempo real e pagamento seguro com Stripe.",
       },
-      { property: "og:title", content: "Livraria Cristã — Bíblias, livros e presentes cristãos" },
+      { property: "og:title", content: "Livraria Cultura — Livros de todas as categorias" },
       {
         property: "og:description",
         content:
-          "Compre com frete calculado, estoque em tempo real e pagamento seguro processado pela API central.",
+          "Catálogo amplo de livros com frete calculado, estoque em tempo real e pagamento seguro processado pela API central.",
       },
+
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
