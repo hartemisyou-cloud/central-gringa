@@ -9,7 +9,9 @@ export const Route = createFileRoute("/api/public/v1/quote")({
         return preflight();
       },
       POST: async ({ request }) => {
-        const { withStore, parseBody, itemsSchema } = await import("@/lib/payments/http.server");
+        const { withStore, parseBody, itemsSchema, isNoShippingRequest } = await import(
+          "@/lib/payments/http.server"
+        );
         return withStore(
           request,
           { bucket: "quote", limit: 60, windowSeconds: 60 },
@@ -22,7 +24,12 @@ export const Route = createFileRoute("/api/public/v1/quote")({
               }),
             );
             const { quoteCart } = await import("@/lib/payments/orders.server");
-            return quoteCart({ store, items: body.items, ...(body.postalCode ? { postalCode: body.postalCode } : {}) });
+            return quoteCart({
+              store,
+              items: body.items,
+              noShipping: isNoShippingRequest(request, store),
+              ...(body.postalCode ? { postalCode: body.postalCode } : {}),
+            });
           },
         );
       },
