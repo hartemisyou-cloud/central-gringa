@@ -1,4 +1,4 @@
-export function formatMoney(cents: number, currency = "BRL"): string {
+export function formatMoney(cents: number, currency = "USD"): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(cents / 100);
 }
 
