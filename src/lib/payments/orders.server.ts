@@ -460,7 +460,7 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       amountCents: order.total_cents,
       currency: order.currency,
       idempotencyKey,
-      description: `Pedido ${order.order_number}`,
+      description: buildPaymentDescription(order, itemRows),
       metadata: paymentIntentMetadata,
       ...(integration.payment_method_configuration_id
         ? { paymentMethodConfiguration: integration.payment_method_configuration_id }
