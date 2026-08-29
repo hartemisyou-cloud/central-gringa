@@ -49,8 +49,12 @@ export const Route = createFileRoute("/api/public/v1/analytics/presence")({
           const { enforceRateLimit } = await import("@/lib/payments/store-auth.server");
           await enforceRateLimit(`presence:${parsed.data.sessionId}`, 120, 60);
 
-          const { recordPresence } = await import("@/lib/analytics/presence.server");
+          const { recordPresence, prunePresence } = await import(
+            "@/lib/analytics/presence.server"
+          );
           const result = await recordPresence(parsed.data, request.headers.get("user-agent"));
+          // Limpeza determinística (1x a cada 5 min) mesmo sem o painel aberto.
+          await prunePresence();
           return new Response(JSON.stringify(result), { status: 200, headers });
         } catch (error) {
           console.error("[presence] heartbeat failed", (error as Error).message);
