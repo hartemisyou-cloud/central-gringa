@@ -451,7 +451,9 @@ function RealtimeMetric({
           </span>
           <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
         </div>
-        <p className="text-3xl font-semibold tabular-nums">{value ?? 0}</p>
+        <p className="text-3xl font-semibold tabular-nums">
+          {value === undefined ? (suffix ? "—" : 0) : `${value}${suffix ?? ""}`}
+        </p>
         <p className="text-xs text-muted-foreground">{hint}</p>
       </CardContent>
     </Card>
