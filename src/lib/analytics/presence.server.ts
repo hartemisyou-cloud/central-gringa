@@ -60,23 +60,24 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
       .eq("slug", input.storeSlug.toLowerCase())
       .maybeSingle();
     storeId = data?.id ?? null;
+  } else {
+    // Sem slug nesta página: preserva a loja já associada à sessão.
+    const { data: existing } = await supabaseAdmin
+      .from("presence_sessions")
+      .select("store_id")
+      .eq("session_id", input.sessionId)
+      .maybeSingle();
+    storeId = existing?.store_id ?? null;
   }
 
-  const { data: existing } = await supabaseAdmin
-    .from("presence_sessions")
-    .select("state, store_id")
-    .eq("session_id", input.sessionId)
-    .maybeSingle();
-
-  const previous = (existing?.state ?? "ACTIVE") as PresenceState;
-  // SESSION_ENDED é sempre aplicável (otimização); os demais só avançam.
-  const state =
-    incoming === "ENDED" || RANK[incoming] > RANK[previous] ? incoming : previous;
+  // Estado da página atual, sem trava: ENDED é substituído pelo próximo
+  // heartbeat válido e CHECKOUT pode voltar para ACTIVE/CART.
+  const state: PresenceState = incoming;
 
   const { error } = await supabaseAdmin.from("presence_sessions").upsert(
     {
       session_id: input.sessionId,
-      store_id: storeId ?? existing?.store_id ?? null,
+      store_id: storeId,
       state,
       page: input.page ?? null,
       user_agent: userAgent ? userAgent.slice(0, 400) : null,
