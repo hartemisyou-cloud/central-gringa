@@ -5,17 +5,28 @@
  * "No checkout agora" do painel admin. Nada aqui toca pagamento, Stripe,
  * webhook, Meta CAPI, UTMify ou attribution.
  *
- * - heartbeat leve a cada 30s enquanto a aba estiver visível;
- * - a fonte principal de expiração é o `last_seen_at` no servidor;
- *   `SESSION_ENDED` é apenas uma otimização enviada no `pagehide`;
+ * Regras do ciclo de vida do identificador:
+ * - `{ id, lastSeen, createdAt }` no localStorage;
+ * - rotaciona após 30 min de inatividade OU 24h de idade máxima, para que
+ *   "voltar amanhã" seja uma sessão nova e não um id perpétuo;
+ * - `last_seen_at` no servidor continua sendo a fonte principal de expiração;
+ * - `SESSION_ENDED` é apenas um sinal temporário e só é enviado quando esta é
+ *   a última aba viva desta sessão;
  * - o mesmo `session_id` é reaproveitado entre domínios (vitrine → checkout)
- *   através do parâmetro `csid`, para não contar a mesma pessoa duas vezes.
+ *   através do parâmetro `csid`.
  */
 
 export const PRESENCE_ENDPOINT = "/api/public/v1/analytics/presence";
 export const PRESENCE_PARAM = "csid";
 const STORAGE_KEY = "csp_presence_session";
+const TABS_KEY = "csp_presence_tabs";
 export const HEARTBEAT_MS = 30_000;
+/** Inatividade que encerra a sessão e força um novo id. */
+export const IDLE_TTL_MS = 30 * 60_000;
+/** Idade máxima absoluta de um id, mesmo em uso contínuo. */
+export const MAX_AGE_MS = 24 * 60 * 60_000;
+/** Uma aba é considerada viva enquanto tiver batido dentro desta janela. */
+const TAB_TTL_MS = HEARTBEAT_MS * 3;
 
 export type PresenceEvent =
   | "SESSION_ACTIVE"
@@ -26,6 +37,12 @@ export type PresenceEvent =
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{8,80}$/;
 
+interface StoredSession {
+  id: string;
+  lastSeen: number;
+  createdAt: number;
+}
+
 function newId(): string {
   try {
     return crypto.randomUUID();
@@ -34,31 +51,52 @@ function newId(): string {
   }
 }
 
-function readStored(): string | null {
+function readStored(): StoredSession | null {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    return value && ID_PATTERN.test(value) ? value : null;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    // Formato legado (string simples): tratado como sessão nova.
+    if (!raw.startsWith("{")) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredSession>;
+    if (typeof parsed.id !== "string" || !ID_PATTERN.test(parsed.id)) return null;
+    const lastSeen = typeof parsed.lastSeen === "number" ? parsed.lastSeen : 0;
+    const createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : lastSeen;
+    return { id: parsed.id, lastSeen, createdAt };
   } catch {
     return null;
   }
 }
 
-function store(id: string): void {
+function store(session: StoredSession): void {
   try {
-    localStorage.setItem(STORAGE_KEY, id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   } catch {
     /* modo privado: a sessão vale só para esta página */
   }
 }
 
-/** Identificador da sessão: parâmetro cross-domain > armazenado > novo. */
+/** Uma sessão expira por inatividade (30 min) ou por idade máxima (24h). */
+export function isExpired(session: StoredSession, now = Date.now()): boolean {
+  return now - session.lastSeen > IDLE_TTL_MS || now - session.createdAt > MAX_AGE_MS;
+}
+
+/**
+ * Identificador da sessão: parâmetro cross-domain > armazenado válido > novo.
+ * Cada chamada renova o `lastSeen`, então a expiração é por inatividade real.
+ */
 export function presenceSessionId(): string {
   if (typeof window === "undefined") return "ssr";
+  const now = Date.now();
+
   try {
     const url = new URL(window.location.href);
     const incoming = url.searchParams.get(PRESENCE_PARAM);
     if (incoming && ID_PATTERN.test(incoming)) {
-      store(incoming);
+      const existing = readStored();
+      // Continuidade cross-domain: adota o id recebido e preserva a idade
+      // original quando é a mesma sessão que veio do outro domínio.
+      const createdAt = existing?.id === incoming ? existing.createdAt : now;
+      store({ id: incoming, lastSeen: now, createdAt });
       // limpa a URL para não vazar o identificador em referrer/compartilhamento
       url.searchParams.delete(PRESENCE_PARAM);
       window.history.replaceState(window.history.state, "", url.toString());
@@ -67,10 +105,15 @@ export function presenceSessionId(): string {
   } catch {
     /* ignora URLs inválidas */
   }
-  const existing = readStored();
-  if (existing) return existing;
+
+  const stored = readStored();
+  if (stored && !isExpired(stored, now)) {
+    store({ ...stored, lastSeen: now });
+    return stored.id;
+  }
+
   const created = newId();
-  store(created);
+  store({ id: created, lastSeen: now, createdAt: now });
   return created;
 }
 
@@ -84,6 +127,57 @@ export function withPresenceSession(href: string): string {
   } catch {
     return href;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Registro de abas: fechar uma aba não derruba a presença das outras. */
+/* ------------------------------------------------------------------ */
+
+function readTabs(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(TABS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "number") out[key] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeTabs(tabs: Record<string, number>): void {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+  } catch {
+    /* ignora */
+  }
+}
+
+function touchTab(tabId: string): void {
+  const now = Date.now();
+  const tabs = readTabs();
+  tabs[tabId] = now;
+  for (const [key, seen] of Object.entries(tabs)) {
+    if (now - seen > TAB_TTL_MS) delete tabs[key];
+  }
+  writeTabs(tabs);
+}
+
+/** Remove esta aba e informa se ainda existe outra aba viva. */
+function releaseTab(tabId: string): { othersAlive: boolean } {
+  const now = Date.now();
+  const tabs = readTabs();
+  delete tabs[tabId];
+  let othersAlive = false;
+  for (const [key, seen] of Object.entries(tabs)) {
+    if (now - seen > TAB_TTL_MS) delete tabs[key];
+    else if (key !== tabId) othersAlive = true;
+  }
+  writeTabs(tabs);
+  return { othersAlive };
 }
 
 function post(body: string, beacon: boolean): void {
@@ -105,7 +199,7 @@ function post(body: string, beacon: boolean): void {
 
 export interface PresenceOptions {
   storeSlug?: string | undefined;
-  /** Estado inicial/base desta página. */
+  /** Estado desta página; o servidor passa a refletir a página atual. */
   state?: PresenceEvent | undefined;
 }
 
@@ -121,13 +215,16 @@ export function startPresence(options: PresenceOptions = {}): PresenceHandle {
     return { sessionId: "ssr", send: () => {}, dispose: () => {} };
   }
 
-  const sessionId = presenceSessionId();
+  const tabId = newId();
+  let sessionId = presenceSessionId();
+  touchTab(tabId);
+
   let current: PresenceEvent = options.state ?? "SESSION_ACTIVE";
   let disposed = false;
 
-  const payload = (event: PresenceEvent) =>
+  const payload = (event: PresenceEvent, id: string) =>
     JSON.stringify({
-      sessionId,
+      sessionId: id,
       storeSlug: options.storeSlug,
       event,
       page: window.location.pathname.slice(0, 160),
@@ -135,8 +232,16 @@ export function startPresence(options: PresenceOptions = {}): PresenceHandle {
 
   const send = (event: PresenceEvent, beacon = false) => {
     if (disposed && event !== "SESSION_ENDED") return;
-    if (event !== "SESSION_ENDED") current = event;
-    post(payload(event), beacon);
+    if (event === "SESSION_ENDED") {
+      post(payload(event, sessionId), beacon);
+      return;
+    }
+    current = event;
+    // Heartbeat válido de página ativa: renova o id (ou rotaciona se expirou)
+    // e mantém o registro desta aba vivo.
+    sessionId = presenceSessionId();
+    touchTab(tabId);
+    post(payload(event, sessionId), beacon);
   };
 
   send(current);
@@ -149,7 +254,11 @@ export function startPresence(options: PresenceOptions = {}): PresenceHandle {
   const onVisible = () => {
     if (document.visibilityState === "visible") send(current);
   };
-  const onHide = () => send("SESSION_ENDED", true);
+  const onHide = () => {
+    // Só encerra quando esta era a última aba viva desta sessão.
+    const { othersAlive } = releaseTab(tabId);
+    if (!othersAlive) send("SESSION_ENDED", true);
+  };
 
   document.addEventListener("visibilitychange", onVisible);
   window.addEventListener("pagehide", onHide);
@@ -162,6 +271,7 @@ export function startPresence(options: PresenceOptions = {}): PresenceHandle {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pagehide", onHide);
+      releaseTab(tabId);
     },
   };
 }
