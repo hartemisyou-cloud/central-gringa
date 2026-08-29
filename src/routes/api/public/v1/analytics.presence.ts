@@ -40,7 +40,31 @@ export const Route = createFileRoute("/api/public/v1/analytics/presence")({
             storeSlug: z.string().min(2).max(80).optional(),
             page: z.string().max(200).optional(),
           });
-          const parsed = schema.safeParse(await request.json());
+
+          // Normalização tolerante do payload: o site/checkout podem enviar
+          // snake_case, eventos em minúsculas, sessionId com caracteres extras
+          // e URLs longas. Nada disso deve derrubar a resolução da loja.
+          const raw = (await request.json()) as Record<string, unknown>;
+          const pick = (...keys: string[]) => {
+            for (const key of keys) {
+              const value = raw[key];
+              if (typeof value === "string" && value.trim().length > 0) return value.trim();
+            }
+            return undefined;
+          };
+
+          const rawSession = pick("sessionId", "session_id", "csid", "sid");
+          const sessionId = rawSession?.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
+          const event = pick("event", "state", "type")?.toUpperCase();
+          const storeSlug = pick("storeSlug", "store_slug", "slug", "store")?.toLowerCase();
+          const page = pick("page", "path", "url", "location")?.slice(0, 200);
+
+          const parsed = schema.safeParse({
+            ...(sessionId ? { sessionId } : {}),
+            ...(event ? { event } : {}),
+            ...(storeSlug ? { storeSlug } : {}),
+            ...(page ? { page } : {}),
+          });
           if (!parsed.success) {
             return new Response(JSON.stringify({ ok: false, ignored: true }), {
               status: 202,

@@ -64,12 +64,26 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
 
   let storeId: string | null = existing?.store_id ?? null;
   if (input.storeSlug) {
+    const slug = input.storeSlug.trim().toLowerCase();
+    // Resolução tolerante: slug exato, e como fallback o domínio da loja
+    // (o site pode enviar "livrariadacultura.shop" em vez do slug).
     const { data } = await supabaseAdmin
       .from("stores")
       .select("id")
-      .eq("slug", input.storeSlug.toLowerCase())
+      .eq("slug", slug)
       .maybeSingle();
-    storeId = data?.id ?? storeId;
+    let resolved = data?.id ?? null;
+    if (!resolved) {
+      const host = slug.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      const { data: byDomain } = await supabaseAdmin
+        .from("stores")
+        .select("id")
+        .eq("domain", host)
+        .maybeSingle();
+      resolved = byDomain?.id ?? null;
+    }
+    if (!resolved) console.warn("[presence] store not resolved for slug", slug);
+    storeId = resolved ?? storeId;
   }
 
   // Estado da página atual, sem trava: ENDED é substituído pelo próximo
