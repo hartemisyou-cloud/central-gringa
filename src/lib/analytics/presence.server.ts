@@ -204,8 +204,12 @@ export async function realtimeSnapshot(storeId?: string | null): Promise<Realtim
   };
 }
 
-/** Sessões inativas por mais tempo que isto são removidas (= TTL do cliente). */
-const PRUNE_AFTER_MS = 30 * 60_000;
+/**
+ * Retenção das linhas de presença. Mantida em 24h (e não em 30 min) porque as
+ * taxas do drawer e o abandono são calculados sobre a janela de 24h; a presença
+ * "agora" continua sendo decidida por `last_seen_at` (60s / 5 min).
+ */
+const PRUNE_AFTER_MS = 24 * 60 * 60_000;
 /** Janela determinística: no máximo uma limpeza a cada 5 minutos. */
 const PRUNE_WINDOW_SECONDS = 300;
 
