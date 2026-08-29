@@ -919,6 +919,9 @@ export type Database = {
       }
       presence_sessions: {
         Row: {
+          cart_closed_at: string | null
+          cart_opened_at: string | null
+          checkout_viewed_at: string | null
           created_at: string
           first_seen_at: string
           is_bot: boolean
@@ -931,6 +934,9 @@ export type Database = {
           user_agent: string | null
         }
         Insert: {
+          cart_closed_at?: string | null
+          cart_opened_at?: string | null
+          checkout_viewed_at?: string | null
           created_at?: string
           first_seen_at?: string
           is_bot?: boolean
@@ -943,6 +949,9 @@ export type Database = {
           user_agent?: string | null
         }
         Update: {
+          cart_closed_at?: string | null
+          cart_opened_at?: string | null
+          checkout_viewed_at?: string | null
           created_at?: string
           first_seen_at?: string
           is_bot?: boolean
