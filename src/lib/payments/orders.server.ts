@@ -330,7 +330,7 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
   // de `store` e `orderId`, já conhecidos) e nenhuma escreve. Rodam em paralelo;
   // a ORDEM DAS VALIDAÇÕES e as mensagens de erro permanecem exatamente as mesmas.
   const { getOrderAttribution } = await import("./attribution.server");
-  const [orderResult, integrationResult, existingResult, attribution] = await Promise.all([
+  const [orderResult, integrationResult, existingResult, attribution, itemsResult] = await Promise.all([
     supabaseAdmin
       .from("orders")
       .select("*")
@@ -345,6 +345,10 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
       .maybeSingle(),
     getOrderAttribution(input.orderId).catch(() => ({})),
+    supabaseAdmin
+      .from("order_items")
+      .select("product_id, product_name, sku, quantity")
+      .eq("order_id", input.orderId),
   ]);
 
   const order = orderResult.data;
