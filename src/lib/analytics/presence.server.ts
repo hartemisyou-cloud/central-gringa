@@ -138,14 +138,36 @@ export async function realtimeSnapshot(storeId?: string | null): Promise<Realtim
   };
 }
 
-/** Limpeza barata das sessões antigas (executada fora do caminho crítico). */
-export async function prunePresence(): Promise<void> {
+/** Sessões inativas por mais tempo que isto são removidas (= TTL do cliente). */
+const PRUNE_AFTER_MS = 30 * 60_000;
+/** Janela determinística: no máximo uma limpeza a cada 5 minutos. */
+const PRUNE_WINDOW_SECONDS = 300;
+
+/**
+ * Limpeza determinística das sessões inativas.
+ *
+ * Em vez de sortear 5% das requisições, usa o contador `bump_rate_limit` como
+ * relógio compartilhado: a primeira chamada de cada janela de 5 minutos executa
+ * o DELETE e as demais retornam sem trabalho. Previsível e idempotente.
+ */
+export async function prunePresence(force = false): Promise<{ pruned: boolean }> {
   try {
+    if (!force) {
+      const { data, error } = await supabaseAdmin.rpc("bump_rate_limit", {
+        _bucket: "presence_prune",
+        _window_seconds: PRUNE_WINDOW_SECONDS,
+      });
+      if (error) return { pruned: false };
+      if ((data ?? 0) !== 1) return { pruned: false };
+    }
+
     await supabaseAdmin
       .from("presence_sessions")
       .delete()
-      .lt("last_seen_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      .lt("last_seen_at", new Date(Date.now() - PRUNE_AFTER_MS).toISOString());
+    return { pruned: true };
   } catch (error) {
     console.error("[presence] prune failed", (error as Error).message);
+    return { pruned: false };
   }
 }
