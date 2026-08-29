@@ -434,10 +434,12 @@ function RealtimeMetric({
   label,
   value,
   hint,
+  suffix,
 }: {
   label: string;
   value: number | undefined;
   hint: string;
+  suffix?: string;
 }) {
   return (
     <Card>
