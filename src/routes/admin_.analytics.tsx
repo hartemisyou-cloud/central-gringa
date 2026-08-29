@@ -413,6 +413,32 @@ function AnalyticsPage() {
   );
 }
 
+function RealtimeMetric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number | undefined;
+  hint: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="space-y-1 p-5">
+        <div className="flex items-center gap-2">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-2 animate-ping rounded-full bg-primary/60" />
+            <span className="inline-flex size-2 rounded-full bg-primary" />
+          </span>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+        </div>
+        <p className="text-3xl font-semibold tabular-nums">{value ?? 0}</p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <Card>
