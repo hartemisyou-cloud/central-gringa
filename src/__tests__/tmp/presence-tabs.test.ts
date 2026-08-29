@@ -26,12 +26,15 @@ const sent: Array<{ url: string; body: any }> = [];
     listeners[ev] = (listeners[ev] ?? []).filter((f) => f !== fn);
   },
 };
-(globalThis as any).navigator = {
-  sendBeacon: (url: string, blob: any) => {
-    sent.push({ url, body: JSON.parse(blob.text ? "" : blob.__body) });
-    return true;
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: {
+    sendBeacon: (url: string, blob: any) => {
+      sent.push({ url, body: JSON.parse(blob.__body) });
+      return true;
+    },
   },
-};
+});
 // Blob simplificado para capturar o corpo do beacon
 (globalThis as any).Blob = class {
   __body: string;
