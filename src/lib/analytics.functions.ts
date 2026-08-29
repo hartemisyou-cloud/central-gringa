@@ -49,3 +49,26 @@ export const analyticsCsv = createServerFn({ method: "POST" })
     const { exportCsv } = await import("./analytics/query.server");
     return { csv: await exportCsv(data) };
   });
+
+/** Prévia da limpeza: quais tabelas/registros serão apagados (somente admin). */
+export const analyticsPurgePreview = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string }) => z.object({ storeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { previewAnalyticsPurge } = await import("./analytics/purge.server");
+    return previewAnalyticsPurge(data.storeId);
+  });
+
+/** Limpeza efetiva dos dados de analytics da loja selecionada (somente admin). */
+export const analyticsPurge = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId: string; confirm: string }) =>
+    z.object({ storeId: z.string().uuid(), confirm: z.literal("LIMPAR") }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { purgeAnalytics } = await import("./analytics/purge.server");
+    return purgeAnalytics(data.storeId);
+  });
+

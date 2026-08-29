@@ -6,6 +6,8 @@ import { ArrowLeft, Download, Loader2 } from "lucide-react";
 
 import { analyticsCsv, analyticsRealtime, analyticsReport } from "@/lib/analytics.functions";
 import { adminListStores, adminStatus } from "@/lib/admin.functions";
+import { ClearAnalyticsButton } from "@/components/admin/clear-analytics-button";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,9 +155,13 @@ function AnalyticsPage() {
             Funil do checkout, métodos de pagamento, recusas e comportamento por loja.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void downloadCsv()}>
-          <Download className="size-4" /> Exportar CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => void downloadCsv()}>
+            <Download className="size-4" /> Exportar CSV
+          </Button>
+          <ClearAnalyticsButton storeId={storeId === "all" ? null : storeId} />
+        </div>
+
       </header>
 
       <div className="flex flex-wrap gap-3">
