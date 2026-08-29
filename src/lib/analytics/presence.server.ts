@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 export type PresenceEvent =
   | "SESSION_ACTIVE"
   | "CART_OPENED"
+  | "CART_CLOSED"
   | "CHECKOUT_VIEWED"
   | "PAYMENT_SUCCEEDED"
   | "SESSION_ENDED";
@@ -18,6 +19,8 @@ type PresenceState = "ACTIVE" | "CART" | "CHECKOUT" | "PAID" | "ENDED";
 const STATE_BY_EVENT: Record<PresenceEvent, PresenceState> = {
   SESSION_ACTIVE: "ACTIVE",
   CART_OPENED: "CART",
+  // Drawer fechado sem avançar: volta a navegar no site principal.
+  CART_CLOSED: "ACTIVE",
   CHECKOUT_VIEWED: "CHECKOUT",
   PAYMENT_SUCCEEDED: "PAID",
   SESSION_ENDED: "ENDED",
