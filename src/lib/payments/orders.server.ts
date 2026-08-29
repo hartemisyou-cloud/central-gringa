@@ -272,6 +272,54 @@ async function integrationForStore(store: StoreRow): Promise<IntegrationRow> {
 }
 
 
+/** Limites de metadata da Stripe: 50 chaves, valor <= 500 chars. */
+const META_VALUE_MAX = 480;
+
+interface OrderItemRow {
+  product_id: string;
+  product_name: string;
+  sku: string;
+  quantity: number;
+}
+
+/**
+ * Resume os itens do pedido para o metadata do PaymentIntent, identificando
+ * explicitamente produtos digitais (eBooks) sem expor dados internos.
+ */
+function buildItemsMetadata(
+  items: OrderItemRow[],
+  products: { id: string; category: string | null; weight_grams: number }[],
+): Record<string, string> {
+  if (items.length === 0) return {};
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const digitalCount = items.filter((i) => (byId.get(i.product_id)?.weight_grams ?? 1) === 0).length;
+  const productType =
+    digitalCount === items.length ? "ebook" : digitalCount === 0 ? "physical" : "mixed";
+
+  const meta: Record<string, string> = {
+    item_count: String(items.length),
+    product_type: productType,
+    delivery_type: digitalCount === items.length ? "digital" : digitalCount === 0 ? "physical" : "mixed",
+  };
+
+  if (items.length === 1) {
+    const item = items[0]!;
+    meta["sku"] = item.sku.slice(0, META_VALUE_MAX);
+    meta["product_name"] = item.product_name.slice(0, META_VALUE_MAX);
+    meta["quantity"] = String(item.quantity);
+    const category = byId.get(item.product_id)?.category;
+    if (category) meta["category"] = category.slice(0, META_VALUE_MAX);
+  } else {
+    // Múltiplos itens: representação resumida dentro dos limites da Stripe.
+    meta["sku"] = items.map((i) => i.sku).join(",").slice(0, META_VALUE_MAX);
+    meta["product_name"] = `${items[0]!.product_name} +${items.length - 1} item(ns)`.slice(0, META_VALUE_MAX);
+    meta["quantity"] = String(items.reduce((sum, i) => sum + i.quantity, 0));
+    const categories = [...new Set(items.map((i) => byId.get(i.product_id)?.category).filter(Boolean))];
+    if (categories.length > 0) meta["category"] = categories.join(",").slice(0, META_VALUE_MAX);
+  }
+  return meta;
+}
+
 /**
  * Cria (ou reaproveita) o pagamento de um pedido.
  * Idempotente: chave estável `payment:create:{order_id}:{attempt}` na Stripe e
