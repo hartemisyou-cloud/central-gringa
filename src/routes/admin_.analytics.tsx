@@ -207,14 +207,31 @@ function AnalyticsPage() {
             hint="Sessões com atividade nos últimos 60s"
           />
           <RealtimeMetric
-            label="Carrinho aberto agora"
+            label="Drawer de doação aberto agora"
             value={realtime.data?.cart}
-            hint="Carrinho aberto e ativo nos últimos 5 min"
+            hint="Drawer aberto no site principal, ativo nos últimos 5 min"
           />
           <RealtimeMetric
             label="No checkout agora"
             value={realtime.data?.checkout}
             hint="No checkout e ativo nos últimos 5 min"
+          />
+          <RealtimeMetric
+            label="Abandonaram o drawer"
+            value={realtime.data?.drawerAbandoned}
+            hint="Abriram o drawer, não chegaram ao checkout e estão 5+ min inativos"
+          />
+          <RealtimeMetric
+            label="Taxa Drawer → Checkout"
+            value={realtime.data?.drawerToCheckoutRate ?? undefined}
+            suffix="%"
+            hint={`${realtime.data?.drawerToCheckout ?? 0} de ${realtime.data?.drawerOpened ?? 0} sessões que abriram o drawer (24h)`}
+          />
+          <RealtimeMetric
+            label="Taxa de abandono do drawer"
+            value={realtime.data?.drawerAbandonRate ?? undefined}
+            suffix="%"
+            hint={`${realtime.data?.drawerAbandoned ?? 0} de ${realtime.data?.drawerOpened ?? 0} sessões que abriram o drawer (24h)`}
           />
         </div>
         <p className="text-xs text-muted-foreground">
@@ -417,10 +434,12 @@ function RealtimeMetric({
   label,
   value,
   hint,
+  suffix,
 }: {
   label: string;
   value: number | undefined;
   hint: string;
+  suffix?: string;
 }) {
   return (
     <Card>
@@ -432,7 +451,9 @@ function RealtimeMetric({
           </span>
           <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
         </div>
-        <p className="text-3xl font-semibold tabular-nums">{value ?? 0}</p>
+        <p className="text-3xl font-semibold tabular-nums">
+          {value === undefined ? (suffix ? "—" : 0) : `${value}${suffix ?? ""}`}
+        </p>
         <p className="text-xs text-muted-foreground">{hint}</p>
       </CardContent>
     </Card>

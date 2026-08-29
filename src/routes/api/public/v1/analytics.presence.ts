@@ -30,7 +30,9 @@ export const Route = createFileRoute("/api/public/v1/analytics/presence")({
             sessionId: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/),
             event: z.enum([
               "SESSION_ACTIVE",
+              // CART_OPENED = drawer de doação aberto no site principal
               "CART_OPENED",
+              "CART_CLOSED",
               "CHECKOUT_VIEWED",
               "PAYMENT_SUCCEEDED",
               "SESSION_ENDED",
