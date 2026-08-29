@@ -26,7 +26,7 @@ async function loadStore(storeId: string) {
     .select("id, name, slug")
     .eq("id", storeId)
     .maybeSingle();
-  if (error) throw new PaymentError("INTERNAL_ERROR", error.message);
+  if (error) throw new PaymentError("PROVIDER_ERROR", error.message);
   if (!data) throw new PaymentError("NOT_FOUND", "Loja não encontrada.");
   return data;
 }
@@ -39,7 +39,7 @@ export async function previewAnalyticsPurge(storeId: string): Promise<PurgePrevi
         .from(table)
         .select("*", { count: "exact", head: true })
         .eq("store_id", storeId);
-      if (error) throw new PaymentError("INTERNAL_ERROR", `${table}: ${error.message}`);
+      if (error) throw new PaymentError("PROVIDER_ERROR", `${table}: ${error.message}`);
       return { table, rows: count ?? 0 };
     }),
   );
@@ -69,7 +69,7 @@ export async function purgeAnalytics(storeId: string) {
 
   for (const table of ANALYTICS_TABLES) {
     const { error } = await supabaseAdmin.from(table).delete().eq("store_id", storeId);
-    if (error) throw new PaymentError("INTERNAL_ERROR", `${table}: ${error.message}`);
+    if (error) throw new PaymentError("PROVIDER_ERROR", `${table}: ${error.message}`);
   }
 
   // Cache derivado: janela do prune de presença, para os cards recalcularem já.
