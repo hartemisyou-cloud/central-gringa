@@ -165,10 +165,8 @@ export async function buildPayload(
   if (st) userData["st"] = [st];
   const country = await hashName(context.country);
   if (country) userData["country"] = [country];
-  if (context.postalCode) {
-    const zip = context.postalCode.replace(/\D/g, "");
-    if (zip) userData["zp"] = [zip];
-  }
+  const zp = await hashZip(context.postalCode);
+  if (zp) userData["zp"] = [zp];
   if (attribution.fbc) userData["fbc"] = attribution.fbc;
   if (attribution.fbp) userData["fbp"] = attribution.fbp;
   // IP e User-Agent do contexto real da compra: o webhook da Stripe não os
