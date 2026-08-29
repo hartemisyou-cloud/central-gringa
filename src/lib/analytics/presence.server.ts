@@ -55,27 +55,40 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
   const incoming = STATE_BY_EVENT[input.event];
   const now = new Date().toISOString();
 
-  let storeId: string | null = null;
+  // Marcos já registrados para esta sessão (drawer / checkout) e loja associada.
+  const { data: existing } = await supabaseAdmin
+    .from("presence_sessions")
+    .select("store_id, cart_opened_at, cart_closed_at, checkout_viewed_at")
+    .eq("session_id", input.sessionId)
+    .maybeSingle();
+
+  let storeId: string | null = existing?.store_id ?? null;
   if (input.storeSlug) {
     const { data } = await supabaseAdmin
       .from("stores")
       .select("id")
       .eq("slug", input.storeSlug.toLowerCase())
       .maybeSingle();
-    storeId = data?.id ?? null;
-  } else {
-    // Sem slug nesta página: preserva a loja já associada à sessão.
-    const { data: existing } = await supabaseAdmin
-      .from("presence_sessions")
-      .select("store_id")
-      .eq("session_id", input.sessionId)
-      .maybeSingle();
-    storeId = existing?.store_id ?? null;
+    storeId = data?.id ?? storeId;
   }
 
   // Estado da página atual, sem trava: ENDED é substituído pelo próximo
   // heartbeat válido e CHECKOUT pode voltar para ACTIVE/CART.
   const state: PresenceState = incoming;
+
+  const row = existing as
+    | { cart_opened_at: string | null; cart_closed_at: string | null; checkout_viewed_at: string | null }
+    | null;
+
+  // Marcos são cumulativos dentro da sessão: fechar e reabrir o drawer não
+  // apaga nada, e chegar ao checkout marca a conversão definitivamente.
+  const cartOpenedAt =
+    input.event === "CART_OPENED" ? (row?.cart_opened_at ?? now) : (row?.cart_opened_at ?? null);
+  const cartClosedAt = input.event === "CART_CLOSED" ? now : (row?.cart_closed_at ?? null);
+  const checkoutViewedAt =
+    input.event === "CHECKOUT_VIEWED" || input.event === "PAYMENT_SUCCEEDED"
+      ? (row?.checkout_viewed_at ?? now)
+      : (row?.checkout_viewed_at ?? null);
 
   const { error } = await supabaseAdmin.from("presence_sessions").upsert(
     {
@@ -86,6 +99,9 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
       user_agent: userAgent ? userAgent.slice(0, 400) : null,
       is_bot: isBot,
       last_seen_at: now,
+      cart_opened_at: cartOpenedAt,
+      cart_closed_at: cartClosedAt,
+      checkout_viewed_at: checkoutViewedAt,
     } as never,
     { onConflict: "session_id" },
   );
@@ -96,47 +112,94 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
 
 export interface RealtimeSnapshot {
   online: number;
+  /** Drawer de doação aberto agora (site principal). */
   cart: number;
   checkout: number;
+  /** Abriram o drawer, não chegaram ao checkout e estão inativos há 5+ min. */
+  drawerAbandoned: number;
+  /** Sessões que abriram o drawer na janela de análise. */
+  drawerOpened: number;
+  /** Sessões que abriram o drawer e chegaram ao checkout. */
+  drawerToCheckout: number;
+  /** drawerToCheckout / drawerOpened (0–100) ou null sem amostra. */
+  drawerToCheckoutRate: number | null;
+  /** drawerAbandoned / drawerOpened (0–100) ou null sem amostra. */
+  drawerAbandonRate: number | null;
   generatedAt: string;
 }
+
+/** Inatividade mínima para considerar o drawer abandonado. */
+const ABANDON_AFTER_MS = 5 * 60_000;
+/** Janela de análise das taxas do drawer. */
+const FUNNEL_WINDOW_MS = 24 * 60 * 60_000;
 
 /**
  * Contagens ao vivo, deduplicadas por `session_id` (chave primária da tabela).
  * Sem qualquer threshold: o número aparece na primeira sessão.
+ *
+ * Abandono do drawer = a sessão abriu o drawer (`CART_OPENED`), nunca registrou
+ * `CHECKOUT_VIEWED` e está sem atividade há pelo menos 5 minutos. Fechar e
+ * reabrir o drawer não conta como abandono se depois houver checkout na mesma
+ * sessão, porque o marco `checkout_viewed_at` é cumulativo.
  */
 export async function realtimeSnapshot(storeId?: string | null): Promise<RealtimeSnapshot> {
   const now = Date.now();
   const online = new Date(now - 60_000).toISOString();
-  const window5 = new Date(now - 5 * 60_000).toISOString();
+  const window5 = new Date(now - ABANDON_AFTER_MS).toISOString();
+  const funnelWindow = new Date(now - FUNNEL_WINDOW_MS).toISOString();
 
   let query = supabaseAdmin
     .from("presence_sessions")
-    .select("session_id, state, last_seen_at")
+    .select("session_id, state, last_seen_at, cart_opened_at, checkout_viewed_at")
     .eq("is_bot", false)
-    .gte("last_seen_at", window5)
+    .gte("last_seen_at", funnelWindow)
     .limit(20000);
   if (storeId) query = query.eq("store_id", storeId);
 
   const { data, error } = await query;
   if (error) console.error("[presence] snapshot failed", error.message);
 
-  const rows = data ?? [];
+  const rows = (data ?? []) as Array<{
+    session_id: string;
+    state: string;
+    last_seen_at: string;
+    cart_opened_at: string | null;
+    checkout_viewed_at: string | null;
+  }>;
+
   const onlineSet = new Set<string>();
   const cartSet = new Set<string>();
   const checkoutSet = new Set<string>();
+  const openedSet = new Set<string>();
+  const convertedSet = new Set<string>();
+  const abandonedSet = new Set<string>();
 
   for (const row of rows) {
+    if (row.cart_opened_at) {
+      openedSet.add(row.session_id);
+      if (row.checkout_viewed_at) convertedSet.add(row.session_id);
+      else if (row.last_seen_at < window5) abandonedSet.add(row.session_id);
+    }
+
     if (row.state === "ENDED") continue;
+    if (row.last_seen_at < window5) continue;
     if (row.last_seen_at >= online) onlineSet.add(row.session_id);
     if (row.state === "CART") cartSet.add(row.session_id);
     if (row.state === "CHECKOUT") checkoutSet.add(row.session_id);
   }
 
+  const opened = openedSet.size;
+  const pct = (part: number) => (opened === 0 ? null : Number(((part / opened) * 100).toFixed(1)));
+
   return {
     online: onlineSet.size,
     cart: cartSet.size,
     checkout: checkoutSet.size,
+    drawerAbandoned: abandonedSet.size,
+    drawerOpened: opened,
+    drawerToCheckout: convertedSet.size,
+    drawerToCheckoutRate: pct(convertedSet.size),
+    drawerAbandonRate: pct(abandonedSet.size),
     generatedAt: new Date().toISOString(),
   };
 }
