@@ -153,9 +153,13 @@ function AnalyticsPage() {
             Funil do checkout, métodos de pagamento, recusas e comportamento por loja.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void downloadCsv()}>
-          <Download className="size-4" /> Exportar CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => void downloadCsv()}>
+            <Download className="size-4" /> Exportar CSV
+          </Button>
+          <ClearAnalyticsButton storeId={storeId === "all" ? null : storeId} />
+        </div>
+
       </header>
 
       <div className="flex flex-wrap gap-3">
