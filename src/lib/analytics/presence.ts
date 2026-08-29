@@ -28,9 +28,14 @@ export const MAX_AGE_MS = 24 * 60 * 60_000;
 /** Uma aba é considerada viva enquanto tiver batido dentro desta janela. */
 const TAB_TTL_MS = HEARTBEAT_MS * 3;
 
+/**
+ * `CART_OPENED` = drawer de doação aberto no site principal
+ * (freeheartsfoundation.org). `CART_CLOSED` = drawer fechado sem avançar.
+ */
 export type PresenceEvent =
   | "SESSION_ACTIVE"
   | "CART_OPENED"
+  | "CART_CLOSED"
   | "CHECKOUT_VIEWED"
   | "PAYMENT_SUCCEEDED"
   | "SESSION_ENDED";
