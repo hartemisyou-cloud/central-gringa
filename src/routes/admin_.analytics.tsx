@@ -6,6 +6,8 @@ import { ArrowLeft, Download, Loader2 } from "lucide-react";
 
 import { analyticsCsv, analyticsRealtime, analyticsReport } from "@/lib/analytics.functions";
 import { adminListStores, adminStatus } from "@/lib/admin.functions";
+import { ClearAnalyticsButton } from "@/components/admin/clear-analytics-button";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
