@@ -420,7 +420,17 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
   // Atribuição persistida no pedido -> metadata do PaymentIntent.
   // Só campos presentes são adicionados; o metadata base nunca é alterado.
   // (já carregada em paralelo no início da função)
-  const paymentIntentMetadata = mergeAttributionIntoMetadata(baseMetadata, attribution);
+  // Enriquecimento: identifica os itens (SKU, nome, tipo digital/eBook) na Stripe.
+  const itemRows = (itemsResult.data ?? []) as OrderItemRow[];
+  const productIds = [...new Set(itemRows.map((i) => i.product_id))];
+  const { data: productRows } = productIds.length
+    ? await supabaseAdmin.from("products").select("id, category, weight_grams").in("id", productIds)
+    : { data: [] };
+  const itemsMetadata = buildItemsMetadata(itemRows, productRows ?? []);
+  const paymentIntentMetadata = mergeAttributionIntoMetadata(
+    { ...baseMetadata, ...itemsMetadata },
+    attribution,
+  );
 
 
 
