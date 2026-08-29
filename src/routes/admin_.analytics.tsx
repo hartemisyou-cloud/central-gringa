@@ -186,6 +186,29 @@ function AnalyticsPage() {
         </Select>
       </div>
 
+      <section className="space-y-2">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <RealtimeMetric
+            label="Online agora"
+            value={realtime.data?.online}
+            hint="Sessões com atividade nos últimos 60s"
+          />
+          <RealtimeMetric
+            label="Carrinho aberto agora"
+            value={realtime.data?.cart}
+            hint="Carrinho aberto e ativo nos últimos 5 min"
+          />
+          <RealtimeMetric
+            label="No checkout agora"
+            value={realtime.data?.checkout}
+            hint="No checkout e ativo nos últimos 5 min"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Última atualização: {lastUpdate} · atualiza automaticamente a cada 7s
+        </p>
+      </section>
+
       {report.isLoading || !data ? (
         <div className="flex min-h-[240px] items-center justify-center">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
