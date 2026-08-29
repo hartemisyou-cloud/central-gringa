@@ -283,9 +283,30 @@ interface OrderItemRow {
 }
 
 /**
+ * SKUs temporários de teste de doação (ex.: LC-TEST-DON-5). Somente esses SKUs
+ * recebem descrição dinâmica "$X Donation"; qualquer outro pedido mantém a
+ * descrição padrão `Pedido {order_number}`.
+ */
+const TEST_DONATION_SKU_PREFIX = "LC-TEST-DON-";
+
+/** Descrição do PaymentIntent: dinâmica só para os SKUs de teste de doação. */
+function buildPaymentDescription(
+  order: { order_number: string; total_cents: number },
+  items: OrderItemRow[],
+): string {
+  const allDonation =
+    items.length > 0 && items.every((i) => i.sku.startsWith(TEST_DONATION_SKU_PREFIX));
+  if (!allDonation) return `Pedido ${order.order_number}`;
+  const amount = order.total_cents / 100;
+  const label = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return `$${label} Donation`;
+}
+
+/**
  * Resume os itens do pedido para o metadata do PaymentIntent, identificando
  * explicitamente produtos digitais (eBooks) sem expor dados internos.
  */
+
 function buildItemsMetadata(
   items: OrderItemRow[],
   products: { id: string; category: string | null; weight_grams: number }[],
@@ -439,7 +460,7 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       amountCents: order.total_cents,
       currency: order.currency,
       idempotencyKey,
-      description: `Pedido ${order.order_number}`,
+      description: buildPaymentDescription(order, itemRows),
       metadata: paymentIntentMetadata,
       ...(integration.payment_method_configuration_id
         ? { paymentMethodConfiguration: integration.payment_method_configuration_id }
