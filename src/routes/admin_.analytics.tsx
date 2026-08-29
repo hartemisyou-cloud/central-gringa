@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 
-import { analyticsCsv, analyticsReport } from "@/lib/analytics.functions";
+import { analyticsCsv, analyticsRealtime, analyticsReport } from "@/lib/analytics.functions";
 import { adminListStores, adminStatus } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
