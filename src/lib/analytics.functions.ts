@@ -24,6 +24,20 @@ export const analyticsReport = createServerFn({ method: "POST" })
     return buildReport(data);
   });
 
+/** Cards em tempo real: sem threshold, aparecem na primeira sessão. */
+export const analyticsRealtime = createServerFn({ method: "POST" })
+  .inputValidator((data: { storeId?: string | null }) =>
+    z.object({ storeId: z.string().uuid().nullish() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { realtimeSnapshot, prunePresence } = await import("./analytics/presence.server");
+    const snapshot = await realtimeSnapshot(data.storeId ?? null);
+    if (Math.random() < 0.05) await prunePresence();
+    return snapshot;
+  });
+
 export const analyticsCsv = createServerFn({ method: "POST" })
   .inputValidator((data: AnalyticsFiltersInput) => filtersSchema.parse(data))
   .handler(async ({ data }) => {
