@@ -23,14 +23,12 @@ const STATE_BY_EVENT: Record<PresenceEvent, PresenceState> = {
   SESSION_ENDED: "ENDED",
 };
 
-/** Progressão do funil: nunca regride (CHECKOUT não volta para CART). */
-const RANK: Record<PresenceState, number> = {
-  ACTIVE: 0,
-  CART: 1,
-  CHECKOUT: 2,
-  PAID: 3,
-  ENDED: 4,
-};
+/**
+ * O estado reflete SEMPRE a página atual do visitante (home → ACTIVE,
+ * carrinho → CART, checkout → CHECKOUT, pago → PAID). `ENDED` é apenas um
+ * sinal temporário: qualquer heartbeat posterior de página ativa reativa a
+ * sessão. `last_seen_at` continua sendo a fonte principal de expiração.
+ */
 
 const BOT_PATTERN =
   /(bot|crawl|spider|slurp|preview|monitor|uptime|health|pingdom|lighthouse|headless|phantom|puppeteer|playwright|curl|wget|python-requests|axios|node-fetch|okhttp|java\/|go-http|libwww|facebookexternalhit|whatsapp|telegram|discord|semrush|ahrefs|dataprovider)/i;
@@ -62,23 +60,24 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
       .eq("slug", input.storeSlug.toLowerCase())
       .maybeSingle();
     storeId = data?.id ?? null;
+  } else {
+    // Sem slug nesta página: preserva a loja já associada à sessão.
+    const { data: existing } = await supabaseAdmin
+      .from("presence_sessions")
+      .select("store_id")
+      .eq("session_id", input.sessionId)
+      .maybeSingle();
+    storeId = existing?.store_id ?? null;
   }
 
-  const { data: existing } = await supabaseAdmin
-    .from("presence_sessions")
-    .select("state, store_id")
-    .eq("session_id", input.sessionId)
-    .maybeSingle();
-
-  const previous = (existing?.state ?? "ACTIVE") as PresenceState;
-  // SESSION_ENDED é sempre aplicável (otimização); os demais só avançam.
-  const state =
-    incoming === "ENDED" || RANK[incoming] > RANK[previous] ? incoming : previous;
+  // Estado da página atual, sem trava: ENDED é substituído pelo próximo
+  // heartbeat válido e CHECKOUT pode voltar para ACTIVE/CART.
+  const state: PresenceState = incoming;
 
   const { error } = await supabaseAdmin.from("presence_sessions").upsert(
     {
       session_id: input.sessionId,
-      store_id: storeId ?? existing?.store_id ?? null,
+      store_id: storeId,
       state,
       page: input.page ?? null,
       user_agent: userAgent ? userAgent.slice(0, 400) : null,
@@ -139,14 +138,36 @@ export async function realtimeSnapshot(storeId?: string | null): Promise<Realtim
   };
 }
 
-/** Limpeza barata das sessões antigas (executada fora do caminho crítico). */
-export async function prunePresence(): Promise<void> {
+/** Sessões inativas por mais tempo que isto são removidas (= TTL do cliente). */
+const PRUNE_AFTER_MS = 30 * 60_000;
+/** Janela determinística: no máximo uma limpeza a cada 5 minutos. */
+const PRUNE_WINDOW_SECONDS = 300;
+
+/**
+ * Limpeza determinística das sessões inativas.
+ *
+ * Em vez de sortear 5% das requisições, usa o contador `bump_rate_limit` como
+ * relógio compartilhado: a primeira chamada de cada janela de 5 minutos executa
+ * o DELETE e as demais retornam sem trabalho. Previsível e idempotente.
+ */
+export async function prunePresence(force = false): Promise<{ pruned: boolean }> {
   try {
+    if (!force) {
+      const { data, error } = await supabaseAdmin.rpc("bump_rate_limit", {
+        _bucket: "presence_prune",
+        _window_seconds: PRUNE_WINDOW_SECONDS,
+      });
+      if (error) return { pruned: false };
+      if ((data ?? 0) !== 1) return { pruned: false };
+    }
+
     await supabaseAdmin
       .from("presence_sessions")
       .delete()
-      .lt("last_seen_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      .lt("last_seen_at", new Date(Date.now() - PRUNE_AFTER_MS).toISOString());
+    return { pruned: true };
   } catch (error) {
     console.error("[presence] prune failed", (error as Error).message);
+    return { pruned: false };
   }
 }

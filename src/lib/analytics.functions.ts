@@ -33,8 +33,11 @@ export const analyticsRealtime = createServerFn({ method: "POST" })
     const { requireAdmin } = await import("./admin/session.server");
     await requireAdmin();
     const { realtimeSnapshot, prunePresence } = await import("./analytics/presence.server");
-    const snapshot = await realtimeSnapshot(data.storeId ?? null);
-    if (Math.random() < 0.05) await prunePresence();
+    const [snapshot] = await Promise.all([
+      realtimeSnapshot(data.storeId ?? null),
+      // Limpeza determinística: no máximo uma vez a cada 5 minutos.
+      prunePresence(),
+    ]);
     return snapshot;
   });
 
