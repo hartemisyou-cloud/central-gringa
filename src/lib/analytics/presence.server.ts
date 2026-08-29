@@ -23,14 +23,12 @@ const STATE_BY_EVENT: Record<PresenceEvent, PresenceState> = {
   SESSION_ENDED: "ENDED",
 };
 
-/** Progressão do funil: nunca regride (CHECKOUT não volta para CART). */
-const RANK: Record<PresenceState, number> = {
-  ACTIVE: 0,
-  CART: 1,
-  CHECKOUT: 2,
-  PAID: 3,
-  ENDED: 4,
-};
+/**
+ * O estado reflete SEMPRE a página atual do visitante (home → ACTIVE,
+ * carrinho → CART, checkout → CHECKOUT, pago → PAID). `ENDED` é apenas um
+ * sinal temporário: qualquer heartbeat posterior de página ativa reativa a
+ * sessão. `last_seen_at` continua sendo a fonte principal de expiração.
+ */
 
 const BOT_PATTERN =
   /(bot|crawl|spider|slurp|preview|monitor|uptime|health|pingdom|lighthouse|headless|phantom|puppeteer|playwright|curl|wget|python-requests|axios|node-fetch|okhttp|java\/|go-http|libwww|facebookexternalhit|whatsapp|telegram|discord|semrush|ahrefs|dataprovider)/i;
