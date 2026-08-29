@@ -419,14 +419,6 @@ function buildInsights(input: {
     });
   }
 
-  if (input.views < MIN_SAMPLE) {
-    out.push({
-      severity: "info",
-      title: "Amostra insuficiente para comparações",
-      detail: `São necessários ao menos ${MIN_SAMPLE} checkouts no período para gerar insights confiáveis.`,
-    });
-  }
-
   return out;
 }
 

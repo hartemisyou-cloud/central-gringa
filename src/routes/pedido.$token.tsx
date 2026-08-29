@@ -1,11 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 
 import { getStorefrontOrderStatus } from "@/lib/storefront.functions";
 import { formatMoney, ORDER_STATUS_LABEL } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { usePresence } from "@/hooks/usePresence";
 
 export const Route = createFileRoute("/pedido/$token")({
   head: () => ({
@@ -42,6 +44,11 @@ function OrderStatusPage() {
 
   const status = data?.status ?? "PENDING_PAYMENT";
   const paid = status === "PAID";
+  const presence = usePresence({ state: "CHECKOUT_VIEWED" });
+
+  useEffect(() => {
+    if (paid) presence.send("PAYMENT_SUCCEEDED");
+  }, [paid, presence]);
   const failed = ["PAYMENT_FAILED", "CANCELLED"].includes(status);
 
   return (
