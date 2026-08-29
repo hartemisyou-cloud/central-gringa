@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { startPresence, type PresenceEvent, type PresenceHandle } from "@/lib/analytics/presence";
 
@@ -20,7 +20,9 @@ export function usePresence(options: { state?: PresenceEvent; storeSlug?: string
     };
   }, [state, storeSlug]);
 
-  return {
-    send: (event: PresenceEvent) => handle.current?.send(event),
-  };
+  const send = useCallback((event: PresenceEvent) => {
+    handle.current?.send(event);
+  }, []);
+
+  return { send };
 }
