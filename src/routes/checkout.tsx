@@ -18,6 +18,7 @@ import {
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
 import { useStorefrontTracking } from "@/hooks/useStorefrontTracking";
+import { usePresence } from "@/hooks/usePresence";
 import { readAttribution } from "@/lib/tracking/attribution-client";
 import { storePaymentSession } from "@/routes/pagamento.$token";
 import { Button } from "@/components/ui/button";
@@ -109,6 +110,7 @@ function CheckoutPage() {
 
   // Tracking da vitrine: Pixel + captura de UTMs (usadas depois pela UTMify).
   const tracking = useStorefrontTracking();
+  usePresence({ state: "CHECKOUT_VIEWED" });
   const currency = cartRows[0]?.product.currency ?? "USD";
   const metaEvent = useMemo(
     () => ({

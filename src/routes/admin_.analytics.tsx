@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 
-import { analyticsCsv, analyticsReport } from "@/lib/analytics.functions";
+import { analyticsCsv, analyticsRealtime, analyticsReport } from "@/lib/analytics.functions";
 import { adminListStores, adminStatus } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +85,19 @@ function AnalyticsPage() {
     queryFn: () => analyticsReport({ data: filters }),
     enabled: status.data?.unlocked === true,
   });
+
+  // Camada em tempo real: independente do relatório histórico e sem threshold.
+  const realtime = useQuery({
+    queryKey: ["admin", "analytics", "realtime", storeId],
+    queryFn: () => analyticsRealtime({ data: { storeId: storeId === "all" ? null : storeId } }),
+    enabled: status.data?.unlocked === true,
+    refetchInterval: 7000,
+    refetchIntervalInBackground: false,
+  });
+
+  const lastUpdate = realtime.data
+    ? new Date(realtime.data.generatedAt).toLocaleTimeString("pt-BR", { hour12: false })
+    : "--:--:--";
 
   if (status.isLoading) {
     return (
@@ -185,6 +198,29 @@ function AnalyticsPage() {
           </SelectContent>
         </Select>
       </div>
+
+      <section className="space-y-2">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <RealtimeMetric
+            label="Online agora"
+            value={realtime.data?.online}
+            hint="Sessões com atividade nos últimos 60s"
+          />
+          <RealtimeMetric
+            label="Carrinho aberto agora"
+            value={realtime.data?.cart}
+            hint="Carrinho aberto e ativo nos últimos 5 min"
+          />
+          <RealtimeMetric
+            label="No checkout agora"
+            value={realtime.data?.checkout}
+            hint="No checkout e ativo nos últimos 5 min"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Última atualização: {lastUpdate} · atualiza automaticamente a cada 7s
+        </p>
+      </section>
 
       {report.isLoading || !data ? (
         <div className="flex min-h-[240px] items-center justify-center">
@@ -374,6 +410,32 @@ function AnalyticsPage() {
         </div>
       )}
     </main>
+  );
+}
+
+function RealtimeMetric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number | undefined;
+  hint: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="space-y-1 p-5">
+        <div className="flex items-center gap-2">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-2 animate-ping rounded-full bg-primary/60" />
+            <span className="inline-flex size-2 rounded-full bg-primary" />
+          </span>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+        </div>
+        <p className="text-3xl font-semibold tabular-nums">{value ?? 0}</p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -917,6 +917,53 @@ export type Database = {
           },
         ]
       }
+      presence_sessions: {
+        Row: {
+          created_at: string
+          first_seen_at: string
+          is_bot: boolean
+          last_seen_at: string
+          page: string | null
+          session_id: string
+          state: string
+          store_id: string | null
+          updated_at: string
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          first_seen_at?: string
+          is_bot?: boolean
+          last_seen_at?: string
+          page?: string | null
+          session_id: string
+          state?: string
+          store_id?: string | null
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          first_seen_at?: string
+          is_bot?: boolean
+          last_seen_at?: string
+          page?: string | null
+          session_id?: string
+          state?: string
+          store_id?: string | null
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presence_sessions_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_variants: {
         Row: {
           active: boolean

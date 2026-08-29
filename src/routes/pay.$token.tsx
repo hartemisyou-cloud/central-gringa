@@ -16,6 +16,7 @@ import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
 import { captureHostedAttribution, loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
 import { createCheckoutTracker } from "@/lib/analytics/client";
+import { usePresence } from "@/hooks/usePresence";
 import { captureAttribution } from "@/lib/tracking/attribution-client";
 import {
   initPixel,
@@ -166,6 +167,7 @@ function PaymentForm({ session }: { session: Session }) {
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [hasExpress, setHasExpress] = useState(false);
+  usePresence({ state: "CHECKOUT_VIEWED" });
 
   // Telemetria de conversão: totalmente assíncrona e sem dados de cartão.
   const tracker = useMemo(
