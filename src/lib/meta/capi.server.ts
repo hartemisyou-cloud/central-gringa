@@ -405,7 +405,7 @@ export async function sendTestPurchase(storeId: string): Promise<{
         event_time: Math.floor(Date.now() / 1000),
         event_id: eventId,
         action_source: "website",
-        event_source_url: "https://central-spark-pay.lovable.app/checkout",
+        event_source_url: "https://stripe-hub.lovable.app/",
         user_data: userData,
         custom_data: {
           currency: "USD",
