@@ -86,6 +86,19 @@ function AnalyticsPage() {
     enabled: status.data?.unlocked === true,
   });
 
+  // Camada em tempo real: independente do relatório histórico e sem threshold.
+  const realtime = useQuery({
+    queryKey: ["admin", "analytics", "realtime", storeId],
+    queryFn: () => analyticsRealtime({ data: { storeId: storeId === "all" ? null : storeId } }),
+    enabled: status.data?.unlocked === true,
+    refetchInterval: 7000,
+    refetchIntervalInBackground: false,
+  });
+
+  const lastUpdate = realtime.data
+    ? new Date(realtime.data.generatedAt).toLocaleTimeString("pt-BR", { hour12: false })
+    : "--:--:--";
+
   if (status.isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background">
