@@ -6,6 +6,7 @@ import { getStorefrontProducts, type StorefrontProduct } from "@/lib/storefront.
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
 import { useStorefrontTracking } from "@/hooks/useStorefrontTracking";
+import { usePresence } from "@/hooks/usePresence";
 import { Button } from "@/components/ui/button";
 
 const productsQuery = queryOptions({
@@ -41,9 +42,11 @@ function Storefront() {
   const { data: products } = useSuspenseQuery(productsQuery);
   const { lines, hydrated, add, setQuantity } = useCart();
   const tracking = useStorefrontTracking();
+  const presence = usePresence({ state: "SESSION_ACTIVE" });
 
   const handleAdd = (product: StorefrontProduct) => {
     add(product.id);
+    presence.send("CART_OPENED");
     tracking.addToCart({
       value: Number((product.priceCents / 100).toFixed(2)),
       currency: product.currency,
