@@ -3,7 +3,7 @@ import {
   getOrderAttributionRecord,
   type OrderAttributionRecord,
 } from "@/lib/payments/attribution.server";
-import type { Attribution } from "@/lib/payments/attribution";
+import { isPublicPageUrl, type Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
 import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
 
