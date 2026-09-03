@@ -97,9 +97,31 @@ export function splitAttributionPayload(input: AttributionWithContext | undefine
   const url = input?.event_source_url?.trim();
   if (ip) context.clientIp = ip;
   if (ua) context.clientUserAgent = ua;
-  if (url) context.eventSourceUrl = url;
+  if (url && isPublicPageUrl(url)) context.eventSourceUrl = url;
   return { attribution, context };
 }
+
+/**
+ * Domínios internos da Central. Nunca podem representar a página pública onde o
+ * comprador finalizou a compra (event_source_url do Purchase da Meta).
+ */
+export const CENTRAL_INTERNAL_HOSTS = [
+  "central-spark-pay.lovable.app",
+  "stripe-hub.lovable.app",
+] as const;
+
+/** true quando a URL é http(s) e NÃO aponta para um domínio interno da Central. */
+export function isPublicPageUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
+  let host: string;
+  try {
+    host = new URL(value).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return !CENTRAL_INTERNAL_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
 
 
 
