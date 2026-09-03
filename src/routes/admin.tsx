@@ -456,7 +456,7 @@ function AdminDashboard() {
   );
 }
 
-const API_BASE = "https://central-spark-pay.lovable.app/api/public/v1";
+const API_BASE = "https://stripe-hub.lovable.app/api/public/v1";
 
 function CodeBlock({ children }: { children: string }) {
   return (
