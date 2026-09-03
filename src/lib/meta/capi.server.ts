@@ -410,15 +410,14 @@ export async function sendTestPurchase(storeId: string): Promise<{
   const testSourceUrl = testStore?.domain
     ? `https://${testStore.domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`
     : undefined;
-
-
+  const body: Record<string, unknown> = {
     data: [
       {
         event_name: "Purchase",
         event_time: Math.floor(Date.now() / 1000),
         event_id: eventId,
         action_source: "website",
-        event_source_url: "https://stripe-hub.lovable.app/",
+        ...(testSourceUrl ? { event_source_url: testSourceUrl } : {}),
         user_data: userData,
         custom_data: {
           currency: "USD",
