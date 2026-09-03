@@ -112,26 +112,31 @@ export async function loadOrderContext(orderId: string): Promise<OrderContext | 
 
 /**
  * URL real da conversão. Prioridade:
- * 1) URL do checkout/sessão onde a compra aconteceu (capturada no navegador);
+ * 1) URL da página de checkout onde a compra aconteceu (capturada no navegador);
  * 2) landing page da atribuição;
- * 3) fallback: página do pedido no domínio da loja.
+ * 3) domínio público cadastrado da loja.
+ *
+ * Domínios internos da Central (central-spark-pay.lovable.app e
+ * stripe-hub.lovable.app) NUNCA são usados, nem como fallback.
  */
 function eventSourceUrl(
   context: OrderContext,
   attribution: OrderAttributionRecord,
 ): string | undefined {
   const captured = attribution.event_source_url;
-  if (captured && /^https?:\/\//.test(captured)) return captured;
+  if (isPublicPageUrl(captured)) return captured!;
   const landing = attribution.landing_page;
-  if (landing && /^https?:\/\//.test(landing)) return landing;
+  if (isPublicPageUrl(landing)) return landing!;
   if (context.storeDomain) {
     const base = context.storeDomain.startsWith("http")
       ? context.storeDomain
       : `https://${context.storeDomain}`;
-    return `${base.replace(/\/$/, "")}/pedido/${context.publicToken}`;
+    const normalized = `${base.replace(/\/$/, "")}/`;
+    if (isPublicPageUrl(normalized)) return normalized;
   }
   return undefined;
 }
+
 
 export async function buildPayload(
   context: OrderContext,
