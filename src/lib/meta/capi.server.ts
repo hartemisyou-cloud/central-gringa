@@ -401,7 +401,17 @@ export async function sendTestPurchase(storeId: string): Promise<{
     fbc: `fb.1.${Date.now()}.TESTCLICKID${Math.floor(Math.random() * 1e6)}`,
   };
 
-  const body: Record<string, unknown> = {
+  // Domínio público da loja — nunca um domínio interno da Central.
+  const { data: testStore } = await supabaseAdmin
+    .from("stores")
+    .select("domain")
+    .eq("id", storeId)
+    .maybeSingle();
+  const testSourceUrl = testStore?.domain
+    ? `https://${testStore.domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`
+    : undefined;
+
+
     data: [
       {
         event_name: "Purchase",
