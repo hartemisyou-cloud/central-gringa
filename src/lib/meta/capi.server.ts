@@ -3,7 +3,7 @@ import {
   getOrderAttributionRecord,
   type OrderAttributionRecord,
 } from "@/lib/payments/attribution.server";
-import type { Attribution } from "@/lib/payments/attribution";
+import { isPublicPageUrl, type Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
 import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
 
@@ -112,26 +112,31 @@ export async function loadOrderContext(orderId: string): Promise<OrderContext | 
 
 /**
  * URL real da conversão. Prioridade:
- * 1) URL do checkout/sessão onde a compra aconteceu (capturada no navegador);
+ * 1) URL da página de checkout onde a compra aconteceu (capturada no navegador);
  * 2) landing page da atribuição;
- * 3) fallback: página do pedido no domínio da loja.
+ * 3) domínio público cadastrado da loja.
+ *
+ * Domínios internos da Central (central-spark-pay.lovable.app e
+ * stripe-hub.lovable.app) NUNCA são usados, nem como fallback.
  */
 function eventSourceUrl(
   context: OrderContext,
   attribution: OrderAttributionRecord,
 ): string | undefined {
   const captured = attribution.event_source_url;
-  if (captured && /^https?:\/\//.test(captured)) return captured;
+  if (isPublicPageUrl(captured)) return captured!;
   const landing = attribution.landing_page;
-  if (landing && /^https?:\/\//.test(landing)) return landing;
+  if (isPublicPageUrl(landing)) return landing!;
   if (context.storeDomain) {
     const base = context.storeDomain.startsWith("http")
       ? context.storeDomain
       : `https://${context.storeDomain}`;
-    return `${base.replace(/\/$/, "")}/pedido/${context.publicToken}`;
+    const normalized = `${base.replace(/\/$/, "")}/`;
+    if (isPublicPageUrl(normalized)) return normalized;
   }
   return undefined;
 }
+
 
 export async function buildPayload(
   context: OrderContext,
@@ -396,6 +401,15 @@ export async function sendTestPurchase(storeId: string): Promise<{
     fbc: `fb.1.${Date.now()}.TESTCLICKID${Math.floor(Math.random() * 1e6)}`,
   };
 
+  // Domínio público da loja — nunca um domínio interno da Central.
+  const { data: testStore } = await supabaseAdmin
+    .from("stores")
+    .select("domain")
+    .eq("id", storeId)
+    .maybeSingle();
+  const testSourceUrl = testStore?.domain
+    ? `https://${testStore.domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`
+    : undefined;
   const body: Record<string, unknown> = {
     data: [
       {
@@ -403,7 +417,7 @@ export async function sendTestPurchase(storeId: string): Promise<{
         event_time: Math.floor(Date.now() / 1000),
         event_id: eventId,
         action_source: "website",
-        event_source_url: "https://stripe-hub.lovable.app/",
+        ...(testSourceUrl ? { event_source_url: testSourceUrl } : {}),
         user_data: userData,
         custom_data: {
           currency: "USD",

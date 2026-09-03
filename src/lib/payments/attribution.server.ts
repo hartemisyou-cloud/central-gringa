@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   ATTRIBUTION_KEYS,
   hasAttribution,
+  isPublicPageUrl,
   normalizeAttribution,
   type Attribution,
 } from "./attribution";
@@ -33,7 +34,8 @@ function clientColumns(context: AttributionClientContext | undefined) {
   const url = clean(context?.eventSourceUrl, 500);
   if (ip) row["client_ip"] = ip;
   if (ua) row["client_user_agent"] = ua;
-  if (url) row["event_source_url"] = url;
+  // Nunca persistir domínio interno da Central como página da conversão.
+  if (url && isPublicPageUrl(url)) row["event_source_url"] = url;
   return row;
 }
 
