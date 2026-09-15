@@ -31,25 +31,48 @@ export const ATTRIBUTION_KEYS = [
 export type AttributionKey = (typeof ATTRIBUTION_KEYS)[number];
 export type Attribution = { [K in AttributionKey]?: string | undefined };
 
-/** URLs podem ser mais longas; os demais campos são curtos por natureza. */
+/**
+ * URLs de tracking (links reais de anúncio do Facebook com fbclid + UTMs)
+ * passam facilmente de 500 caracteres. Elas são aceitas até 2000 caracteres e,
+ * se excederem, são truncadas — NUNCA rejeitadas.
+ * Atribuição é best effort: nenhum campo opcional pode impedir a criação do
+ * pedido (order -> PaymentIntent -> Stripe).
+ */
+const URL_MAX_LENGTH = 2000;
 const MAX_LENGTH: Partial<Record<AttributionKey, number>> = {
-  referrer: 500,
-  landing_page: 500,
+  referrer: URL_MAX_LENGTH,
+  landing_page: URL_MAX_LENGTH,
 };
 const DEFAULT_MAX_LENGTH = 255;
 
-function field(key: AttributionKey) {
+/**
+ * Campo tolerante: sanitiza (trim, remove caracteres de controle) e trunca no
+ * limite em vez de falhar a validação. fbclid, fbp, fbc, UTMs, csid, IP e UA
+ * vivem em campos próprios e continuam íntegros mesmo com URL truncada.
+ */
+function tolerantString(maxLength: number) {
   return z
     .string()
-    .trim()
-    .max(MAX_LENGTH[key] ?? DEFAULT_MAX_LENGTH)
-    .optional();
+    .transform((value) =>
+      value
+        .replace(/[\u0000-\u001f\u007f]/g, "")
+        .trim()
+        .slice(0, maxLength),
+    )
+    .optional()
+    .catch(undefined);
 }
+
+function field(key: AttributionKey) {
+  return tolerantString(MAX_LENGTH[key] ?? DEFAULT_MAX_LENGTH);
+}
+
+type TolerantField = ReturnType<typeof tolerantString>;
 
 export const attributionSchema = z
   .object(
     Object.fromEntries(ATTRIBUTION_KEYS.map((key) => [key, field(key)])) as {
-      [K in AttributionKey]: z.ZodOptional<z.ZodString>;
+      [K in AttributionKey]: TolerantField;
     },
   )
   .strip()
@@ -70,14 +93,15 @@ export type ClientContextKey = (typeof CLIENT_CONTEXT_KEYS)[number];
 export const attributionWithContextSchema = z
   .object({
     ...(Object.fromEntries(ATTRIBUTION_KEYS.map((key) => [key, field(key)])) as {
-      [K in AttributionKey]: z.ZodOptional<z.ZodString>;
+      [K in AttributionKey]: TolerantField;
     }),
-    client_ip: z.string().trim().max(100).optional(),
-    client_user_agent: z.string().trim().max(500).optional(),
-    event_source_url: z.string().trim().max(500).optional(),
+    client_ip: tolerantString(100),
+    client_user_agent: tolerantString(500),
+    event_source_url: tolerantString(URL_MAX_LENGTH),
   })
   .strip()
-  .optional();
+  .optional()
+  .catch(undefined);
 
 export type AttributionWithContext = Attribution & {
   client_ip?: string | undefined;
