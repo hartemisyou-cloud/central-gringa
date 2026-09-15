@@ -24,9 +24,7 @@ async function logOrderRejection(input: {
 
     const postal = typeof address?.["postalCode"] === "string" ? (address["postalCode"] as string) : null;
 
-    console.error(
-      "[orders-diag]",
-      JSON.stringify({
+    const payload = {
         csid: attribution["anonymous_session_id"] ?? attribution["csid"] ?? null,
         at: new Date().toISOString(),
         store_slug: input.request.headers.get("x-store-slug"),
