@@ -74,7 +74,7 @@ export const ingestSchema = z.object({
   storeSlug: z.string().min(2).max(80).optional(),
   anonymousSessionId: z.string().min(8).max(80),
   checkoutSessionId: z.string().min(8).max(80),
-  referrer: z.string().max(500).optional(),
+  referrer: z.string().max(2000).optional(),
   utm: z
     .object({
       source: z.string().max(120).optional(),

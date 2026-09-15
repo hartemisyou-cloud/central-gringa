@@ -19,7 +19,7 @@ export const loadHostedPaymentSession = createServerFn({ method: "GET" })
 const captureSchema = z.object({
   token: z.string().min(10).max(128),
   attribution: attributionSchema,
-  pageUrl: z.string().trim().max(500).optional(),
+  pageUrl: z.string().trim().max(2000).optional(),
 });
 
 /**
