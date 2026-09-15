@@ -6,7 +6,7 @@ import { mapProviderStatus, providerFromIntegration } from "./provider.server";
 import { randomToken } from "./crypto.server";
 import type { StoreRow } from "./store-auth.server";
 import type { Database } from "@/integrations/supabase/types";
-import { mergeAttributionIntoMetadata, type Attribution } from "./attribution";
+import { type Attribution } from "./attribution";
 
 
 type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"];
@@ -307,7 +307,35 @@ function buildPaymentDescription(
  * explicitamente produtos digitais (eBooks) sem expor dados internos.
  */
 
+/**
+ * Allowlist explícita do metadata enviado à Stripe. Qualquer chave fora desta
+ * lista é descartada — inclusive dados de atribuição/marketing.
+ */
+const STRIPE_METADATA_ALLOWLIST = [
+  "environment",
+  "store_id",
+  "order_id",
+  "order_number",
+  "item_count",
+  "product_type",
+  "delivery_type",
+  "sku",
+  "product_name",
+  "quantity",
+  "category",
+] as const;
+
+function pickOperationalMetadata(input: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of STRIPE_METADATA_ALLOWLIST) {
+    const value = input[key];
+    if (typeof value === "string" && value.length > 0) out[key] = value;
+  }
+  return out;
+}
+
 function buildItemsMetadata(
+
   items: OrderItemRow[],
   products: { id: string; category: string | null; weight_grams: number }[],
 ): Record<string, string> {
@@ -347,11 +375,11 @@ function buildItemsMetadata(
  * índice único no banco impedem cobranças duplicadas.
  */
 export async function createOrderPayment(input: { store: StoreRow; orderId: string }) {
-  // As quatro leituras abaixo são independentes entre si (todas dependem apenas
+  // As leituras abaixo são independentes entre si (todas dependem apenas
   // de `store` e `orderId`, já conhecidos) e nenhuma escreve. Rodam em paralelo;
   // a ORDEM DAS VALIDAÇÕES e as mensagens de erro permanecem exatamente as mesmas.
-  const { getOrderAttribution } = await import("./attribution.server");
-  const [orderResult, integrationResult, existingResult, attribution, itemsResult] = await Promise.all([
+  // A atribuição NÃO é lida aqui: ela nunca vai para o metadata da Stripe.
+  const [orderResult, integrationResult, existingResult, itemsResult] = await Promise.all([
     supabaseAdmin
       .from("orders")
       .select("*")
@@ -365,12 +393,12 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       .eq("order_id", input.orderId)
       .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
       .maybeSingle(),
-    getOrderAttribution(input.orderId).catch(() => ({})),
     supabaseAdmin
       .from("order_items")
       .select("product_id, product_name, sku, quantity")
       .eq("order_id", input.orderId),
   ]);
+
 
   const order = orderResult.data;
   if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
@@ -438,9 +466,6 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     environment: order.environment,
   };
 
-  // Atribuição persistida no pedido -> metadata do PaymentIntent.
-  // Só campos presentes são adicionados; o metadata base nunca é alterado.
-  // (já carregada em paralelo no início da função)
   // Enriquecimento: identifica os itens (SKU, nome, tipo digital/eBook) na Stripe.
   const itemRows = (itemsResult.data ?? []) as OrderItemRow[];
   const productIds = [...new Set(itemRows.map((i) => i.product_id))];
@@ -448,10 +473,14 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     ? await supabaseAdmin.from("products").select("id, category, weight_grams").in("id", productIds)
     : { data: [] };
   const itemsMetadata = buildItemsMetadata(itemRows, productRows ?? []);
-  const paymentIntentMetadata = mergeAttributionIntoMetadata(
-    { ...baseMetadata, ...itemsMetadata },
-    attribution,
-  );
+
+  // Allowlist final: SOMENTE metadata operacional vai para a Stripe.
+  // Atribuição de marketing (UTMs, fbp/fbc/fbclid, referrer, landing_page,
+  // IDs de sessão) e contexto do navegador (IP/UA/event_source_url) ficam
+  // exclusivamente em `order_attribution`, para Meta CAPI, UTMify e analytics.
+  const paymentIntentMetadata = pickOperationalMetadata({ ...baseMetadata, ...itemsMetadata });
+
+
 
 
 
