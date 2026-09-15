@@ -20,7 +20,7 @@ export const Route = createFileRoute("/api/public/v1/quote")({
               request,
               z.object({
                 items: itemsSchema,
-                postalCode: z.string().trim().min(8).max(9).optional(),
+                postalCode: z.string().trim().min(3).max(16).optional(),
               }),
             );
             const { quoteCart } = await import("@/lib/payments/orders.server");
