@@ -6,7 +6,7 @@ import { z } from "zod";
  * Registra apenas estrutura/presença de campos — nunca valores sensíveis
  * (e-mail, telefone, nome, endereço, fbp/fbc/fbclid, IP, UA, chaves, secrets).
  */
-function logOrderRejection(input: {
+async function logOrderRejection(input: {
   request: Request;
   raw: unknown;
   error: unknown;
