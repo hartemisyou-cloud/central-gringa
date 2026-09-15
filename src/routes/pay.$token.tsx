@@ -219,7 +219,7 @@ function PaymentForm({ session }: { session: Session }) {
         data: {
           token: session.publicToken,
           attribution,
-          pageUrl: window.location.href.slice(0, 500),
+          pageUrl: window.location.href.slice(0, 2000),
         },
       }).catch(() => undefined);
     }, 1200);

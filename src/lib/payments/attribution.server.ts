@@ -31,7 +31,7 @@ function clientColumns(context: AttributionClientContext | undefined) {
   const row: Record<string, string> = {};
   const ip = clean(context?.clientIp, 100);
   const ua = clean(context?.clientUserAgent, 500);
-  const url = clean(context?.eventSourceUrl, 500);
+  const url = clean(context?.eventSourceUrl, 2000);
   if (ip) row["client_ip"] = ip;
   if (ua) row["client_user_agent"] = ua;
   // Nunca persistir domínio interno da Central como página da conversão.
@@ -143,7 +143,7 @@ export async function getOrderAttributionRecord(
   const record: OrderAttributionRecord = normalizeAttribution(data as Attribution | null);
   const ip = clean(row["client_ip"], 100);
   const ua = clean(row["client_user_agent"], 500);
-  const url = clean(row["event_source_url"], 500);
+  const url = clean(row["event_source_url"], 2000);
   if (ip) record.client_ip = ip;
   if (ua) record.client_user_agent = ua;
   if (url) record.event_source_url = url;

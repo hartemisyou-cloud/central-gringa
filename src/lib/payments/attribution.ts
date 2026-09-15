@@ -31,25 +31,50 @@ export const ATTRIBUTION_KEYS = [
 export type AttributionKey = (typeof ATTRIBUTION_KEYS)[number];
 export type Attribution = { [K in AttributionKey]?: string | undefined };
 
-/** URLs podem ser mais longas; os demais campos são curtos por natureza. */
+/**
+ * URLs de tracking (links reais de anúncio do Facebook com fbclid + UTMs)
+ * passam facilmente de 500 caracteres. Elas são aceitas até 2000 caracteres e,
+ * se excederem, são truncadas — NUNCA rejeitadas.
+ * Atribuição é best effort: nenhum campo opcional pode impedir a criação do
+ * pedido (order -> PaymentIntent -> Stripe).
+ */
+const URL_MAX_LENGTH = 2000;
 const MAX_LENGTH: Partial<Record<AttributionKey, number>> = {
-  referrer: 500,
-  landing_page: 500,
+  referrer: URL_MAX_LENGTH,
+  landing_page: URL_MAX_LENGTH,
 };
 const DEFAULT_MAX_LENGTH = 255;
 
-function field(key: AttributionKey) {
+/**
+ * Campo tolerante: sanitiza (trim, remove caracteres de controle) e trunca no
+ * limite em vez de falhar a validação. fbclid, fbp, fbc, UTMs, csid, IP e UA
+ * vivem em campos próprios e continuam íntegros mesmo com URL truncada.
+ */
+type TolerantField = z.ZodType<string | undefined, z.ZodTypeDef, unknown>;
+
+function tolerantString(maxLength: number): TolerantField {
   return z
-    .string()
-    .trim()
-    .max(MAX_LENGTH[key] ?? DEFAULT_MAX_LENGTH)
+    .unknown()
+    .transform((value) => {
+      if (typeof value !== "string") return undefined;
+      const cleaned = value
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, " ")
+        .trim()
+        .slice(0, maxLength);
+      return cleaned || undefined;
+    })
     .optional();
 }
 
-export const attributionSchema = z
+function field(key: AttributionKey) {
+  return tolerantString(MAX_LENGTH[key] ?? DEFAULT_MAX_LENGTH);
+}
+
+export const attributionSchema: z.ZodType<Attribution | undefined, z.ZodTypeDef, unknown> = z
   .object(
     Object.fromEntries(ATTRIBUTION_KEYS.map((key) => [key, field(key)])) as {
-      [K in AttributionKey]: z.ZodOptional<z.ZodString>;
+      [K in AttributionKey]: TolerantField;
     },
   )
   .strip()
@@ -67,14 +92,18 @@ export const CLIENT_CONTEXT_KEYS = [
 export type ClientContextKey = (typeof CLIENT_CONTEXT_KEYS)[number];
 
 /** Schema tolerante: atribuição de marketing + contexto do navegador. */
-export const attributionWithContextSchema = z
+export const attributionWithContextSchema: z.ZodType<
+  AttributionWithContext | undefined,
+  z.ZodTypeDef,
+  unknown
+> = z
   .object({
     ...(Object.fromEntries(ATTRIBUTION_KEYS.map((key) => [key, field(key)])) as {
-      [K in AttributionKey]: z.ZodOptional<z.ZodString>;
+      [K in AttributionKey]: TolerantField;
     }),
-    client_ip: z.string().trim().max(100).optional(),
-    client_user_agent: z.string().trim().max(500).optional(),
-    event_source_url: z.string().trim().max(500).optional(),
+    client_ip: tolerantString(100),
+    client_user_agent: tolerantString(500),
+    event_source_url: tolerantString(URL_MAX_LENGTH),
   })
   .strip()
   .optional();
@@ -85,16 +114,22 @@ export type AttributionWithContext = Attribution & {
   event_source_url?: string | undefined;
 };
 
-/** Separa a atribuição de marketing do contexto de navegador enviado no body. */
-export function splitAttributionPayload(input: AttributionWithContext | undefined | null): {
+/**
+ * Separa a atribuição de marketing do contexto de navegador enviado no body.
+ * Aceita `unknown`: um payload de tracking malformado nunca pode quebrar a
+ * criação do pedido — os campos válidos são aproveitados e o resto ignorado.
+ */
+export function splitAttributionPayload(input: unknown): {
   attribution: Attribution;
   context: { clientIp?: string; clientUserAgent?: string; eventSourceUrl?: string };
 } {
-  const attribution = normalizeAttribution(input as Attribution | undefined);
+  const source =
+    input && typeof input === "object" ? (input as Partial<AttributionWithContext>) : undefined;
+  const attribution = normalizeAttribution(source as Attribution | undefined);
   const context: { clientIp?: string; clientUserAgent?: string; eventSourceUrl?: string } = {};
-  const ip = input?.client_ip?.trim();
-  const ua = input?.client_user_agent?.trim();
-  const url = input?.event_source_url?.trim();
+  const ip = source?.client_ip?.trim();
+  const ua = source?.client_user_agent?.trim();
+  const url = source?.event_source_url?.trim();
   if (ip) context.clientIp = ip;
   if (ua) context.clientUserAgent = ua;
   if (url && isPublicPageUrl(url)) context.eventSourceUrl = url;

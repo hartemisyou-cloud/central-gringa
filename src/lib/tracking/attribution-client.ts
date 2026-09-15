@@ -49,8 +49,8 @@ export function captureAttribution(): Attribution {
     // Primeira origem da sessão vence: não sobrescreve atribuição já capturada.
     if (value && !next[key]) next[key] = value.slice(0, 255);
   }
-  if (!next.landing_page) next.landing_page = window.location.href.slice(0, 500);
-  if (!next.referrer && document.referrer) next.referrer = document.referrer.slice(0, 500);
+  if (!next.landing_page) next.landing_page = window.location.href.slice(0, 2000);
+  if (!next.referrer && document.referrer) next.referrer = document.referrer.slice(0, 2000);
 
   // Cookies do Meta mudam durante a sessão: sempre usam o valor mais recente.
   const fbp = readCookie("_fbp");
