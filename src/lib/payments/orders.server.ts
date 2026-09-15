@@ -6,7 +6,7 @@ import { mapProviderStatus, providerFromIntegration } from "./provider.server";
 import { randomToken } from "./crypto.server";
 import type { StoreRow } from "./store-auth.server";
 import type { Database } from "@/integrations/supabase/types";
-import { mergeAttributionIntoMetadata, type Attribution } from "./attribution";
+import { type Attribution } from "./attribution";
 
 
 type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"];
@@ -347,11 +347,11 @@ function buildItemsMetadata(
  * índice único no banco impedem cobranças duplicadas.
  */
 export async function createOrderPayment(input: { store: StoreRow; orderId: string }) {
-  // As quatro leituras abaixo são independentes entre si (todas dependem apenas
+  // As leituras abaixo são independentes entre si (todas dependem apenas
   // de `store` e `orderId`, já conhecidos) e nenhuma escreve. Rodam em paralelo;
   // a ORDEM DAS VALIDAÇÕES e as mensagens de erro permanecem exatamente as mesmas.
-  const { getOrderAttribution } = await import("./attribution.server");
-  const [orderResult, integrationResult, existingResult, attribution, itemsResult] = await Promise.all([
+  // A atribuição NÃO é lida aqui: ela nunca vai para o metadata da Stripe.
+  const [orderResult, integrationResult, existingResult, itemsResult] = await Promise.all([
     supabaseAdmin
       .from("orders")
       .select("*")
@@ -365,12 +365,12 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       .eq("order_id", input.orderId)
       .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
       .maybeSingle(),
-    getOrderAttribution(input.orderId).catch(() => ({})),
     supabaseAdmin
       .from("order_items")
       .select("product_id, product_name, sku, quantity")
       .eq("order_id", input.orderId),
   ]);
+
 
   const order = orderResult.data;
   if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
