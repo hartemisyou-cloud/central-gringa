@@ -65,8 +65,18 @@ async function logOrderRejection(input: {
         error_message: err?.message ?? null,
         validation_details: err?.details ?? null,
         duration_ms: Date.now() - input.startedAt,
-      }),
-    );
+        http_status: (input.error as { status?: number })?.status ?? 400,
+    };
+
+    console.error("[orders-diag]", JSON.stringify(payload));
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("audit_logs").insert({
+      action: "ORDERS_400_DIAG",
+      resource_type: "order_create_rejection",
+      resource_id: typeof payload.csid === "string" ? payload.csid : null,
+      metadata: payload,
+    });
   } catch (diagError) {
     console.error("[orders-diag] failed", (diagError as Error).message);
   }
