@@ -101,7 +101,7 @@ export const attributionWithContextSchema = z
   })
   .strip()
   .optional()
-  .catch(undefined);
+  .catch(() => undefined);
 
 export type AttributionWithContext = Attribution & {
   client_ip?: string | undefined;
