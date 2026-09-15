@@ -71,7 +71,7 @@ function field(key: AttributionKey) {
   return tolerantString(MAX_LENGTH[key] ?? DEFAULT_MAX_LENGTH);
 }
 
-export const attributionSchema = z
+export const attributionSchema: z.ZodType<Attribution | undefined, z.ZodTypeDef, unknown> = z
   .object(
     Object.fromEntries(ATTRIBUTION_KEYS.map((key) => [key, field(key)])) as {
       [K in AttributionKey]: TolerantField;
@@ -92,7 +92,11 @@ export const CLIENT_CONTEXT_KEYS = [
 export type ClientContextKey = (typeof CLIENT_CONTEXT_KEYS)[number];
 
 /** Schema tolerante: atribuição de marketing + contexto do navegador. */
-export const attributionWithContextSchema = z
+export const attributionWithContextSchema: z.ZodType<
+  AttributionWithContext | undefined,
+  z.ZodTypeDef,
+  unknown
+> = z
   .object({
     ...(Object.fromEntries(ATTRIBUTION_KEYS.map((key) => [key, field(key)])) as {
       [K in AttributionKey]: TolerantField;
