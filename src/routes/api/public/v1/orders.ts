@@ -75,7 +75,7 @@ async function logOrderRejection(input: {
       action: "ORDERS_400_DIAG",
       resource_type: "order_create_rejection",
       resource_id: typeof payload.csid === "string" ? payload.csid : null,
-      metadata: payload,
+      metadata: JSON.parse(JSON.stringify(payload)),
     });
   } catch (diagError) {
     console.error("[orders-diag] failed", (diagError as Error).message);
