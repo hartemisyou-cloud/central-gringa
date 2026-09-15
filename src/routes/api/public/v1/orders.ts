@@ -177,7 +177,7 @@ export const Route = createFileRoute("/api/public/v1/orders")({
               },
             };
             } catch (error) {
-              logOrderRejection({ request, raw: rawSnapshot, error, startedAt });
+              await logOrderRejection({ request, raw: rawSnapshot, error, startedAt });
               throw error;
             }
           },
