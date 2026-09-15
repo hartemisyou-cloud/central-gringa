@@ -50,24 +50,26 @@ const DEFAULT_MAX_LENGTH = 255;
  * limite em vez de falhar a validação. fbclid, fbp, fbc, UTMs, csid, IP e UA
  * vivem em campos próprios e continuam íntegros mesmo com URL truncada.
  */
-function tolerantString(maxLength: number) {
+type TolerantField = z.ZodType<string | undefined, z.ZodTypeDef, unknown>;
+
+function tolerantString(maxLength: number): TolerantField {
   return z
-    .string()
-    .transform((value) =>
-      value
-        .replace(/[\u0000-\u001f\u007f]/g, "")
+    .unknown()
+    .transform((value) => {
+      if (typeof value !== "string") return undefined;
+      const cleaned = value
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, " ")
         .trim()
-        .slice(0, maxLength),
-    )
-    .optional()
-    .catch(undefined);
+        .slice(0, maxLength);
+      return cleaned || undefined;
+    })
+    .optional();
 }
 
 function field(key: AttributionKey) {
   return tolerantString(MAX_LENGTH[key] ?? DEFAULT_MAX_LENGTH);
 }
-
-type TolerantField = ReturnType<typeof tolerantString>;
 
 export const attributionSchema = z
   .object(
