@@ -114,16 +114,22 @@ export type AttributionWithContext = Attribution & {
   event_source_url?: string | undefined;
 };
 
-/** Separa a atribuição de marketing do contexto de navegador enviado no body. */
-export function splitAttributionPayload(input: AttributionWithContext | undefined | null): {
+/**
+ * Separa a atribuição de marketing do contexto de navegador enviado no body.
+ * Aceita `unknown`: um payload de tracking malformado nunca pode quebrar a
+ * criação do pedido — os campos válidos são aproveitados e o resto ignorado.
+ */
+export function splitAttributionPayload(input: unknown): {
   attribution: Attribution;
   context: { clientIp?: string; clientUserAgent?: string; eventSourceUrl?: string };
 } {
-  const attribution = normalizeAttribution(input as Attribution | undefined);
+  const source =
+    input && typeof input === "object" ? (input as Partial<AttributionWithContext>) : undefined;
+  const attribution = normalizeAttribution(source as Attribution | undefined);
   const context: { clientIp?: string; clientUserAgent?: string; eventSourceUrl?: string } = {};
-  const ip = input?.client_ip?.trim();
-  const ua = input?.client_user_agent?.trim();
-  const url = input?.event_source_url?.trim();
+  const ip = source?.client_ip?.trim();
+  const ua = source?.client_user_agent?.trim();
+  const url = source?.event_source_url?.trim();
   if (ip) context.clientIp = ip;
   if (ua) context.clientUserAgent = ua;
   if (url && isPublicPageUrl(url)) context.eventSourceUrl = url;
