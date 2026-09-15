@@ -31,7 +31,7 @@ function clientColumns(context: AttributionClientContext | undefined) {
   const row: Record<string, string> = {};
   const ip = clean(context?.clientIp, 100);
   const ua = clean(context?.clientUserAgent, 500);
-  const url = clean(context?.eventSourceUrl, 500);
+  const url = clean(context?.eventSourceUrl, 2000);
   if (ip) row["client_ip"] = ip;
   if (ua) row["client_user_agent"] = ua;
   // Nunca persistir domínio interno da Central como página da conversão.
