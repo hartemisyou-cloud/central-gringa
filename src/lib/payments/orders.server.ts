@@ -438,9 +438,6 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     environment: order.environment,
   };
 
-  // Atribuição persistida no pedido -> metadata do PaymentIntent.
-  // Só campos presentes são adicionados; o metadata base nunca é alterado.
-  // (já carregada em paralelo no início da função)
   // Enriquecimento: identifica os itens (SKU, nome, tipo digital/eBook) na Stripe.
   const itemRows = (itemsResult.data ?? []) as OrderItemRow[];
   const productIds = [...new Set(itemRows.map((i) => i.product_id))];
@@ -448,10 +445,14 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
     ? await supabaseAdmin.from("products").select("id, category, weight_grams").in("id", productIds)
     : { data: [] };
   const itemsMetadata = buildItemsMetadata(itemRows, productRows ?? []);
-  const paymentIntentMetadata = mergeAttributionIntoMetadata(
-    { ...baseMetadata, ...itemsMetadata },
-    attribution,
-  );
+
+  // Allowlist final: SOMENTE metadata operacional vai para a Stripe.
+  // Atribuição de marketing (UTMs, fbp/fbc/fbclid, referrer, landing_page,
+  // IDs de sessão) e contexto do navegador (IP/UA/event_source_url) ficam
+  // exclusivamente em `order_attribution`, para Meta CAPI, UTMify e analytics.
+  const paymentIntentMetadata = pickOperationalMetadata({ ...baseMetadata, ...itemsMetadata });
+
+
 
 
 
