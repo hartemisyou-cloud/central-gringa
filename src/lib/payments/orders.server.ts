@@ -21,11 +21,11 @@ export interface CustomerInput {
 export interface AddressInput {
   postalCode: string;
   street: string;
-  number: string;
+  number?: string | undefined;
   complement?: string | undefined;
-  district: string;
+  district?: string | undefined;
   city: string;
-  state: string;
+  state?: string | undefined;
   country?: string | undefined;
 }
 
@@ -153,15 +153,14 @@ export async function createOrder(input: {
         customer_id: customer.id,
         recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
         phone: input.customer.phone,
-        postal_code: noShipping
-          ? addr.postalCode.replace(/\D/g, "").slice(0, 8) || addr.postalCode
-          : normalizePostalCode(addr.postalCode),
+        // Sem entrega física o código postal é apenas informativo: guarda como veio.
+        postal_code: noShipping ? addr.postalCode.trim() : normalizePostalCode(addr.postalCode),
         street: addr.street,
-        number: addr.number,
+        number: addr.number ?? "",
         complement: addr.complement ?? null,
-        district: addr.district,
+        district: addr.district ?? "",
         city: addr.city,
-        state: addr.state,
+        state: addr.state ?? "",
         country: addr.country ?? "BR",
       })
       .select("id")
