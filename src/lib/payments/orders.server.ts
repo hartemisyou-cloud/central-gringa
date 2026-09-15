@@ -307,7 +307,35 @@ function buildPaymentDescription(
  * explicitamente produtos digitais (eBooks) sem expor dados internos.
  */
 
+/**
+ * Allowlist explícita do metadata enviado à Stripe. Qualquer chave fora desta
+ * lista é descartada — inclusive dados de atribuição/marketing.
+ */
+const STRIPE_METADATA_ALLOWLIST = [
+  "environment",
+  "store_id",
+  "order_id",
+  "order_number",
+  "item_count",
+  "product_type",
+  "delivery_type",
+  "sku",
+  "product_name",
+  "quantity",
+  "category",
+] as const;
+
+function pickOperationalMetadata(input: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of STRIPE_METADATA_ALLOWLIST) {
+    const value = input[key];
+    if (typeof value === "string" && value.length > 0) out[key] = value;
+  }
+  return out;
+}
+
 function buildItemsMetadata(
+
   items: OrderItemRow[],
   products: { id: string; category: string | null; weight_grams: number }[],
 ): Record<string, string> {
