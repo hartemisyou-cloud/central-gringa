@@ -100,8 +100,7 @@ export const attributionWithContextSchema = z
     event_source_url: tolerantString(URL_MAX_LENGTH),
   })
   .strip()
-  .optional()
-  .catch(() => undefined);
+  .optional();
 
 export type AttributionWithContext = Attribution & {
   client_ip?: string | undefined;
