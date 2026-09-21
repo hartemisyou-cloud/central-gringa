@@ -7,6 +7,8 @@ export type PaymentErrorCode =
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
+  // Usado somente pelo Checkout V2 (bootstrap por SKU). Não altera o V1.
+  | "SKU_NOT_FOUND"
   | "PRODUCT_INACTIVE"
   | "OUT_OF_STOCK"
   | "INVALID_STATE"
@@ -19,6 +21,7 @@ const STATUS_BY_CODE: Record<PaymentErrorCode, number> = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  SKU_NOT_FOUND: 404,
   PRODUCT_INACTIVE: 409,
   OUT_OF_STOCK: 409,
   INVALID_STATE: 409,

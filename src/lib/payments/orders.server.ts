@@ -373,7 +373,15 @@ function buildItemsMetadata(
  * Idempotente: chave estável `payment:create:{order_id}:{attempt}` na Stripe e
  * índice único no banco impedem cobranças duplicadas.
  */
-export async function createOrderPayment(input: { store: StoreRow; orderId: string }) {
+export async function createOrderPayment(input: {
+  store: StoreRow;
+  orderId: string;
+  /**
+   * Aditivo e opcional. Ausente (padrão V1) => comportamento idêntico ao atual.
+   * "order-number" (usado só pelo Checkout V2) força `Pedido {order_number}`.
+   */
+  descriptionMode?: "auto" | "order-number" | undefined;
+}) {
   // As leituras abaixo são independentes entre si (todas dependem apenas
   // de `store` e `orderId`, já conhecidos) e nenhuma escreve. Rodam em paralelo;
   // a ORDEM DAS VALIDAÇÕES e as mensagens de erro permanecem exatamente as mesmas.
@@ -488,7 +496,10 @@ export async function createOrderPayment(input: { store: StoreRow; orderId: stri
       amountCents: order.total_cents,
       currency: order.currency,
       idempotencyKey,
-      description: buildPaymentDescription(order, itemRows),
+      description:
+        input.descriptionMode === "order-number"
+          ? `Pedido ${order.order_number}`
+          : buildPaymentDescription(order, itemRows),
       metadata: paymentIntentMetadata,
       ...(integration.payment_method_configuration_id
         ? { paymentMethodConfiguration: integration.payment_method_configuration_id }
