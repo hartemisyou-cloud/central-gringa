@@ -43,7 +43,7 @@ export async function callCentralApi<T>(
   path: string,
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
-  const apiKey = process.env["STORE_API_KEY"] ?? process.env["STORE1_API_KEY"];
+  const apiKey = (process.env["STORE_API_KEY"] ?? process.env["STORE1_API_KEY"])?.trim();
   if (!apiKey) throw new Error("Credencial da loja não configurada no servidor.");
 
   const slug = process.env["STORE_SLUG"]?.trim().toLowerCase() || "livraria-cultura";
@@ -79,9 +79,20 @@ export async function callCentralApi<T>(
     lastError = new Error(
       payload?.error?.message ?? "Não foi possível concluir a operação.",
     );
+
+    // Falha de credencial/escopo pode ser específica de um deploy (segredo
+    // desatualizado naquela base): vale tentar a próxima base.
+    const authFailure =
+      response.status === 401 ||
+      response.status === 403 ||
+      payload?.error?.code === "UNAUTHORIZED" ||
+      payload?.error?.code === "FORBIDDEN";
+    if (authFailure) continue;
+
     // Resposta válida da API (erro de negócio) — não adianta tentar outra base.
     if (payload?.error?.message) break;
   }
+
 
   throw lastError instanceof Error
     ? lastError
