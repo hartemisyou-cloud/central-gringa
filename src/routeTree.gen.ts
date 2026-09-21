@@ -21,11 +21,14 @@ import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/
 import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quote'
 import { Route as ApiPublicV1AnalyticsEventsRouteImport } from './routes/api/public/v1/analytics.events'
 import { Route as ApiPublicV1AnalyticsPresenceRouteImport } from './routes/api/public/v1/analytics.presence'
+import { Route as ApiPublicV2CheckoutBootstrapRouteImport } from './routes/api/public/v2/checkout.bootstrap'
 import { Route as ApiPublicWebhooksStripeIntegrationIdRouteImport } from './routes/api/public/webhooks/stripe.$integrationId'
 import { Route as ApiPublicV1CheckoutSessionPublicTokenRouteImport } from './routes/api/public/v1/checkout.session.$publicToken'
 import { Route as ApiPublicV1OrdersOrderIdPaymentRouteImport } from './routes/api/public/v1/orders.$orderId.payment'
 import { Route as ApiPublicV1OrdersTokenAttributionRouteImport } from './routes/api/public/v1/orders.$token.attribution'
 import { Route as ApiPublicV1OrdersStatusPublicTokenRouteImport } from './routes/api/public/v1/orders.status.$publicToken'
+import { Route as ApiPublicV2CheckoutOrdersIdPaymentRouteImport } from './routes/api/public/v2/checkout.orders.$id.payment'
+import { Route as ApiPublicV2CheckoutOrdersIdStatusRouteImport } from './routes/api/public/v2/checkout.orders.$id.status'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -89,6 +92,12 @@ const ApiPublicV1AnalyticsPresenceRoute =
     path: '/api/public/v1/analytics/presence',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicV2CheckoutBootstrapRoute =
+  ApiPublicV2CheckoutBootstrapRouteImport.update({
+    id: '/api/public/v2/checkout/bootstrap',
+    path: '/api/public/v2/checkout/bootstrap',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicWebhooksStripeIntegrationIdRoute =
   ApiPublicWebhooksStripeIntegrationIdRouteImport.update({
     id: '/api/public/webhooks/stripe/$integrationId',
@@ -119,6 +128,18 @@ const ApiPublicV1OrdersStatusPublicTokenRoute =
     path: '/status/$publicToken',
     getParentRoute: () => ApiPublicV1OrdersRoute,
   } as any)
+const ApiPublicV2CheckoutOrdersIdPaymentRoute =
+  ApiPublicV2CheckoutOrdersIdPaymentRouteImport.update({
+    id: '/api/public/v2/checkout/orders/$id/payment',
+    path: '/api/public/v2/checkout/orders/$id/payment',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicV2CheckoutOrdersIdStatusRoute =
+  ApiPublicV2CheckoutOrdersIdStatusRouteImport.update({
+    id: '/api/public/v2/checkout/orders/$id/status',
+    path: '/api/public/v2/checkout/orders/$id/status',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -133,11 +154,14 @@ export interface FileRoutesByFullPath {
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/$token/attribution': typeof ApiPublicV1OrdersTokenAttributionRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
+  '/api/public/v2/checkout/orders/$id/payment': typeof ApiPublicV2CheckoutOrdersIdPaymentRoute
+  '/api/public/v2/checkout/orders/$id/status': typeof ApiPublicV2CheckoutOrdersIdStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -152,11 +176,14 @@ export interface FileRoutesByTo {
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/$token/attribution': typeof ApiPublicV1OrdersTokenAttributionRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
+  '/api/public/v2/checkout/orders/$id/payment': typeof ApiPublicV2CheckoutOrdersIdPaymentRoute
+  '/api/public/v2/checkout/orders/$id/status': typeof ApiPublicV2CheckoutOrdersIdStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -172,11 +199,14 @@ export interface FileRoutesById {
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/$token/attribution': typeof ApiPublicV1OrdersTokenAttributionRoute
   '/api/public/v1/orders/status/$publicToken': typeof ApiPublicV1OrdersStatusPublicTokenRoute
+  '/api/public/v2/checkout/orders/$id/payment': typeof ApiPublicV2CheckoutOrdersIdPaymentRoute
+  '/api/public/v2/checkout/orders/$id/status': typeof ApiPublicV2CheckoutOrdersIdStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -193,11 +223,14 @@ export interface FileRouteTypes {
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/$token/attribution'
     | '/api/public/v1/orders/status/$publicToken'
+    | '/api/public/v2/checkout/orders/$id/payment'
+    | '/api/public/v2/checkout/orders/$id/status'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -212,11 +245,14 @@ export interface FileRouteTypes {
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/$token/attribution'
     | '/api/public/v1/orders/status/$publicToken'
+    | '/api/public/v2/checkout/orders/$id/payment'
+    | '/api/public/v2/checkout/orders/$id/status'
   id:
     | '__root__'
     | '/'
@@ -231,11 +267,14 @@ export interface FileRouteTypes {
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/$token/attribution'
     | '/api/public/v1/orders/status/$publicToken'
+    | '/api/public/v2/checkout/orders/$id/payment'
+    | '/api/public/v2/checkout/orders/$id/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -251,8 +290,11 @@ export interface RootRouteChildren {
   ApiPublicV1QuoteRoute: typeof ApiPublicV1QuoteRoute
   ApiPublicV1AnalyticsEventsRoute: typeof ApiPublicV1AnalyticsEventsRoute
   ApiPublicV1AnalyticsPresenceRoute: typeof ApiPublicV1AnalyticsPresenceRoute
+  ApiPublicV2CheckoutBootstrapRoute: typeof ApiPublicV2CheckoutBootstrapRoute
   ApiPublicWebhooksStripeIntegrationIdRoute: typeof ApiPublicWebhooksStripeIntegrationIdRoute
   ApiPublicV1CheckoutSessionPublicTokenRoute: typeof ApiPublicV1CheckoutSessionPublicTokenRoute
+  ApiPublicV2CheckoutOrdersIdPaymentRoute: typeof ApiPublicV2CheckoutOrdersIdPaymentRoute
+  ApiPublicV2CheckoutOrdersIdStatusRoute: typeof ApiPublicV2CheckoutOrdersIdStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -341,6 +383,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicV1AnalyticsPresenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/v2/checkout/bootstrap': {
+      id: '/api/public/v2/checkout/bootstrap'
+      path: '/api/public/v2/checkout/bootstrap'
+      fullPath: '/api/public/v2/checkout/bootstrap'
+      preLoaderRoute: typeof ApiPublicV2CheckoutBootstrapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/webhooks/stripe/$integrationId': {
       id: '/api/public/webhooks/stripe/$integrationId'
       path: '/api/public/webhooks/stripe/$integrationId'
@@ -376,6 +425,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicV1OrdersStatusPublicTokenRouteImport
       parentRoute: typeof ApiPublicV1OrdersRoute
     }
+    '/api/public/v2/checkout/orders/$id/payment': {
+      id: '/api/public/v2/checkout/orders/$id/payment'
+      path: '/api/public/v2/checkout/orders/$id/payment'
+      fullPath: '/api/public/v2/checkout/orders/$id/payment'
+      preLoaderRoute: typeof ApiPublicV2CheckoutOrdersIdPaymentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v2/checkout/orders/$id/status': {
+      id: '/api/public/v2/checkout/orders/$id/status'
+      path: '/api/public/v2/checkout/orders/$id/status'
+      fullPath: '/api/public/v2/checkout/orders/$id/status'
+      preLoaderRoute: typeof ApiPublicV2CheckoutOrdersIdStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -409,10 +472,15 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicV1QuoteRoute: ApiPublicV1QuoteRoute,
   ApiPublicV1AnalyticsEventsRoute: ApiPublicV1AnalyticsEventsRoute,
   ApiPublicV1AnalyticsPresenceRoute: ApiPublicV1AnalyticsPresenceRoute,
+  ApiPublicV2CheckoutBootstrapRoute: ApiPublicV2CheckoutBootstrapRoute,
   ApiPublicWebhooksStripeIntegrationIdRoute:
     ApiPublicWebhooksStripeIntegrationIdRoute,
   ApiPublicV1CheckoutSessionPublicTokenRoute:
     ApiPublicV1CheckoutSessionPublicTokenRoute,
+  ApiPublicV2CheckoutOrdersIdPaymentRoute:
+    ApiPublicV2CheckoutOrdersIdPaymentRoute,
+  ApiPublicV2CheckoutOrdersIdStatusRoute:
+    ApiPublicV2CheckoutOrdersIdStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
