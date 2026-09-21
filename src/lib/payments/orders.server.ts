@@ -496,7 +496,10 @@ export async function createOrderPayment(input: {
       amountCents: order.total_cents,
       currency: order.currency,
       idempotencyKey,
-      description: buildPaymentDescription(order, itemRows),
+      description:
+        input.descriptionMode === "order-number"
+          ? `Pedido ${order.order_number}`
+          : buildPaymentDescription(order, itemRows),
       metadata: paymentIntentMetadata,
       ...(integration.payment_method_configuration_id
         ? { paymentMethodConfiguration: integration.payment_method_configuration_id }
