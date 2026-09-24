@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
+import { Route as LivroElSilencioDelMarRouteImport } from './routes/livro.el-silencio-del-mar'
 import { Route as PagamentoTokenRouteImport } from './routes/pagamento.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as PedidoTokenRouteImport } from './routes/pedido.$token'
@@ -48,6 +49,11 @@ const CheckoutRoute = CheckoutRouteImport.update({
 const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
   id: '/admin_/analytics',
   path: '/admin/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LivroElSilencioDelMarRoute = LivroElSilencioDelMarRouteImport.update({
+  id: '/livro/el-silencio-del-mar',
+  path: '/livro/el-silencio-del-mar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PagamentoTokenRoute = PagamentoTokenRouteImport.update({
@@ -146,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/livro/el-silencio-del-mar': typeof LivroElSilencioDelMarRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/livro/el-silencio-del-mar': typeof LivroElSilencioDelMarRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
@@ -191,6 +199,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
   '/admin_/analytics': typeof AdminAnalyticsRoute
+  '/livro/el-silencio-del-mar': typeof LivroElSilencioDelMarRoute
   '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/pedido/$token': typeof PedidoTokenRoute
@@ -215,6 +224,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/admin/analytics'
+    | '/livro/el-silencio-del-mar'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
@@ -237,6 +247,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/admin/analytics'
+    | '/livro/el-silencio-del-mar'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/admin_/analytics'
+    | '/livro/el-silencio-del-mar'
     | '/pagamento/$token'
     | '/pay/$token'
     | '/pedido/$token'
@@ -282,6 +294,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   CheckoutRoute: typeof CheckoutRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  LivroElSilencioDelMarRoute: typeof LivroElSilencioDelMarRoute
   PagamentoTokenRoute: typeof PagamentoTokenRoute
   PayTokenRoute: typeof PayTokenRoute
   PedidoTokenRoute: typeof PedidoTokenRoute
@@ -325,6 +338,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/analytics'
       fullPath: '/admin/analytics'
       preLoaderRoute: typeof AdminAnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/livro/el-silencio-del-mar': {
+      id: '/livro/el-silencio-del-mar'
+      path: '/livro/el-silencio-del-mar'
+      fullPath: '/livro/el-silencio-del-mar'
+      preLoaderRoute: typeof LivroElSilencioDelMarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pagamento/$token': {
@@ -464,6 +484,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   CheckoutRoute: CheckoutRoute,
   AdminAnalyticsRoute: AdminAnalyticsRoute,
+  LivroElSilencioDelMarRoute: LivroElSilencioDelMarRoute,
   PagamentoTokenRoute: PagamentoTokenRoute,
   PayTokenRoute: PayTokenRoute,
   PedidoTokenRoute: PedidoTokenRoute,
