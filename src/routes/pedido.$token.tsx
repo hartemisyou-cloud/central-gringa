@@ -1,3 +1,4 @@
+import { PolicyLinks } from "@/components/policies/PolicyLinks";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -109,6 +110,7 @@ function OrderStatusPage() {
           <Link to="/">Voltar à loja</Link>
         </Button>
       </div>
+      <PolicyLinks className="mt-6 text-muted-foreground" />
     </div>
   );
 }

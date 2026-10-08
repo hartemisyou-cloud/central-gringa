@@ -1,3 +1,4 @@
+import { StoreFooter } from "@/components/policies/PolicyLinks";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { ShoppingBag, ShieldCheck, Truck, Minus, Plus } from "lucide-react";
@@ -205,6 +206,7 @@ function Storefront() {
           </div>
         </div>
       ) : null}
+      <StoreFooter />
     </div>
   );
 }

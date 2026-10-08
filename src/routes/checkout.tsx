@@ -1,3 +1,4 @@
+import { PolicyLinks } from "@/components/policies/PolicyLinks";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -380,6 +381,7 @@ function CheckoutPage() {
           </p>
         </aside>
       </main>
+      <PolicyLinks className="pb-8 text-muted-foreground" />
     </div>
   );
 }
