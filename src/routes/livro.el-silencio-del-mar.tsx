@@ -1,3 +1,4 @@
+import { PolicyLinks } from "@/components/policies/PolicyLinks";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, BookOpen, FileText, Globe } from "lucide-react";
 import cover from "@/assets/el-silencio-del-mar-cover.jpg";
@@ -88,6 +89,7 @@ function BookDownloadPage() {
           </div>
         </div>
       </div>
+      <PolicyLinks className="mt-10 text-muted-foreground" />
     </div>
   );
 }

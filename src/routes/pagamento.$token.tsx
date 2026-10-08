@@ -1,3 +1,4 @@
+import { PolicyLinks } from "@/components/policies/PolicyLinks";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
@@ -160,6 +161,7 @@ function PaymentPage() {
               Privacidade
             </a>
           </div>
+          <PolicyLinks className="mt-4 opacity-70" />
         </div>
       </section>
     </div>
