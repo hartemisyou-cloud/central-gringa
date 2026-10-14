@@ -89,8 +89,8 @@ export function MetaTrackingSection() {
           <CardTitle>Tracking · Meta</CardTitle>
         </div>
         <CardDescription>
-          Pixel + Conversions API por loja. O Access Token fica somente no servidor, cifrado, e
-          nunca é exibido nem enviado ao navegador.
+          Pixel + Conversions API per store. The Access Token stays on the server, encrypted, and
+          is never displayed or sent to the browser.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -235,9 +235,8 @@ export function MetaTrackingSection() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Evento de teste: USD 20,00, enviado apenas server-side com o Test Event Code da
-                loja. Não cria pedido, cobrança, PaymentIntent nem envio à UTMify — sem impacto
-                financeiro.
+                Test event: USD 20.00, sent server-side only with the store's Test Event Code. No
+                order, charge, PaymentIntent or UTMify send is created — no financial impact.
               </p>
               {testResults[store.storeId] ? (
                 <p className="break-all rounded-md bg-muted p-2 font-mono text-xs">
@@ -361,7 +360,7 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
             className="max-w-xs"
             value={manualRef}
             onChange={(event) => setManualRef(event.target.value)}
-            placeholder="ORD-000123 ou public token"
+            placeholder="ORD-000123 or public token"
           />
           <Button
             size="sm"
@@ -373,7 +372,7 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
               void runTest(manualRef.trim());
             }}
           >
-            Testar este pedido
+            Test this order
           </Button>
         </div>
       ) : null}
@@ -499,7 +498,7 @@ function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
       <p className="text-xs text-muted-foreground">
         Uses the most recent PAID order from this store that has an attribution record, sending the
         Purchase apenas como Test Event (test_event_code da loja) com os dados exatamente como
-        estão armazenados. O pedido não é alterado e nada de produção é disparado.
+        they are stored. The order is not changed and nothing in production is triggered.
       </p>
 
       <div className="flex flex-wrap gap-2">
@@ -626,11 +625,11 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
     <div className="space-y-3 rounded-md border border-dashed p-3">
       <Label>Order diagnostic (TEST EVENT — not a real sale)</Label>
       <p className="text-xs text-muted-foreground">
-        Selecione qualquer pedido desta loja para inspecionar os dados armazenados (valor, moeda,
-        fbc, fbp, IP, User-Agent, event_source_url e UTMs). O envio à Meta acontece apenas como
-        Test Event com o código <span className="font-mono">TEST2904</span> e event_id exclusivo de
-        teste. Nada é alterado: sem mudança de status, sem PaymentIntent, sem cobrança, sem UTMify e
-        sem gravar em meta_conversion_events.
+        Select any order from this store to inspect the stored data (amount, currency,
+        fbc, fbp, IP, User-Agent, event_source_url and UTMs). Meta only receives it as a
+        Test Event with code <span className="font-mono">TEST2904</span> and a test-only event_id.
+        Nothing changes: no status change, no PaymentIntent, no charge, no UTMify and
+        no write to meta_conversion_events.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -700,7 +699,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
         confirming ? (
           <div className="space-y-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
             <p className="text-xs">
-              Confirmar envio do Purchase do pedido #{show(detail.orderNumber)} à Meta como{" "}
+              Send the Purchase for order #{show(detail.orderNumber)} to Meta as{" "}
               <strong>TEST EVENT (TEST2904)</strong>? Isto NÃO registra venda, não altera o pedido e
               usa exatamente os dados exibidos acima.
             </p>
