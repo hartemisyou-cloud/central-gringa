@@ -1,0 +1,1 @@
+UPDATE public.stores SET allowed_origins = (SELECT array_agg(DISTINCT o) FROM unnest(coalesce(allowed_origins,'{}') || ARRAY['https://hopehumanfoundations.org']) o) WHERE slug='hope-human-books';
