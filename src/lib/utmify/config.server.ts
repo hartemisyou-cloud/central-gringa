@@ -74,7 +74,7 @@ export async function recordUtmifyHealth(
   const patch: Record<string, unknown> = result.ok
     ? { last_success_at: new Date().toISOString(), last_error: null, last_error_at: null }
     : {
-        last_error: (result.error ?? "erro desconhecido").slice(0, 500),
+        last_error: (result.error ?? "unknown error").slice(0, 500),
         last_error_at: new Date().toISOString(),
       };
   if (result.ok && result.orderNumber) patch["last_order_number"] = result.orderNumber;

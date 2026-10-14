@@ -152,7 +152,7 @@ export async function stripeServiceFromIntegration(
   integration: Pick<IntegrationRow, "secret_key_ciphertext" | "name">,
 ): Promise<StripeService> {
   if (!integration.secret_key_ciphertext) {
-    throw new PaymentError("CONFIG_ERROR", "Integração Stripe sem chave secreta configurada.");
+    throw new PaymentError("CONFIG_ERROR", "Stripe integration has no secret key configured.");
   }
   const secret = await decryptSecret(integration.secret_key_ciphertext);
   return new StripeService(secret);

@@ -336,7 +336,7 @@ export async function testUtmifyConnection(
 ): Promise<{ ok: boolean; message: string }> {
   const settings = await getUtmifySettingsWithToken(storeId);
   if (!settings) {
-    return { ok: false, message: "Integração UTMify desativada ou sem token para esta loja." };
+    return { ok: false, message: "UTMify integration disabled or missing token for this store." };
   }
   try {
     const response = await fetch(UTMIFY_ORDERS_URL, {
@@ -346,19 +346,19 @@ export async function testUtmifyConnection(
     });
     const text = await response.text();
     if (response.status === 401 || response.status === 403) {
-      const message = "Token da UTMify recusado (401/403). Verifique a credencial.";
+      const message = "UTMify token rejected (401/403). Check credentials.";
       await recordUtmifyHealth(storeId, { ok: false, error: message });
       return { ok: false, message };
     }
     if (response.status >= 500) {
-      const message = `UTMify indisponível no momento (HTTP ${response.status}).`;
+      const message = `UTMify currently unavailable (HTTP ${response.status}).`;
       await recordUtmifyHealth(storeId, { ok: false, error: message });
       return { ok: false, message };
     }
     await recordUtmifyHealth(storeId, { ok: true });
     return {
       ok: true,
-      message: `Autenticação aceita pela UTMify (HTTP ${response.status}) — nenhuma venda foi criada.${
+      message: `Authentication accepted by UTMify (HTTP ${response.status}) — no sale was created.${
         text ? "" : ""
       }`,
     };
@@ -401,15 +401,15 @@ export async function resendUtmifySaleForOrderNumber(orderNumber: string): Promi
     .select("id, store_id, status")
     .eq("order_number", orderNumber)
     .maybeSingle();
-  if (!order) return { ok: false, message: "Pedido não encontrado.", orderNumber };
+  if (!order) return { ok: false, message: "Order not found.", orderNumber };
 
   const settings = await getUtmifySettingsWithToken(order.store_id);
   if (!settings) {
-    return { ok: false, message: "UTMify desativada ou sem token para a loja do pedido.", orderNumber };
+    return { ok: false, message: "UTMify disabled or missing token for the order's store.", orderNumber };
   }
 
   const context = await loadOrderContext(order.id);
-  if (!context) return { ok: false, message: "Contexto do pedido indisponível.", orderNumber };
+  if (!context) return { ok: false, message: "Order context unavailable.", orderNumber };
 
   const attributionRecord = await getOrderAttributionRecord(order.id).catch(
     () => ({}) as OrderAttributionRecord,
@@ -480,8 +480,8 @@ export async function resendUtmifySaleForOrderNumber(orderNumber: string): Promi
   return {
     ok,
     message: ok
-      ? `Venda aceita pela UTMify (HTTP ${httpStatus}).`
-      : `UTMify recusou o envio (HTTP ${httpStatus ?? "n/a"}).`,
+      ? `Sale accepted by UTMify (HTTP ${httpStatus}).`
+      : `UTMify rejected the shipment (HTTP ${httpStatus ?? "n/a"}).`,
     orderNumber: context.orderNumber,
     orderStatus: context.status,
     clientIpMasked: maskIp(clientIp),

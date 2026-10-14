@@ -309,3 +309,41 @@ export const adminResendUtmifyOrder = createServerFn({ method: "POST" })
     const { resendUtmifySaleForOrderNumber } = await import("./utmify/api.server");
     return resendUtmifySaleForOrderNumber(data.orderNumber);
   });
+
+/* ------------------------------------------------------------------ */
+/* Stripe integration per store (keys stored encrypted, never returned) */
+/* ------------------------------------------------------------------ */
+
+export const adminListStripeIntegrations = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireAdmin } = await import("./admin/session.server");
+  await requireAdmin();
+  const { listStripeIntegrations } = await import("./admin/stripe.server");
+  return listStripeIntegrations();
+});
+
+export const adminSaveStripeIntegration = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        storeId: z.string().uuid(),
+        environment: z.enum(["test", "live"]),
+        publishableKey: z.string().trim().min(10).max(300),
+        secretKey: z.string().trim().min(10).max(300),
+        webhookSecret: z.string().trim().max(300).optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { saveStripeIntegration } = await import("./admin/stripe.server");
+    try {
+      const result = await saveStripeIntegration({
+        ...data,
+        webhookSecret: data.webhookSecret || undefined,
+      });
+      return { ok: true as const, ...result };
+    } catch (error) {
+      return { ok: false as const, message: (error as Error).message };
+    }
+  });

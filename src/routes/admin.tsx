@@ -29,6 +29,7 @@ import {
 } from "@/lib/admin.functions";
 import { MetaTrackingSection } from "@/components/admin/meta-tracking-section";
 import { UtmifySection } from "@/components/admin/utmify-section";
+import { StripeSection } from "@/components/admin/stripe-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,16 +54,16 @@ import {
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Painel administrativo — Credenciais de API" },
+      { title: "Admin — API credentials" },
       {
         name: "description",
         content:
-          "Painel interno para geração, listagem e revogação de credenciais de API das lojas integradas.",
+          "Internal panel to create, list and revoke store API credentials.",
       },
-      { property: "og:title", content: "Painel administrativo — Credenciais de API" },
+      { property: "og:title", content: "Admin — API credentials" },
       {
         property: "og:description",
-        content: "Gestão interna de credenciais de API das lojas integradas.",
+        content: "Internal management of store API credentials.",
       },
       { name: "robots", content: "noindex, nofollow" },
     ],
@@ -98,10 +99,10 @@ function AdminLogin() {
       if (result.ok) {
         await queryClient.invalidateQueries({ queryKey: ["admin"] });
       } else {
-        toast.error("Senha incorreta.");
+        toast.error("Wrong password.");
       }
     } catch {
-      toast.error("Não foi possível entrar. Tente novamente.");
+      toast.error("Could not sign in. Please try again.");
     } finally {
       setPending(false);
       setPassword("");
@@ -115,13 +116,13 @@ function AdminLogin() {
           <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-primary/10">
             <ShieldCheck className="size-5 text-primary" />
           </div>
-          <CardTitle>Painel administrativo</CardTitle>
-          <CardDescription>Área restrita. Informe a senha de acesso.</CardDescription>
+          <CardTitle>Admin panel</CardTitle>
+          <CardDescription>Restricted area. Enter the access password.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 name="password"
@@ -133,7 +134,7 @@ function AdminLogin() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={pending}>
-              {pending ? <Loader2 className="size-4 animate-spin" /> : "Entrar"}
+              {pending ? <Loader2 className="size-4 animate-spin" /> : "Sign in"}
             </Button>
           </form>
         </CardContent>
@@ -163,29 +164,29 @@ function AdminDashboard() {
       setFreshKey(result.fullKey);
       setLabel("default");
       await queryClient.invalidateQueries({ queryKey: ["admin"] });
-      toast.success("Credencial gerada. Copie agora — ela não será exibida novamente.");
+      toast.success("Credential created. Copy it now — it will not be shown again.");
     },
-    onError: () => toast.error("Não foi possível gerar a credencial."),
+    onError: () => toast.error("Could not create the credential."),
   });
 
   const revokeMutation = useMutation({
     mutationFn: (keyId: string) => revokeKey({ data: { keyId } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin"] });
-      toast.success("Credencial revogada.");
+      toast.success("Credential revoked.");
     },
-    onError: () => toast.error("Não foi possível revogar a credencial."),
+    onError: () => toast.error("Could not revoke the credential."),
   });
 
   const revealMutation = useMutation({
     mutationFn: (keyId: string) => revealKey({ data: { keyId } }),
     onSuccess: (result) => {
       setFreshKey(result.fullKey);
-      toast.success("Chave completa exibida abaixo.");
+      toast.success("Full key shown below.");
     },
     onError: () =>
       toast.error(
-        "Esta credencial foi criada antes do armazenamento cifrado. Rotacione para obter o valor completo.",
+        "This credential predates encrypted storage. Rotate it to get a usable value.",
       ),
   });
 
@@ -194,9 +195,9 @@ function AdminDashboard() {
     onSuccess: async (result) => {
       setFreshKey(result.fullKey);
       await queryClient.invalidateQueries({ queryKey: ["admin"] });
-      toast.success("Nova credencial gerada. Copie agora — não será exibida novamente.");
+      toast.success("New credential created. Copy it now — it will not be shown again.");
     },
-    onError: () => toast.error("Não foi possível rotacionar a credencial."),
+    onError: () => toast.error("Could not rotate the credential."),
   });
 
 
@@ -206,7 +207,7 @@ function AdminDashboard() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-2">
             <KeyRound className="size-5 text-primary" />
-            <h1 className="text-lg font-semibold">Painel administrativo</h1>
+            <h1 className="text-lg font-semibold">Hope Human Books — Admin</h1>
           </div>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm">
@@ -223,7 +224,7 @@ function AdminDashboard() {
                 await queryClient.invalidateQueries({ queryKey: ["admin"] });
               }}
             >
-              <LogOut className="size-4" /> Sair
+              <LogOut className="size-4" /> Sign out
             </Button>
           </div>
 
@@ -233,8 +234,8 @@ function AdminDashboard() {
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
         <Card>
           <CardHeader>
-            <CardTitle>Lojas integradas</CardTitle>
-            <CardDescription>Ambiente e credenciais ativas por loja.</CardDescription>
+            <CardTitle>Stores</CardTitle>
+            <CardDescription>Environment and active credentials per store.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
             {(stores.data ?? []).map((store) => (
@@ -247,28 +248,28 @@ function AdminDashboard() {
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">/{store.slug}</p>
                 <p className="mt-2 text-sm">
-                  {store.activeKeys} credencial(is) ativa(s) · status {store.status}
+                  {store.activeKeys} active credential(s) · status {store.status}
                 </p>
               </div>
             ))}
-            {stores.isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+            {stores.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Gerar nova credencial</CardTitle>
+            <CardTitle>Create a store credential</CardTitle>
             <CardDescription>
-              O valor completo aparece uma única vez. O banco guarda apenas o hash.
+              The full value is shown once. The database keeps only a hash and an encrypted copy.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
               <div className="space-y-2">
-                <Label>Loja</Label>
+                <Label>Store</Label>
                 <Select value={storeId} onValueChange={setStoreId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione a loja" />
+                    <SelectValue placeholder="Select a store" />
                   </SelectTrigger>
                   <SelectContent>
                     {(stores.data ?? []).map((store) => (
@@ -280,12 +281,12 @@ function AdminDashboard() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="label">Identificação</Label>
+                <Label htmlFor="label">Label</Label>
                 <Input
                   id="label"
                   value={label}
                   onChange={(event) => setLabel(event.target.value)}
-                  placeholder="ex.: bff-produção"
+                  placeholder="e.g. checkout-production"
                 />
               </div>
               <Button
@@ -295,7 +296,7 @@ function AdminDashboard() {
                 {createMutation.isPending ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  "Gerar chave"
+                  "Create key"
                 )}
               </Button>
             </div>
@@ -303,7 +304,7 @@ function AdminDashboard() {
             {freshKey && (
               <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-4">
                 <p className="text-sm font-medium">
-                  Copie e guarde agora — não será exibida novamente.
+                  Copy and store it now — it will not be shown again.
                 </p>
                 <textarea
                   readOnly
@@ -327,13 +328,13 @@ function AdminDashboard() {
                         document.execCommand("copy");
                         el.remove();
                       }
-                      toast.success(`Credencial copiada (${freshKey.length} caracteres).`);
+                      toast.success(`Credential copied (${freshKey.length} characters).`);
                     }}
                   >
-                    <Copy className="size-4" /> Copiar chave completa
+                    <Copy className="size-4" /> Copy full key
                   </Button>
                   <span className="text-xs text-muted-foreground">
-                    {freshKey.length} caracteres
+                    {freshKey.length} characters
                   </span>
                 </div>
               </div>
@@ -342,32 +343,32 @@ function AdminDashboard() {
           </CardContent>
         </Card>
 
+        <StripeSection />
+
         <MetaTrackingSection />
 
         <UtmifySection />
 
         <Card>
           <CardHeader>
-            <CardTitle>Credenciais</CardTitle>
+            <CardTitle>Credentials</CardTitle>
             <CardDescription>
-              O valor completo nunca é armazenado — o banco guarda apenas o hash. Aqui aparecem o
-              identificador, o prefixo público e as lojas atendidas por cada credencial. Para obter
-              um valor utilizável, rotacione a chave (gera uma nova com os mesmos escopos e revoga a
-              anterior).
+              Key id, public prefix and the stores each credential can serve. To get a new usable
+              value, rotate the key (creates a new one with the same scopes and revokes the old one).
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Loja</TableHead>
-                  <TableHead>Identificação</TableHead>
+                  <TableHead>Store</TableHead>
+                  <TableHead>Label</TableHead>
                   <TableHead>Key ID</TableHead>
-                  <TableHead>Prefixo</TableHead>
-                  <TableHead>Lojas atendidas</TableHead>
+                  <TableHead>Prefix</TableHead>
+                  <TableHead>Stores served</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Último uso</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead>Last used</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -385,7 +386,7 @@ function AdminDashboard() {
                           className="size-6"
                           onClick={() => {
                             navigator.clipboard.writeText(key.keyPrefix);
-                            toast.success("Prefixo copiado.");
+                            toast.success("Prefix copied.");
                           }}
                         >
                           <Copy className="size-3" />
@@ -397,11 +398,11 @@ function AdminDashboard() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={key.status === "ACTIVE" ? "default" : "secondary"}>
-                        {key.status === "ACTIVE" ? "ativa" : "revogada"}
+                        {key.status === "ACTIVE" ? "active" : "revoked"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString("pt-BR") : "—"}
+                      {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString("en-US") : "—"}
                     </TableCell>
                     <TableCell className="space-x-1 text-right">
                       {key.status === "ACTIVE" && (
@@ -413,7 +414,7 @@ function AdminDashboard() {
                               disabled={revealMutation.isPending}
                               onClick={() => revealMutation.mutate(key.id)}
                             >
-                              <Eye className="size-4" /> Ver chave
+                              <Eye className="size-4" /> Show key
                             </Button>
                           )}
                           <Button
@@ -422,7 +423,7 @@ function AdminDashboard() {
                             disabled={rotateMutation.isPending}
                             onClick={() => rotateMutation.mutate(key.id)}
                           >
-                            <RefreshCw className="size-4" /> Rotacionar
+                            <RefreshCw className="size-4" /> Rotate
                           </Button>
                           <Button
                             variant="ghost"
@@ -430,7 +431,7 @@ function AdminDashboard() {
                             disabled={revokeMutation.isPending}
                             onClick={() => revokeMutation.mutate(key.id)}
                           >
-                            <Trash2 className="size-4" /> Revogar
+                            <Trash2 className="size-4" /> Revoke
                           </Button>
                         </>
                       )}
@@ -440,7 +441,7 @@ function AdminDashboard() {
                 {!keys.isLoading && (keys.data ?? []).length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center text-muted-foreground">
-                      Nenhuma credencial cadastrada.
+                      No credentials yet.
                     </TableCell>
                   </TableRow>
                 )}
@@ -456,8 +457,6 @@ function AdminDashboard() {
   );
 }
 
-const API_BASE = "https://stripe-hub.lovable.app/api/public/v1";
-
 function CodeBlock({ children }: { children: string }) {
   return (
     <div className="relative">
@@ -470,7 +469,7 @@ function CodeBlock({ children }: { children: string }) {
         className="absolute right-2 top-2"
         onClick={() => {
           navigator.clipboard.writeText(children);
-          toast.success("Copiado.");
+          toast.success("Copied.");
         }}
       >
         <Copy className="size-4" />
@@ -480,175 +479,47 @@ function CodeBlock({ children }: { children: string }) {
 }
 
 function IntegrationDocs({ stores }: { stores: Array<{ name: string; slug: string }> }) {
-  const [slug, setSlug] = useState(stores[0]?.slug ?? "loja-1");
-  const store = stores.find((s) => s.slug === slug) ?? stores[0];
-
+  const slug = stores[0]?.slug ?? "hope-human-books";
+  // Always the central that is serving this page — never a hardcoded old domain.
+  const base = typeof window !== "undefined" ? `${window.location.origin}/api/public/v1` : "/api/public/v1";
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Documentação de conexão</CardTitle>
+        <CardTitle>Connecting an external checkout</CardTitle>
         <CardDescription>
-          Como conectar a loja {store?.name ?? ""} à central de pagamentos. A credencial só pode ser
-          usada no servidor (BFF) — nunca no navegador.
+          The store credential is server-side only. The external checkout never calls Stripe: it
+          creates the order here and redirects the buyer to the returned paymentUrl.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {stores.length > 1 && (
-          <div className="max-w-xs space-y-2">
-            <Label>Loja</Label>
-            <Select value={slug} onValueChange={setSlug}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {stores.map((s) => (
-                  <SelectItem key={s.slug} value={s.slug}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        <CodeBlock>{`Base: ${base}
+Headers: x-store-api-key: <STORE_API_KEY>
+         x-store-slug: ${slug}
 
-        <section className="space-y-2">
-          <h3 className="font-medium">1. Guardar a credencial na loja</h3>
-          <p className="text-sm text-muted-foreground">
-            No projeto da loja, salve a chave gerada aqui como segredo do backend com o nome{" "}
-            <code className="rounded bg-muted px-1">STORE_API_KEY</code>. Ela nunca deve aparecer no
-            código do frontend.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="font-medium">2. Endpoints da central</h3>
-          <CodeBlock>{`Base: ${API_BASE}
-Header obrigatório: x-store-api-key: <STORE_API_KEY>
-Header opcional:    x-store-slug: <slug da loja>   (chave unificada multi-loja)
-
-GET  /products                         lista o catálogo e o estoque disponível
-POST /quote                            calcula subtotal, frete e total
-POST /orders                           cria o pedido e reserva o estoque
-POST /orders/:orderId/payment          cria o pagamento (retorna clientSecret Stripe)
-GET  /orders/status/:publicToken       consulta o status do pedido`}</CodeBlock>
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="font-medium">3. Exemplo de chamada (servidor)</h3>
-          <CodeBlock>{`const res = await fetch("${API_BASE}/quote", {
+GET  /products                        catalog with server prices
+POST /quote                           { items:[{productId,quantity}] } -> totals (shipping 0)
+POST /orders                          { items, customer:{firstName,lastName,email} }
+                                      -> { orderId, orderNumber, publicToken, paymentUrl, receiptUrl, totals }
+GET  /orders/status/:publicToken      -> status, receiptUrl, downloadsAvailable`}</CodeBlock>
+        <CodeBlock>{`const res = await fetch("${base}/orders", {
   method: "POST",
   headers: {
     "content-type": "application/json",
     "x-store-api-key": process.env.STORE_API_KEY,
-    "x-store-slug": "${store?.slug ?? "livraria-cultura"}",
+    "x-store-slug": "${slug}",
   },
   body: JSON.stringify({
-    items: [{ sku: "SKU-001", quantity: 1 }],
-    postalCode: "01310-100",
+    items: [{ productId: "<uuid from /products>", quantity: 1 }],
+    customer: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.com" },
   }),
 });
-const { data, error } = await res.json();`}</CodeBlock>
-        </section>
-
-
-        <section className="space-y-2">
-          <h3 className="font-medium">4. Fluxo de pagamento</h3>
-          <CodeBlock>{`1. POST /orders  -> { orderId, orderNumber, publicToken, totals }
-2. POST /orders/{orderId}/payment -> { clientSecret, publishableKey, amountCents }
-3. No navegador: Stripe Elements com publishableKey + clientSecret
-   npm i @stripe/stripe-js @stripe/react-stripe-js
-   stripe.confirmPayment({ elements, confirmParams: { return_url } })
-4. A central recebe o webhook da Stripe, confirma o pagamento e baixa o estoque
-5. GET /orders/status/{publicToken} -> acompanha PENDING_PAYMENT -> PAID`}</CodeBlock>
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="font-medium">5. Erros</h3>
-          <CodeBlock>{`{ "error": { "code": "UNAUTHORIZED" | "VALIDATION_ERROR" | "OUT_OF_STOCK"
-              | "RATE_LIMITED" | "NOT_FOUND" | "CONFIG_ERROR", "message": "..." } }
-
-Limites: 20 pedidos/min e 20 pagamentos/min por loja.`}</CodeBlock>
-        </section>
-
-        {["coracoes-unidos", "loja-2", "loja-3", "loja-4"].includes(store?.slug ?? "") && (
-          <DonationTiersDocs slug={store?.slug ?? "livraria-cultura"} />
-        )}
-
+const { data } = await res.json();
+// redirect the buyer's browser to data.paymentUrl`}</CodeBlock>
+        <p className="text-sm text-muted-foreground">
+          Payment is confirmed only by the Stripe webhook. Ebook downloads unlock on the receipt
+          page once the order is PAID.
+        </p>
       </CardContent>
     </Card>
   );
 }
-
-const DONATION_TIERS = [
-  { usd: 20, sku: "CU-DON-020" },
-  { usd: 30, sku: "CU-DON-030" },
-  { usd: 50, sku: "CU-DON-050" },
-  { usd: 100, sku: "CU-DON-100" },
-  { usd: 250, sku: "CU-DON-250" },
-  { usd: 500, sku: "CU-DON-500" },
-];
-
-function DonationTiersDocs({ slug }: { slug: string }) {
-  return (
-    <section className="space-y-4 rounded-lg border bg-background p-4">
-      <div className="space-y-1">
-        <h3 className="font-medium">6. Doações por valor (US$)</h3>
-        <p className="text-sm text-muted-foreground">
-          Uma única credencial atende todos os valores e todas as lojas (Corações Unidos, Loja 2,
-          Loja 3 e Loja 4). Guarde-a no backend da loja como{" "}
-          <code className="rounded bg-muted px-1">STORE_API_KEY</code>. O ticket escolhido pelo
-          doador define o SKU enviado no pedido, e o header{" "}
-          <code className="rounded bg-muted px-1">x-store-slug</code> define a loja.
-        </p>
-      </div>
-
-
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Ticket</TableHead>
-            <TableHead>SKU enviado no pedido</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {DONATION_TIERS.map((tier) => (
-            <TableRow key={tier.sku}>
-              <TableCell>US$ {tier.usd}</TableCell>
-              <TableCell className="font-mono text-xs">{tier.sku}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <CodeBlock>{`// backend da loja — uma única chave para todos os tickets e lojas
-const SKUS = { 20: "CU-DON-020", 30: "CU-DON-030", 50: "CU-DON-050",
-               100: "CU-DON-100", 250: "CU-DON-250", 500: "CU-DON-500" };
-
-async function criarDoacao(valorUsd, doador) {
-  const headers = {
-    "content-type": "application/json",
-    "x-store-api-key": process.env.STORE_API_KEY,
-    "x-store-slug": "${slug}",
-  };
-
-
-  const order = await fetch("${API_BASE}/orders", {
-    method: "POST", headers,
-    body: JSON.stringify({
-      items: [{ sku: SKUS[valorUsd], quantity: 1 }],
-      customer: { email: doador.email, firstName: doador.nome },
-      shippingAddress: doador.endereco, // exigido pela central
-    }),
-  }).then((r) => r.json());
-
-  const pay = await fetch(\`${API_BASE}/orders/\${order.data.orderId}/payment\`, {
-    method: "POST", headers,
-  }).then((r) => r.json());
-
-  return { publicToken: order.data.publicToken, ...pay.data }; // clientSecret p/ Stripe Elements
-}`}</CodeBlock>
-    </section>
-  );
-}
-
-

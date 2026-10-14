@@ -33,15 +33,15 @@ import { Switch } from "@/components/ui/switch";
 type Draft = { pixelId: string; accessToken: string; testEventCode: string; enabled: boolean };
 
 const STATUS_LABEL: Record<string, string> = {
-  DISABLED: "Desativado",
-  NOT_CONFIGURED: "Não configurado",
-  CONFIGURED: "Configurado",
-  CONNECTED: "Conectado",
-  ERROR: "Erro",
+  DISABLED: "Disabled",
+  NOT_CONFIGURED: "Not configured",
+  CONFIGURED: "Configured",
+  CONNECTED: "Connected",
+  ERROR: "Error",
 };
 
 function formatDate(value: string | null): string {
-  return value ? new Date(value).toLocaleString("pt-BR") : "—";
+  return value ? new Date(value).toLocaleString("en-US") : "—";
 }
 
 export function MetaTrackingSection() {
@@ -76,9 +76,9 @@ export function MetaTrackingSection() {
         [input.storeId]: { ...input, accessToken: "" },
       }));
       await queryClient.invalidateQueries({ queryKey: ["admin", "meta"] });
-      toast.success("Configuração Meta salva.");
+      toast.success("Meta configuration saved.");
     },
-    onError: () => toast.error("Não foi possível salvar a configuração."),
+    onError: () => toast.error("Could not save configuration."),
   });
 
   return (
@@ -94,7 +94,7 @@ export function MetaTrackingSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {settings.isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+        {settings.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {(settings.data ?? []).map((store) => {
           const draft: Draft = drafts[store.storeId] ?? {
             pixelId: store.pixelId ?? "",
@@ -149,8 +149,8 @@ export function MetaTrackingSection() {
                     onChange={(event) => update({ accessToken: event.target.value })}
                     placeholder={
                       store.hasAccessToken
-                        ? `configurado ••••${store.accessTokenLast4 ?? ""}`
-                        : "não configurado"
+                        ? `configured ••••${store.accessTokenLast4 ?? ""}`
+                        : "not configured"
                     }
                   />
                 </div>
@@ -165,10 +165,10 @@ export function MetaTrackingSection() {
               </div>
 
               <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                <p>Último evento com sucesso: {formatDate(store.lastSuccessAt)}</p>
-                <p>Último Purchase enviado: {formatDate(store.lastPurchaseAt)}</p>
-                <p>Eventos enviados: {store.eventCount}</p>
-                <p className="truncate">Último erro: {store.lastError ?? "—"}</p>
+                <p>Last successful event: {formatDate(store.lastSuccessAt)}</p>
+                <p>Last Purchase sent: {formatDate(store.lastPurchaseAt)}</p>
+                <p>Events sent: {store.eventCount}</p>
+                <p className="truncate">Last error: {store.lastError ?? "—"}</p>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -177,7 +177,7 @@ export function MetaTrackingSection() {
                   disabled={saveMutation.isPending}
                   onClick={() => saveMutation.mutate({ storeId: store.storeId, ...draft })}
                 >
-                  {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "Salvar"}
+                  {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "Save"}
                 </Button>
                 <Button
                   size="sm"
@@ -189,18 +189,18 @@ export function MetaTrackingSection() {
                     await queryClient.invalidateQueries({ queryKey: ["admin", "meta"] });
                   }}
                 >
-                  Testar conexão
+                  Test connection
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={async () => {
                     const result = await retry({ data: { storeId: store.storeId } });
-                    toast.success(`${result.retried} evento(s) reprocessado(s).`);
+                    toast.success(`${result.retried} event(s) reprocessed.`);
                     await queryClient.invalidateQueries({ queryKey: ["admin", "meta"] });
                   }}
                 >
-                  <RefreshCw className="size-4" /> Reprocessar pendentes
+                  <RefreshCw className="size-4" /> Reprocess pending
                 </Button>
                 <Button
                   size="sm"
@@ -214,14 +214,14 @@ export function MetaTrackingSection() {
                         result.testEventCode ? ` · test_event_code ${result.testEventCode}` : ""
                       } · ${result.message}`;
                       setTestResults((current) => ({ ...current, [store.storeId]: line }));
-                      if (result.ok) toast.success("Purchase de teste enviado à Meta.");
+                      if (result.ok) toast.success("Test Purchase sent to Meta.");
                       else toast.error(result.message);
                     } catch {
                       setTestResults((current) => ({
                         ...current,
-                        [store.storeId]: "Falha ao contatar a Meta.",
+                        [store.storeId]: "Failed to contact Meta.",
                       }));
-                      toast.error("Falha ao enviar o evento de teste.");
+                      toast.error("Failed to send test event.");
                     } finally {
                       setTestingStore(null);
                     }
@@ -230,7 +230,7 @@ export function MetaTrackingSection() {
                   {testingStore === store.storeId ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
-                    "Enviar Purchase de teste para Meta"
+                    "Send test Purchase to Meta"
                   )}
                 </Button>
               </div>
@@ -256,7 +256,7 @@ export function MetaTrackingSection() {
 
               {draft.testEventCode ? (
                 <p className="text-xs text-amber-600">
-                  Test Event Code ativo — remova antes de operar em produção.
+                  Test Event Code active — remove before operating in production.
                 </p>
               ) : null}
             </div>
@@ -302,10 +302,10 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
     try {
       const response = await sendOrderTest({ data: { storeId, orderRef } });
       setResult(response);
-      if (response.ok) toast.success("Purchase de teste enviado à Meta.");
+      if (response.ok) toast.success("Test Purchase sent to Meta.");
       else toast.error(response.message);
     } catch {
-      toast.error("Falha ao executar o teste de fluxo.");
+      toast.error("Failed to execute flow test.");
     } finally {
       setPhase("idle");
     }
@@ -326,14 +326,14 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
       setOrder(found);
       await runTest(found.orderId);
     } catch {
-      toast.error("Falha ao buscar o pedido PAID.");
+      toast.error("Failed to find PAID order.");
       setPhase("idle");
     }
   }
 
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
-      <Label>Teste do Purchase com pedido real</Label>
+      <Label>Purchase test with real order</Label>
       <p className="text-xs text-muted-foreground">
         Usamos um pedido PAID apenas como referência para montar o MESMO payload que a produção
         enviaria (fbp, fbc, IP, User-Agent, e-mail/telefone hashados, event_source_url, UTMs e
@@ -347,11 +347,11 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
           {phase !== "idle" ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
-            "Buscar pedido PAID e testar Purchase"
+            "Find PAID order and test Purchase"
           )}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => setManual((value) => !value)}>
-          {manual ? "Usar pedido mais recente" : "Escolher outro pedido"}
+          {manual ? "Use most recent order" : "Choose another order"}
         </Button>
       </div>
 
@@ -361,7 +361,7 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
             className="max-w-xs"
             value={manualRef}
             onChange={(event) => setManualRef(event.target.value)}
-            placeholder="ORD-000123 ou token público"
+            placeholder="ORD-000123 ou public token"
           />
           <Button
             size="sm"
@@ -380,7 +380,7 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
 
       {notFound ? (
         <p className="text-sm text-muted-foreground">
-          Nenhum pedido PAID disponível para esta loja.
+          No PAID order available for this store.
         </p>
 
 
@@ -389,7 +389,7 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
       {order?.found ? (
         <div className="rounded-md bg-muted p-2 text-xs">
           <p>
-            Pedido encontrado: <span className="font-mono">#{order.orderNumber}</span>
+            Order found: <span className="font-mono">#{order.orderNumber}</span>
           </p>
           <p>
             Status: <span className="font-mono">{order.status}</span>
@@ -401,22 +401,22 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
       ) : null}
 
       {phase === "searching" ? (
-        <p className="text-xs text-muted-foreground">Buscando pedido PAID…</p>
+        <p className="text-xs text-muted-foreground">Finding PAID order…</p>
       ) : null}
       {phase === "sending" ? (
-        <p className="text-xs text-muted-foreground">Enviando Purchase de teste…</p>
+        <p className="text-xs text-muted-foreground">Sending test Purchase…</p>
       ) : null}
 
       {result ? (
         <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
           <p className={result.ok ? "text-emerald-600" : "text-destructive"}>
-            {result.ok ? "✓ Purchase de teste enviado" : `✗ ${result.message}`}
+            {result.ok ? "✓ Test Purchase sent" : `✗ ${result.message}`}
           </p>
           <p className="break-all">Event ID: {result.eventId || "—"}</p>
           <p>HTTP: {result.httpStatus ?? "—"}</p>
           <p>Test Event Code: {result.testEventCode ?? "—"}</p>
           <p>
-            Pedido: #{result.orderNumber ?? "—"} ({result.orderStatus ?? "—"})
+            Order: #{result.orderNumber ?? "—"} ({result.orderStatus ?? "—"})
           </p>
           <p>Value: {String(result.fields["value"] ?? "—")}</p>
           <p>Currency: {String(result.fields["currency"] ?? "—")}</p>
@@ -442,7 +442,7 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
 type AttributedOrder = Awaited<ReturnType<typeof adminFindPaidOrderWithAttribution>>;
 type AttributedResult = Awaited<ReturnType<typeof adminSendTestMetaPurchaseAttributed>>;
 
-const NONE = "Nenhum pedido PAID com dados de atribuição disponível para teste.";
+const NONE = "No PAID order with attribution data available for testing.";
 const show = (value: string | null | undefined) => (value && value.length > 0 ? value : "—");
 
 /**
@@ -468,7 +468,7 @@ function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
       if (!found.found) setEmpty(true);
       else setOrder(found);
     } catch {
-      toast.error("Falha ao buscar pedido PAID com atribuição.");
+      toast.error("Failed to find PAID order with attribution.");
     } finally {
       setPhase("idle");
     }
@@ -482,10 +482,10 @@ function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
       setResult(response);
       if (response.order) setOrder(response.order);
       if (response.message === NONE) setEmpty(true);
-      if (response.ok) toast.success("Test Event enviado à Meta.");
+      if (response.ok) toast.success("Test Event sent to Meta.");
       else toast.error(response.message);
     } catch {
-      toast.error("Falha ao enviar o Test Event.");
+      toast.error("Failed to send Test Event.");
     } finally {
       setPhase("idle");
     }
@@ -495,22 +495,22 @@ function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
 
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
-      <Label>Testar Purchase com pedido PAID</Label>
+      <Label>Test Purchase with PAID order</Label>
       <p className="text-xs text-muted-foreground">
-        Usa o pedido PAID mais recente desta loja que possua registro de atribuição, enviando o
+        Uses the most recent PAID order from this store that has an attribution record, sending the
         Purchase apenas como Test Event (test_event_code da loja) com os dados exatamente como
         estão armazenados. O pedido não é alterado e nada de produção é disparado.
       </p>
 
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" disabled={phase !== "idle"} onClick={preview}>
-          {phase === "loading" ? <Loader2 className="size-4 animate-spin" /> : "Pré-visualizar dados"}
+          {phase === "loading" ? <Loader2 className="size-4 animate-spin" /> : "Preview data"}
         </Button>
         <Button size="sm" variant="secondary" disabled={phase !== "idle"} onClick={send}>
           {phase === "sending" ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
-            "Testar Purchase com pedido PAID"
+            "Test Purchase with PAID order"
           )}
         </Button>
       </div>
@@ -537,19 +537,19 @@ function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
       {result && result.message !== NONE ? (
         <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
           <p className={result.ok ? "text-emerald-600" : "text-destructive"}>
-            {result.ok ? "✓ Test Event enviado" : `✗ ${result.message}`}
+            {result.ok ? "✓ Test Event sent" : `✗ ${result.message}`}
           </p>
           <p>HTTP: {result.httpStatus ?? "—"}</p>
           <p className="break-all">event_id: {show(result.eventId)}</p>
           <p>value: {result.value ?? "—"}</p>
           <p>currency: {show(result.currency)}</p>
-          <p className="pt-1">Atribuição enviada:</p>
+          <p className="pt-1">Attribution sent:</p>
           {Object.entries(result.sentAttribution).map(([key, value]) => (
             <p key={key} className="break-all">
               {key}: {show(value)}
             </p>
           ))}
-          <p className="break-all pt-1">Resposta da Meta: {show(result.metaResponse)}</p>
+          <p className="break-all pt-1">Meta response: {show(result.metaResponse)}</p>
         </div>
       ) : null}
     </div>
@@ -584,7 +584,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
     try {
       setOrders(await listOrders({ data: { storeId } }));
     } catch {
-      toast.error("Falha ao carregar pedidos da loja.");
+      toast.error("Failed to load store orders.");
     } finally {
       setPhase("idle");
     }
@@ -600,7 +600,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
     try {
       setDetail(await inspect({ data: { storeId, orderId } }));
     } catch {
-      toast.error("Falha ao carregar os dados do pedido.");
+      toast.error("Failed to load order data.");
     } finally {
       setPhase("idle");
     }
@@ -613,10 +613,10 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
       const response = await sendDiag({ data: { storeId, orderId: selected } });
       setResult(response);
       setConfirming(false);
-      if (response.ok) toast.success("TEST EVENT enviado à Meta (não é venda real).");
+      if (response.ok) toast.success("TEST EVENT sent to Meta (not a real sale).");
       else toast.error(response.message);
     } catch {
-      toast.error("Falha ao enviar o TEST EVENT.");
+      toast.error("Failure ao enviar o TEST EVENT.");
     } finally {
       setPhase("idle");
     }
@@ -624,7 +624,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
 
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
-      <Label>Diagnóstico de pedido (TEST EVENT — não é venda real)</Label>
+      <Label>Order diagnostic (TEST EVENT — not a real sale)</Label>
       <p className="text-xs text-muted-foreground">
         Selecione qualquer pedido desta loja para inspecionar os dados armazenados (valor, moeda,
         fbc, fbp, IP, User-Agent, event_source_url e UTMs). O envio à Meta acontece apenas como
@@ -638,7 +638,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
           {phase === "orders" ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
-            "Carregar pedidos recentes"
+            "Load recent orders"
           )}
         </Button>
         {orders ? (
@@ -647,12 +647,12 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
             value={selected}
             onChange={(event) => void loadDetail(event.target.value)}
           >
-            <option value="">Selecione um pedido…</option>
+            <option value="">Select an order…</option>
             {orders.map((order) => (
               <option key={order.orderId} value={order.orderId}>
                 #{order.orderNumber} · {order.status} ·{" "}
                 {(order.totalCents / 100).toFixed(2)} {order.currency}
-                {order.hasAttribution ? " · com atribuição" : " · sem atribuição"}
+                {order.hasAttribution ? " · with attribution" : " · without attribution"}
               </option>
             ))}
           </select>
@@ -660,11 +660,11 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
       </div>
 
       {orders && orders.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum pedido encontrado para esta loja.</p>
+        <p className="text-sm text-muted-foreground">No orders found for this store.</p>
       ) : null}
 
       {phase === "detail" ? (
-        <p className="text-xs text-muted-foreground">Carregando dados do pedido…</p>
+        <p className="text-xs text-muted-foreground">Loading order data…</p>
       ) : null}
 
       {detail?.found ? (
@@ -690,7 +690,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
           <p>utm_term: {show(detail.attribution.utm_term)}</p>
           {!detail.hasAttribution ? (
             <p className="text-amber-600">
-              Este pedido não possui registro em order_attribution — os campos acima vão vazios.
+              This order has no record in order_attribution — the fields above will be empty.
             </p>
           ) : null}
         </div>
@@ -709,7 +709,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
                 {phase === "sending" ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  "Confirmar envio de TESTE"
+                  "Confirm TEST sending"
                 )}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
@@ -724,7 +724,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
             disabled={phase !== "idle"}
             onClick={() => setConfirming(true)}
           >
-            Enviar Purchase como TEST EVENT (TEST2904)
+            Send Purchase as TEST EVENT (TEST2904)
           </Button>
         )
       ) : null}
@@ -732,13 +732,13 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
       {result ? (
         <div className="space-y-1 rounded-md bg-muted p-3 font-mono text-xs">
           <p className={result.ok ? "text-emerald-600" : "text-destructive"}>
-            {result.ok ? "✓ TEST EVENT enviado (não é venda real)" : `✗ ${result.message}`}
+            {result.ok ? "✓ TEST EVENT sent (not a real sale)" : `✗ ${result.message}`}
           </p>
           <p>HTTP: {result.httpStatus ?? "—"}</p>
           <p className="break-all">event_id: {show(result.eventId)}</p>
           <p>test_event_code: {result.testEventCode}</p>
           <p>
-            pedido: #{show(result.orderNumber)} ({show(result.orderStatus)})
+            order: #{show(result.orderNumber)} ({show(result.orderStatus)})
           </p>
           <p>
             value: {result.value ?? "—"} · currency: {show(result.currency)}
@@ -748,7 +748,7 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
               {key}: {show(value)}
             </p>
           ))}
-          <p className="break-all pt-1">Resposta da Meta: {show(result.metaResponse)}</p>
+          <p className="break-all pt-1">Meta response: {show(result.metaResponse)}</p>
         </div>
       ) : null}
     </div>

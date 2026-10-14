@@ -51,7 +51,7 @@ export const Route = createFileRoute("/api/public/v1/orders/$token/attribution")
               .eq("public_token", token)
               .eq("store_id", store.id)
               .maybeSingle();
-            if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+            if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
 
             const { enrichOrderAttribution, getOrderAttributionRecord } = await import(
               "@/lib/payments/attribution.server"

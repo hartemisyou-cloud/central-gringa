@@ -380,7 +380,7 @@ export async function sendTestPurchase(storeId: string): Promise<{
       httpStatus: null,
       eventId,
       testEventCode: null,
-      message: "Integração Meta desativada ou incompleta para esta loja.",
+      message: "Meta integration disabled or incomplete for this store.",
     };
   }
 
@@ -442,7 +442,7 @@ export async function sendTestPurchase(storeId: string): Promise<{
     eventId,
     testEventCode,
     message: result.ok
-      ? `Evento de teste aceito pela Meta (HTTP ${result.httpStatus}).`
+      ? `Test event accepted by Meta (HTTP ${result.httpStatus}).`
       : sanitizeError(result.error),
   };
 }
@@ -484,13 +484,13 @@ export async function sendTestPurchaseFromOrder(input: {
   };
   const settings = await getMetaSettingsWithToken(input.storeId);
   if (!settings) {
-    return { ...empty, message: "Integração Meta desativada ou incompleta para esta loja." };
+    return { ...empty, message: "Meta integration disabled or incomplete for this store." };
   }
   const testEventCode = settings.testEventCode;
   if (!testEventCode) {
     return {
       ...empty,
-      message: "Defina um Test Event Code na loja antes de rodar o teste de fluxo.",
+      message: "Set a Test Event Code in the store before running the flow test.",
     };
   }
 
@@ -508,11 +508,11 @@ export async function sendTestPurchaseFromOrder(input: {
     .limit(1)
     .maybeSingle();
   if (!found) {
-    return { ...empty, message: "Pedido não encontrado nesta loja." };
+    return { ...empty, message: "Order not found in this store." };
   }
 
   const context = await loadOrderContext(found.id);
-  if (!context) return { ...empty, message: "Pedido não encontrado nesta loja." };
+  if (!context) return { ...empty, message: "Order not found in this store." };
 
   const eventId = `test_${purchaseEventId(context.orderId)}_${Date.now()}`;
   const payload = await buildPayload(context, { eventIdOverride: eventId, testEventCode });
@@ -533,7 +533,7 @@ export async function sendTestPurchaseFromOrder(input: {
     orderNumber: context.orderNumber,
     orderStatus: context.status,
     message: result.ok
-      ? `Purchase de teste aceito pela Meta (HTTP ${result.httpStatus}).`
+      ? `Test Purchase accepted by Meta (HTTP ${result.httpStatus}).`
       : sanitizeError(result.error),
     fields: {
       value: Number(customData["value"] ?? 0),
@@ -627,7 +627,7 @@ export async function testMetaConnection(
 ): Promise<{ ok: boolean; message: string }> {
   const settings = await getMetaSettingsWithToken(storeId);
   if (!settings) {
-    return { ok: false, message: "Integração Meta desativada ou incompleta para esta loja." };
+    return { ok: false, message: "Meta integration disabled or incomplete for this store." };
   }
   try {
     const response = await fetch(
@@ -637,7 +637,7 @@ export async function testMetaConnection(
     const text = await response.text();
     if (response.ok) {
       await recordMetaHealth(storeId, { ok: true });
-      return { ok: true, message: "Conexão validada com a Meta (nenhum evento foi enviado)." };
+      return { ok: true, message: "Connection validated with Meta (no event was sent)." };
     }
     const message = sanitizeError(text);
     await recordMetaHealth(storeId, { ok: false, error: message });
@@ -771,18 +771,18 @@ export async function sendTestPurchaseFromAttributedOrder(
 
   const settings = await getMetaSettingsWithToken(storeId);
   if (!settings) {
-    return { ...base, message: "Integração Meta desativada ou incompleta para esta loja." };
+    return { ...base, message: "Meta integration disabled or incomplete for this store." };
   }
   const testEventCode = settings.testEventCode;
   if (!testEventCode) {
-    return { ...base, message: "Defina um Test Event Code na loja antes de rodar o teste." };
+    return { ...base, message: "Set a Test Event Code in the store before running the test." };
   }
 
   const order = await findLatestPaidOrderWithAttribution(storeId);
   if (!order.found || !order.orderId) {
     return {
       ...base,
-      message: "Nenhum pedido PAID com dados de atribuição disponível para teste.",
+      message: "No PAID order with attribution data available for testing.",
     };
   }
 
@@ -791,7 +791,7 @@ export async function sendTestPurchaseFromAttributedOrder(
     return {
       ...base,
       order,
-      message: "Nenhum pedido PAID com dados de atribuição disponível para teste.",
+      message: "No PAID order with attribution data available for testing.",
     };
   }
 
@@ -844,8 +844,8 @@ export async function sendTestPurchaseFromAttributedOrder(
   return {
     ok,
     message: ok
-      ? `Test Event aceito pela Meta (HTTP ${httpStatus}).`
-      : `Falha ao enviar o Test Event${httpStatus ? ` (HTTP ${httpStatus})` : ""}.`,
+      ? `Test Event accepted by Meta (HTTP ${httpStatus}).`
+      : `Failed to send Test Event${httpStatus ? ` (HTTP ${httpStatus})` : ""}.`,
     httpStatus,
     eventId,
     value: Number(customData["value"] ?? 0),
