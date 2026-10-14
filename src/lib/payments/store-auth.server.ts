@@ -18,11 +18,11 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
     "";
 
   if (!header || !header.includes(".")) {
-    throw new PaymentError("UNAUTHORIZED", "Credencial da loja ausente ou inválida.");
+    throw new PaymentError("UNAUTHORIZED", "Store credential missing or invalid.");
   }
   const [keyId, secret] = header.split(".");
   if (!keyId || !secret) {
-    throw new PaymentError("UNAUTHORIZED", "Credencial da loja malformada.");
+    throw new PaymentError("UNAUTHORIZED", "Malformed store credential.");
   }
 
   // Uma credencial pode atender várias lojas (chave unificada). A loja padrão é
@@ -45,19 +45,19 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
   ]);
 
   if (!keyRow || keyRow.status !== "ACTIVE") {
-    throw new PaymentError("UNAUTHORIZED", "Credencial da loja inválida ou revogada.");
+    throw new PaymentError("UNAUTHORIZED", "Store credential invalid or revoked.");
   }
 
   const providedHash = await sha256Hex(`${keyId}.${secret}`);
   if (!timingSafeEqual(providedHash, keyRow.key_hash)) {
-    throw new PaymentError("UNAUTHORIZED", "Credencial da loja inválida ou revogada.");
+    throw new PaymentError("UNAUTHORIZED", "Store credential invalid or revoked.");
   }
 
   let store: StoreRow | null = null;
 
   if (requestedSlug) {
     const requested = requestedResult.data as StoreRow | null;
-    if (!requested) throw new PaymentError("NOT_FOUND", "Loja informada não existe.");
+    if (!requested) throw new PaymentError("NOT_FOUND", "Store not found.");
 
     if (requested.id !== keyRow.store_id) {
       const { data: scope } = await supabaseAdmin
@@ -67,7 +67,7 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
         .eq("store_id", requested.id)
         .maybeSingle();
       if (!scope) {
-        throw new PaymentError("FORBIDDEN", "Credencial não autorizada para esta loja.");
+        throw new PaymentError("FORBIDDEN", "Credential not authorized for this store.");
       }
     }
     // A linha completa já veio na consulta por slug: dispensa o SELECT por id.
@@ -82,7 +82,7 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
   }
 
   if (!store || store.status !== "ACTIVE") {
-    throw new PaymentError("FORBIDDEN", "Loja inativa.");
+    throw new PaymentError("FORBIDDEN", "Store inactive.");
   }
 
   // Telemetria não-crítica: sai do caminho crítico via waitUntil (com fallback
@@ -116,7 +116,7 @@ export async function enforceRateLimit(
     return;
   }
   if (typeof data === "number" && data > limit) {
-    throw new PaymentError("RATE_LIMITED", "Muitas requisições. Tente novamente em instantes.");
+    throw new PaymentError("RATE_LIMITED", "Too many requests. Please try again shortly.");
   }
 }
 

@@ -1,4 +1,4 @@
-import { PolicyLinks } from "@/components/policies/PolicyLinks";
+import { BrandMark, PolicyLinks } from "@/components/policies/PolicyLinks";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
@@ -13,7 +13,6 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import logoAsset from "@/assets/human-unity-logo.png.asset.json";
 import { formatMoney } from "@/lib/format";
 import { captureHostedAttribution, loadHostedPaymentSession } from "@/lib/hosted-pay.functions";
 import { createCheckoutTracker } from "@/lib/analytics/client";
@@ -51,19 +50,20 @@ export const Route = createFileRoute("/pay/$token")({
   loader: ({ params }) => loadHostedPaymentSession({ data: { token: params.token } }),
   head: () => ({
     meta: [
-      { title: "Pagamento seguro — Human Unity Foundation" },
+      { title: "Secure payment — Hope Human Books" },
       {
         name: "description",
         content:
-          "Finalize sua doação com cartão, Apple Pay, Google Pay ou Link em um checkout seguro processado pela Stripe.",
+          "Complete your ebook purchase with card, Apple Pay or Google Pay in a secure checkout processed by Stripe.",
       },
-      { property: "og:title", content: "Pagamento seguro — Human Unity Foundation" },
+      { property: "og:title", content: "Secure payment — Hope Human Books" },
       {
         property: "og:description",
-        content: "Checkout seguro com cartão, Apple Pay e Google Pay processado pela Stripe.",
+        content: "Secure checkout processed by Stripe.",
       },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:card", content: "summary" },
+      { name: "robots", content: "noindex" },
     ],
   }),
   component: HostedPayPage,
@@ -90,7 +90,7 @@ function HostedPayPage() {
       session
         ? {
             clientSecret: session.clientSecret,
-            locale: "pt-BR",
+            locale: "en",
             appearance: {
               theme: "stripe",
               variables: {
@@ -108,8 +108,8 @@ function HostedPayPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white px-6 text-center">
         <div className="space-y-3">
-          <img src={logoAsset.url} alt="Human Unity Foundation" className="mx-auto h-12" />
-          <h1 className="text-xl font-semibold text-[#30313d]">Pagamento indisponível</h1>
+          <div className="flex justify-center"><BrandMark /></div>
+          <h1 className="text-xl font-semibold text-[#30313d]">Payment unavailable</h1>
           <p className="text-sm text-[#6d6e78]">{result.ok ? "" : result.message}</p>
         </div>
       </div>
@@ -120,7 +120,7 @@ function HostedPayPage() {
     <div className="min-h-screen bg-white text-[#30313d] lg:grid lg:grid-cols-2">
       <section className="px-6 pt-10 pb-8 lg:border-r lg:border-[#e6e6e6] lg:px-16 lg:pt-16">
         <div className="mx-auto w-full max-w-[420px] lg:mr-8 lg:ml-auto">
-          <img src={logoAsset.url} alt="Human Unity Foundation" className="h-11 w-auto" />
+          <BrandMark />
           <div className="mt-10 space-y-1">
             <p className="text-[15px] text-[#6d6e78]">{session.label}</p>
             <p className="text-[36px] leading-none font-semibold tracking-tight">
@@ -130,7 +130,7 @@ function HostedPayPage() {
               <p className="pt-1 text-[15px] text-[#6d6e78]">{session.subtitle}</p>
             ) : null}
           </div>
-          <p className="mt-8 text-xs text-[#8b8c96]">Pedido {session.orderNumber}</p>
+          <p className="mt-8 text-xs text-[#8b8c96]">Order {session.orderNumber} · Digital delivery, no shipping</p>
         </div>
       </section>
 
@@ -151,10 +151,10 @@ function HostedPayPage() {
             </span>
             <span className="text-[#e6e6e6]">|</span>
             <a href="https://stripe.com/legal" target="_blank" rel="noreferrer">
-              Termos
+              Terms
             </a>
             <a href="https://stripe.com/privacy" target="_blank" rel="noreferrer">
-              Privacidade
+              Privacy
             </a>
           </div>
           <PolicyLinks className="mt-4 opacity-70" />
@@ -241,7 +241,7 @@ function PaymentForm({ session }: { session: Session }) {
 
   const returnUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/pedido/${session.publicToken}`
+      ? `${window.location.origin}/order/${session.publicToken}`
       : undefined;
 
   async function finish(
@@ -259,7 +259,7 @@ function PaymentForm({ session }: { session: Session }) {
         errorCode: error.code,
       });
       tracker.flush();
-      toast.error(error.message ?? "Pagamento não autorizado.");
+      toast.error(error.message ?? "Payment not authorized.");
       return;
     }
     tracker.track(method === "card" ? "payment_processing" : `${method}_success`, {
@@ -313,19 +313,19 @@ function PaymentForm({ session }: { session: Session }) {
         {hasExpress ? (
           <div className="flex items-center gap-4 text-xs text-[#6d6e78]">
             <span className="h-px flex-1 bg-[#e6e6e6]" />
-            OU
+            OR
             <span className="h-px flex-1 bg-[#e6e6e6]" />
           </div>
         ) : null}
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-base font-medium">Dados para contato</h2>
+        <h2 className="text-base font-medium">Contact</h2>
         <LinkAuthenticationElement />
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-base font-medium">Forma de pagamento</h2>
+        <h2 className="text-base font-medium">Payment method</h2>
         <PaymentElement
           options={{ layout: "tabs" }}
           onChange={(event) => {
@@ -342,7 +342,7 @@ function PaymentForm({ session }: { session: Session }) {
         disabled={!stripe || processing}
         className="flex h-11 w-full items-center justify-center rounded-md bg-[#0570de] text-[15px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
       >
-        {processing ? <Loader2 className="size-4 animate-spin" /> : "Pagar"}
+        {processing ? <Loader2 className="size-4 animate-spin" /> : "Pay now"}
       </button>
     </form>
   );

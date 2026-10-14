@@ -16,7 +16,7 @@ async function masterKey(): Promise<CryptoKey> {
   if (!raw || raw.length < 32) {
     throw new PaymentError(
       "CONFIG_ERROR",
-      "Chave de criptografia do cofre não configurada no servidor.",
+      "Vault encryption key not configured on the server.",
     );
   }
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(raw));
@@ -48,7 +48,7 @@ export async function encryptSecret(plaintext: string): Promise<string> {
 export async function decryptSecret(payload: string): Promise<string> {
   const [version, ivPart, cipherPart] = payload.split(".");
   if (version !== "v1" || !ivPart || !cipherPart) {
-    throw new PaymentError("CONFIG_ERROR", "Segredo armazenado em formato inválido.");
+    throw new PaymentError("CONFIG_ERROR", "Stored secret has an invalid format.");
   }
   const key = await masterKey();
   const plain = await crypto.subtle.decrypt(

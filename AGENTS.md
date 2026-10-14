@@ -8,3 +8,10 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Architecture rules
+- Ebook downloads are authorized only by orders.status = PAID (set solely by the verified Stripe webhook); files live in the private `ebooks` bucket and are streamed by `/api/public/v1/downloads/...`. Why: URL flags or client claims must never unlock paid files.
+- Digital-only carts (all products weight 0) skip address, phone and shipping; physical carts still require address and phone. Why: no invented customer data for ebooks.
+- SKU → file mapping lives in `src/lib/catalog/hhb.ts`, generated from the provenance manifest in `docs/catalog/`. Why: bundles must map to real, verifiable files.
+- Webhook events are reprocessed when previously FAILED (or stuck RECEIVED); every succeeded-step is idempotent. Why: transient errors must never lose a payment confirmation.
+- External checkouts call only this central's API; Stripe UI and keys stay in this project (`/pay/{publicToken}`). Why: card data and Stripe credentials stay in one place.

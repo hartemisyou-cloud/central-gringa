@@ -7,7 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
  */
 export const getStorefrontTracking = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ pixelId: string | null }> => {
-    const slug = process.env["STORE_SLUG"]?.trim().toLowerCase() || "livraria-cultura";
+    const { HHB_STORE_SLUG: slug } = await import("@/lib/catalog/hhb");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: store } = await supabaseAdmin

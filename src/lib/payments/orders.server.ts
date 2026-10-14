@@ -15,7 +15,8 @@ export interface CustomerInput {
   firstName: string;
   lastName: string;
   email: string;
-  phone: string;
+  /** Required for physical goods only; digital orders never ask for it. */
+  phone?: string | undefined;
 }
 
 export interface AddressInput {
@@ -35,14 +36,18 @@ async function loadProducts(storeId: string, productIds: string[]): Promise<Pric
     .select("id, name, sku, price_cents, currency, stock, reserved_stock, active, weight_grams")
     .eq("store_id", storeId)
     .in("id", productIds);
-  if (error) throw new PaymentError("INVALID_INPUT", "Falha ao carregar produtos.");
+  if (error) throw new PaymentError("INVALID_INPUT", "Failed to load products.");
   return data ?? [];
 }
 
 /** Opção usada quando não há entrega física (doações, itens digitais). */
+export function isDigitalOnly(totalWeightGrams: number): boolean {
+  return totalWeightGrams === 0;
+}
+
 const NO_SHIPPING_OPTION = {
   id: "no-shipping",
-  label: "Sem entrega física",
+  label: "Digital delivery (no shipping)",
   amountCents: 0,
   estimatedDays: 0,
   provider: "NONE",
@@ -106,8 +111,16 @@ export async function createOrder(input: {
   const products = await loadProducts(input.store.id, uniqueIds(input.items));
   const priced = priceItems(input.items, products);
 
-  const noShipping =
-    input.noShipping === true || priced.totalWeightGrams === 0 || !input.address;
+  // Digital-only carts (all products weight 0) never ship and never need an
+  // address or phone. Physical carts keep the full validation.
+  const allDigital = isDigitalOnly(priced.totalWeightGrams);
+  const noShipping = input.noShipping === true || allDigital;
+  if (!noShipping && !input.address) {
+    throw new PaymentError("INVALID_INPUT", "A shipping address is required for physical items.");
+  }
+  if (!allDigital && !input.customer.phone) {
+    throw new PaymentError("INVALID_INPUT", "A phone number is required for physical items.");
+  }
   const options = noShipping
     ? [NO_SHIPPING_OPTION]
     : await resolveShippingService().quote({
@@ -120,7 +133,7 @@ export async function createOrder(input: {
   const option = noShipping
     ? NO_SHIPPING_OPTION
     : options.find((entry) => entry.id === input.shippingOptionId);
-  if (!option) throw new PaymentError("INVALID_INPUT", "Opção de frete inválida.");
+  if (!option) throw new PaymentError("INVALID_INPUT", "Invalid shipping option.");
 
   const totals = buildTotals({ ...priced, shippingCents: option.amountCents });
 
@@ -132,19 +145,19 @@ export async function createOrder(input: {
         email: input.customer.email.toLowerCase(),
         first_name: input.customer.firstName,
         last_name: input.customer.lastName,
-        phone: input.customer.phone,
+        phone: input.customer.phone ?? null,
       },
       { onConflict: "store_id,email" },
     )
     .select("id")
     .single();
   if (customerError || !customer) {
-    throw new PaymentError("INVALID_INPUT", "Não foi possível registrar os dados do cliente.");
+    throw new PaymentError("INVALID_INPUT", "Could not save customer details.");
   }
 
   // Pedido digital (eBook) sem endereço informado: não cria registro de entrega.
   let addressId: string | null = null;
-  if (input.address) {
+  if (input.address && !allDigital) {
     const addr = input.address;
     const { data: address, error: addressError } = await supabaseAdmin
       .from("addresses")
@@ -152,7 +165,7 @@ export async function createOrder(input: {
         store_id: input.store.id,
         customer_id: customer.id,
         recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
-        phone: input.customer.phone,
+        phone: input.customer.phone ?? null,
         // Sem entrega física o código postal é apenas informativo: guarda como veio.
         postal_code: noShipping ? addr.postalCode.trim() : normalizePostalCode(addr.postalCode),
         street: addr.street,
@@ -161,12 +174,12 @@ export async function createOrder(input: {
         district: addr.district ?? "",
         city: addr.city,
         state: addr.state ?? "",
-        country: addr.country ?? "BR",
+        country: addr.country ?? "US",
       })
       .select("id")
       .single();
     if (addressError || !address) {
-      throw new PaymentError("INVALID_INPUT", "Endereço de entrega inválido.");
+      throw new PaymentError("INVALID_INPUT", "Invalid shipping address.");
     }
     addressId = address.id;
   }
@@ -190,7 +203,7 @@ export async function createOrder(input: {
     .select("*")
     .single();
   if (orderError || !order) {
-    throw new PaymentError("INVALID_INPUT", "Não foi possível criar o pedido.");
+    throw new PaymentError("INVALID_INPUT", "Could not create the order.");
   }
 
   const { error: itemsError } = await supabaseAdmin.from("order_items").insert(
@@ -206,7 +219,7 @@ export async function createOrder(input: {
   );
   if (itemsError) {
     await supabaseAdmin.from("orders").delete().eq("id", order.id);
-    throw new PaymentError("INVALID_INPUT", "Não foi possível registrar os itens do pedido.");
+    throw new PaymentError("INVALID_INPUT", "Could not save order items.");
   }
 
   // Reserva de estoque atômica (evita condição de corrida / oversell).
@@ -218,14 +231,14 @@ export async function createOrder(input: {
     if (reserved !== true) {
       await supabaseAdmin.rpc("release_order_stock", { _order_id: order.id });
       await supabaseAdmin.from("orders").delete().eq("id", order.id);
-      throw new PaymentError("OUT_OF_STOCK", `Estoque insuficiente para "${item.productName}".`);
+      throw new PaymentError("OUT_OF_STOCK", `Insufficient stock for "${item.productName}".`);
     }
   }
   await supabaseAdmin.from("orders").update({ stock_reserved: true }).eq("id", order.id);
   await supabaseAdmin.from("payment_events").insert({
     order_id: order.id,
     type: "ORDER_CREATED",
-    message: "Pedido criado",
+    message: "Order created",
     metadata: { total_cents: totals.totalCents } as never,
   });
 
@@ -250,16 +263,16 @@ function fetchIntegrationForStore(store: StoreRow) {
 /** Validações da integração — ordem e mensagens idênticas às anteriores. */
 function validateIntegration(store: StoreRow, data: IntegrationRow | null): IntegrationRow {
   if (!store.stripe_integration_id) {
-    throw new PaymentError("CONFIG_ERROR", "Loja sem integração de pagamento configurada.");
+    throw new PaymentError("CONFIG_ERROR", "Store has no payment integration configured.");
   }
-  if (!data) throw new PaymentError("CONFIG_ERROR", "Integração de pagamento não encontrada.");
+  if (!data) throw new PaymentError("CONFIG_ERROR", "Payment integration not found.");
   if (data.status !== "ACTIVE") {
-    throw new PaymentError("CONFIG_ERROR", "Integração de pagamento inativa.");
+    throw new PaymentError("CONFIG_ERROR", "Payment integration inactive.");
   }
   if (data.environment !== store.environment) {
     throw new PaymentError(
       "CONFIG_ERROR",
-      "Ambiente da loja e da integração divergem (test/live não podem se misturar).",
+      "Store and integration environments differ (test/live cannot be mixed).",
     );
   }
   return data;
@@ -281,24 +294,9 @@ interface OrderItemRow {
   quantity: number;
 }
 
-/**
- * SKUs temporários de teste de doação (ex.: LC-TEST-DON-5). Somente esses SKUs
- * recebem descrição dinâmica "$X Donation"; qualquer outro pedido mantém a
- * descrição padrão `Pedido {order_number}`.
- */
-const TEST_DONATION_SKU_PREFIX = "LC-TEST-DON-";
-
-/** Descrição do PaymentIntent: dinâmica só para os SKUs de teste de doação. */
-function buildPaymentDescription(
-  order: { order_number: string; total_cents: number },
-  items: OrderItemRow[],
-): string {
-  const allDonation =
-    items.length > 0 && items.every((i) => i.sku.startsWith(TEST_DONATION_SKU_PREFIX));
-  if (!allDonation) return `Pedido ${order.order_number}`;
-  const amount = order.total_cents / 100;
-  const label = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-  return `$${label} Donation`;
+/** PaymentIntent description: always the store order number (purchases, never donations). */
+function buildPaymentDescription(order: { order_number: string }, _items: OrderItemRow[]): string {
+  return `Order ${order.order_number}`;
 }
 
 /**
@@ -408,9 +406,9 @@ export async function createOrderPayment(input: {
 
 
   const order = orderResult.data;
-  if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
   if (!["PENDING_PAYMENT", "PAYMENT_PROCESSING"].includes(order.status)) {
-    throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
+    throw new PaymentError("INVALID_STATE", "This order no longer accepts payments.");
   }
 
   const integration = validateIntegration(
@@ -462,7 +460,7 @@ export async function createOrderPayment(input: {
     .select("*")
     .single();
   if (paymentError || !payment) {
-    throw new PaymentError("INVALID_STATE", "Já existe um pagamento em andamento para este pedido.");
+    throw new PaymentError("INVALID_STATE", "A payment is already in progress for this order.");
   }
 
   let created;
@@ -498,7 +496,7 @@ export async function createOrderPayment(input: {
       idempotencyKey,
       description:
         input.descriptionMode === "order-number"
-          ? `Pedido ${order.order_number}`
+          ? `Order ${order.order_number}`
           : buildPaymentDescription(order, itemRows),
       metadata: paymentIntentMetadata,
       ...(integration.payment_method_configuration_id
@@ -531,7 +529,7 @@ export async function createOrderPayment(input: {
       order_id: order.id,
       payment_id: payment.id,
       type: "PAYMENT_CREATED",
-      message: "Pagamento criado no provedor",
+      message: "Payment created at provider",
       metadata: { attempt } as never,
     });
 
@@ -573,7 +571,7 @@ export async function getOrderPublicStatus(input: { store: StoreRow; publicToken
     .eq("public_token", input.publicToken)
     .eq("store_id", input.store.id)
     .maybeSingle();
-  if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
 
   const { data: payment } = await supabaseAdmin
     .from("payments")

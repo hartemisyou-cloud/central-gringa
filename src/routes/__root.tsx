@@ -79,11 +79,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Loja 1 — Checkout seguro" },
-      {
-        name: "description",
-        content: "Loja 1: produtos físicos com pagamento processado pela API central.",
-      },
+      { title: "Hope Human Books" },
+      { name: "description", content: "Curated digital editions of classic American literature." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

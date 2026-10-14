@@ -12,7 +12,7 @@ export type AdminSession = { unlocked?: boolean; since?: number };
 function sessionConfig() {
   const password = process.env["ADMIN_SESSION_SECRET"];
   if (!password || password.length < 32) {
-    throw new PaymentError("CONFIG_ERROR", "Sessão administrativa não configurada no servidor.");
+    throw new PaymentError("CONFIG_ERROR", "Admin session not configured on the server.");
   }
   return {
     password,
@@ -32,7 +32,7 @@ async function digest(value: string): Promise<Uint8Array> {
 export async function passwordMatches(input: string): Promise<boolean> {
   const expected = process.env["ADMIN_PANEL_PASSWORD"];
   if (!expected) {
-    throw new PaymentError("CONFIG_ERROR", "Senha do painel não configurada no servidor.");
+    throw new PaymentError("CONFIG_ERROR", "Admin password not configured on the server.");
   }
   const [a, b] = await Promise.all([digest(input), digest(expected)]);
   let diff = 0;
@@ -52,6 +52,6 @@ export async function isUnlocked(): Promise<boolean> {
 /** Guarda de segurança usada por TODA operação sensível do painel. */
 export async function requireAdmin(): Promise<void> {
   if (!(await isUnlocked())) {
-    throw new PaymentError("UNAUTHORIZED", "Sessão administrativa expirada. Faça login novamente.");
+    throw new PaymentError("UNAUTHORIZED", "Admin session expired. Please sign in again.");
   }
 }

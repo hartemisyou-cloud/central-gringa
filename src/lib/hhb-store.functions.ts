@@ -1,0 +1,136 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+
+import { attributionSchema } from "@/lib/payments/attribution";
+
+/**
+ * Server functions for the central's own Hope Human Books storefront.
+ * They run server-side against the same order/pricing services the public
+ * API uses. Prices always come from the database; the browser only sends
+ * product ids and quantities.
+ */
+
+export interface CatalogProduct {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  sku: string;
+  priceCents: number;
+  currency: string;
+  category: string | null;
+}
+
+async function loadStore() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { HHB_STORE_SLUG } = await import("@/lib/catalog/hhb");
+  const { data: store } = await supabaseAdmin
+    .from("stores")
+    .select("*")
+    .eq("slug", HHB_STORE_SLUG)
+    .maybeSingle();
+  if (!store) throw new Error("The store is not set up yet.");
+  return store;
+}
+
+export const getCatalog = createServerFn({ method: "GET" }).handler(
+  async (): Promise<CatalogProduct[]> => {
+    const store = await loadStore();
+    const { listStoreProducts } = await import("@/lib/payments/catalog.server");
+    const products = await listStoreProducts(store);
+    return products
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        description: p.description,
+        sku: p.sku,
+        priceCents: p.priceCents,
+        currency: p.currency,
+        category: p.category,
+      }))
+      .sort((a, b) => a.priceCents - b.priceCents);
+  },
+);
+
+const orderSchema = z.object({
+  items: z
+    .array(z.object({ productId: z.string().uuid(), quantity: z.number().int().min(1).max(5) }))
+    .min(1)
+    .max(11),
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
+  email: z.string().trim().email().max(160),
+  attribution: attributionSchema,
+});
+
+export const createDigitalOrder = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => orderSchema.parse(input))
+  .handler(async ({ data }): Promise<{ ok: true; publicToken: string } | { ok: false; message: string }> => {
+    try {
+      const store = await loadStore();
+      const { createOrder } = await import("@/lib/payments/orders.server");
+      const result = await createOrder({
+        store,
+        items: data.items,
+        customer: { firstName: data.firstName, lastName: data.lastName, email: data.email },
+        shippingOptionId: "no-shipping",
+        attribution: data.attribution,
+      });
+      return { ok: true, publicToken: result.publicToken };
+    } catch (error) {
+      return { ok: false, message: (error as Error).message };
+    }
+  });
+
+export interface Receipt {
+  orderNumber: string;
+  status: string;
+  currency: string;
+  totalCents: number;
+  createdAt: string;
+  items: Array<{ name: string; quantity: number; totalCents: number }>;
+  works: Array<{
+    workId: string;
+    title: string;
+    author: string;
+    firstPublished: string;
+    sourceUrl: string;
+    bytes: number;
+    downloadPath: string;
+  }>;
+}
+
+export const getReceipt = createServerFn({ method: "GET" })
+  .inputValidator((input: unknown) => z.object({ token: z.string().min(10).max(120) }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: true; receipt: Receipt } | { ok: false; message: string }> => {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: order } = await supabaseAdmin
+        .from("orders")
+        .select("order_number, status, currency, total_cents, created_at, order_items(product_name, quantity, total_cents)")
+        .eq("public_token", data.token)
+        .maybeSingle();
+      if (!order) return { ok: false, message: "Order not found." };
+      const { getOrderDeliverables } = await import("@/lib/payments/fulfillment.server");
+      const deliverables = await getOrderDeliverables(data.token);
+      return {
+        ok: true,
+        receipt: {
+          orderNumber: order.order_number,
+          status: order.status,
+          currency: order.currency,
+          totalCents: order.total_cents,
+          createdAt: order.created_at,
+          items: (order.order_items ?? []).map((i) => ({
+            name: i.product_name,
+            quantity: i.quantity,
+            totalCents: i.total_cents,
+          })),
+          works: deliverables.works,
+        },
+      };
+    } catch (error) {
+      return { ok: false, message: (error as Error).message };
+    }
+  });
