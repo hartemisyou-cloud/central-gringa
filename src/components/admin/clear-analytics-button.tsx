@@ -28,7 +28,7 @@ export function ClearAnalyticsButton({ storeId }: { storeId: string | null }) {
 
   async function openDialog() {
     if (!storeId) {
-      toast.error("Selecione uma loja específica para limpar o analytics.");
+      toast.error("Select a specific store to clear analytics.");
       return;
     }
     setOpen(true);
@@ -38,7 +38,7 @@ export function ClearAnalyticsButton({ storeId }: { storeId: string | null }) {
     try {
       setPreview(await analyticsPurgePreview({ data: { storeId } }));
     } catch {
-      toast.error("Não foi possível carregar a prévia da limpeza.");
+      toast.error("Could not load purge preview.");
       setOpen(false);
     } finally {
       setLoading(false);
@@ -46,15 +46,15 @@ export function ClearAnalyticsButton({ storeId }: { storeId: string | null }) {
   }
 
   async function run() {
-    if (!storeId || confirm !== "LIMPAR") return;
+    if (!storeId || confirm !== "CLEAR") return;
     setWorking(true);
     try {
-      const result = await analyticsPurge({ data: { storeId, confirm: "LIMPAR" } });
-      toast.success(`Analytics de ${result.storeSlug} limpo (${result.total} registros).`);
+      const result = await analyticsPurge({ data: { storeId, confirm: "CLEAR" } });
+      toast.success(`Analytics for ${result.storeSlug} cleared (${result.total} records).`);
       setOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["admin", "analytics"] });
     } catch {
-      toast.error("Falha ao limpar o analytics.");
+      toast.error("Failed to clear analytics.");
     } finally {
       setWorking(false);
     }
@@ -63,26 +63,26 @@ export function ClearAnalyticsButton({ storeId }: { storeId: string | null }) {
   return (
     <>
       <Button variant="destructive" onClick={() => void openDialog()}>
-        <Trash2 className="size-4" /> Limpar analytics
+        <Trash2 className="size-4" /> Clear analytics
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tem certeza?</DialogTitle>
+            <DialogTitle>Are you sure?</DialogTitle>
             <DialogDescription>
-              Isso apagará os dados de analytics da loja selecionada.
+              This will delete analytics data for the selected store.
             </DialogDescription>
           </DialogHeader>
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Calculando registros…
+              <Loader2 className="size-4 animate-spin" /> Calculating records…
             </div>
           ) : preview ? (
             <div className="space-y-3 text-sm">
               <p>
-                Loja: <strong>{preview.storeName}</strong>{" "}
+                Store: <strong>{preview.storeName}</strong>{" "}
                 <span className="text-muted-foreground">({preview.storeSlug})</span>
               </p>
               <ul className="space-y-1 rounded-md border p-3">
@@ -94,17 +94,17 @@ export function ClearAnalyticsButton({ storeId }: { storeId: string | null }) {
                 ))}
               </ul>
               <p className="text-xs text-muted-foreground">
-                Preservado sem alteração: {preview.preserved.join(", ")} e qualquer dado financeiro.
+                Preserved without change: {preview.preserved.join(", ")} and any financial data.
               </p>
               <div className="space-y-1">
                 <label className="text-xs font-medium" htmlFor="purge-confirm">
-                  Digite LIMPAR para confirmar
+                  Type LIMPAR to confirm
                 </label>
                 <Input
                   id="purge-confirm"
                   value={confirm}
                   onChange={(event) => setConfirm(event.target.value)}
-                  placeholder="LIMPAR"
+                  placeholder="CLEAR"
                   autoComplete="off"
                 />
               </div>
@@ -113,15 +113,15 @@ export function ClearAnalyticsButton({ storeId }: { storeId: string | null }) {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={working}>
-              Cancelar
+              Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={() => void run()}
-              disabled={working || confirm !== "LIMPAR"}
+              disabled={working || confirm !== "CLEAR"}
             >
               {working ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-              Limpar definitivamente
+              Permanently clear
             </Button>
           </DialogFooter>
         </DialogContent>

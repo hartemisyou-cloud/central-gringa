@@ -21,20 +21,20 @@ import { Switch } from "@/components/ui/switch";
 /**
  * Settings → Tracking → UTMify.
  * O API Token é write-only: enviado ao servidor, cifrado em repouso e jamais
- * devolvido ao navegador. A interface mostra apenas "Configurado" ou não.
+ * devolvido ao navegador. A interface mostra apenas "Configured" ou não.
  */
 type Draft = { webhookId: string; apiToken: string; enabled: boolean; isTest: boolean };
 
 const STATUS_LABEL: Record<string, string> = {
-  DISABLED: "Desativado",
-  NOT_CONFIGURED: "Não configurado",
-  CONFIGURED: "Configurado",
-  CONNECTED: "Conectado",
-  ERROR: "Erro",
+  DISABLED: "Disabled",
+  NOT_CONFIGURED: "Not configured",
+  CONFIGURED: "Configured",
+  CONNECTED: "Connected",
+  ERROR: "Error",
 };
 
 function formatDate(value: string | null): string {
-  return value ? new Date(value).toLocaleString("pt-BR") : "—";
+  return value ? new Date(value).toLocaleString("en-US") : "—";
 }
 
 export function UtmifySection() {
@@ -63,9 +63,9 @@ export function UtmifySection() {
     onSuccess: async (_result, input) => {
       setDrafts((current) => ({ ...current, [input.storeId]: { ...input, apiToken: "" } }));
       await queryClient.invalidateQueries({ queryKey: ["admin", "utmify"] });
-      toast.success("Configuração UTMify salva.");
+      toast.success("UTMify configuration saved.");
     },
-    onError: () => toast.error("Não foi possível salvar a configuração."),
+    onError: () => toast.error("Could not save configuration."),
   });
 
   return (
@@ -103,7 +103,7 @@ export function UtmifySection() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={store.hasApiToken ? "outline" : "secondary"}>
-                    {store.hasApiToken ? "Token configurado" : "Token não configurado"}
+                    {store.hasApiToken ? "Token configured" : "Token not configured"}
                   </Badge>
                   <Badge
                     variant={
@@ -131,7 +131,7 @@ export function UtmifySection() {
                     autoComplete="off"
                     value={draft.apiToken}
                     onChange={(event) => update({ apiToken: event.target.value })}
-                    placeholder={store.hasApiToken ? "Configurado" : "Não configurado"}
+                    placeholder={store.hasApiToken ? "Configured" : "Not configured"}
                   />
                 </div>
                 <div className="space-y-2">
@@ -151,22 +151,22 @@ export function UtmifySection() {
                   onCheckedChange={(value) => update({ isTest: value })}
                 />
                 <Label htmlFor={`utmify-test-${store.storeId}`} className="text-sm font-normal">
-                  Marcar vendas como teste (isTest)
+                  Mark sales as test (isTest)
                 </Label>
               </div>
 
               <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                <p>Último evento enviado: {formatDate(store.lastSentAt)}</p>
-                <p>Última venda: {store.lastOrderNumber ?? "—"}</p>
-                <p>Vendas enviadas: {store.sentCount}</p>
-                <p className="truncate">Último erro de venda: {store.lastError ?? "—"}</p>
+                <p>Last event sent: {formatDate(store.lastSentAt)}</p>
+                <p>Last sale: {store.lastOrderNumber ?? "—"}</p>
+                <p>Sales sent: {store.sentCount}</p>
+                <p className="truncate">Last sale error: {store.lastError ?? "—"}</p>
                 <p className="sm:col-span-2 truncate">
-                  Teste de conexão:{" "}
+                  Connection test:{" "}
                   {store.connectionStatus === "OK"
                     ? `OK · ${formatDate(store.connectionSuccessAt)}`
                     : store.connectionStatus === "ERROR"
-                      ? `Erro · ${formatDate(store.connectionErrorAt)} · ${store.connectionError ?? ""}`
-                      : "não testado"}
+                      ? `Error · ${formatDate(store.connectionErrorAt)} · ${store.connectionError ?? ""}`
+                      : "not tested"}
                 </p>
               </div>
 
@@ -177,7 +177,7 @@ export function UtmifySection() {
                   disabled={saveMutation.isPending}
                   onClick={() => saveMutation.mutate({ storeId: store.storeId, ...draft })}
                 >
-                  {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "Salvar"}
+                  {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "Save"}
                 </Button>
                 <Button
                   size="sm"
@@ -200,7 +200,7 @@ export function UtmifySection() {
                     await queryClient.invalidateQueries({ queryKey: ["admin", "utmify"] });
                   }}
                 >
-                  <RefreshCw className="size-4" /> Reprocessar pendentes
+                  <RefreshCw className="size-4" /> Reprocess pending
                 </Button>
               </div>
             </div>
@@ -231,13 +231,13 @@ function SingleOrderResend() {
       if (data.ok) toast.success(data.message);
       else toast.error(data.message);
     },
-    onError: () => toast.error("Falha ao executar o reenvio."),
+    onError: () => toast.error("Failed to execute resend."),
   });
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Reenvio pontual à UTMify (diagnóstico)</CardTitle>
+        <CardTitle className="text-base">One-time resend to UTMify (diagnostic)</CardTitle>
         <CardDescription>
           Reenvia somente a ordem informada, usando `order_attribution.client_ip` em
           `customer.ip`. Não cria pedido, PaymentIntent ou cobrança, não altera o status
@@ -247,7 +247,7 @@ function SingleOrderResend() {
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-end gap-2">
           <div className="grid gap-1">
-            <Label htmlFor="utmify-single-order">Número do pedido</Label>
+            <Label htmlFor="utmify-single-order">Order number</Label>
             <Input
               id="utmify-single-order"
               value={orderNumber}
@@ -256,19 +256,19 @@ function SingleOrderResend() {
             />
           </div>
           <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
-            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "Reenviar à UTMify"}
+            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "Resend to UTMify"}
           </Button>
         </div>
 
         {result && (
           <div className="space-y-1 rounded-lg border bg-muted/40 p-3 text-xs">
-            <p>Pedido: <span className="font-mono">{result.orderNumber}</span> · status {result.orderStatus ?? "—"}</p>
-            <p>customer.ip usado: <span className="font-mono">{result.clientIpMasked ?? "—"}</span></p>
+            <p>Order: <span className="font-mono">{result.orderNumber}</span> · status {result.orderStatus ?? "—"}</p>
+            <p>customer.ip used: <span className="font-mono">{result.clientIpMasked ?? "—"}</span></p>
             <p>HTTP status: <span className="font-mono">{result.httpStatus ?? "—"}</span></p>
-            <p className="break-all">Resposta UTMify: <span className="font-mono">{result.responseBody ?? "—"}</span></p>
+            <p className="break-all">UTMify response: <span className="font-mono">{result.responseBody ?? "—"}</span></p>
             <p>
               utmify_events: <Badge variant={result.eventStatus === "SENT" ? "default" : "destructive"}>{result.eventStatus ?? "—"}</Badge>{" "}
-              · tentativas: {result.attemptCount ?? "—"}
+              · attempts: {result.attemptCount ?? "—"}
             </p>
           </div>
         )}

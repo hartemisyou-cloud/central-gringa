@@ -194,7 +194,7 @@ export async function sendDiagnosticTestPurchase(input: {
 
   const settings = await getMetaSettingsWithToken(input.storeId);
   if (!settings) {
-    return { ...base, message: "Integração Meta desativada ou incompleta para esta loja." };
+    return { ...base, message: "Meta integration disabled or incomplete for this store." };
   }
 
   const { data: owned } = await supabaseAdmin
@@ -203,10 +203,10 @@ export async function sendDiagnosticTestPurchase(input: {
     .eq("id", input.orderId)
     .eq("store_id", input.storeId)
     .maybeSingle();
-  if (!owned) return { ...base, message: "Pedido não encontrado nesta loja." };
+  if (!owned) return { ...base, message: "Order not found in this store." };
 
   const context = await loadOrderContext(input.orderId);
-  if (!context) return { ...base, message: "Pedido não encontrado nesta loja." };
+  if (!context) return { ...base, message: "Order not found in this store." };
 
   const eventId = `diag_test_purchase_${context.orderId}_${Date.now()}`;
   const payload = await buildPayload(context, {
@@ -261,8 +261,8 @@ export async function sendDiagnosticTestPurchase(input: {
     ...base,
     ok,
     message: ok
-      ? `TEST EVENT aceito pela Meta (HTTP ${httpStatus}). Não é uma venda real.`
-      : `Falha ao enviar o TEST EVENT${httpStatus ? ` (HTTP ${httpStatus})` : ""}.`,
+      ? `TEST EVENT accepted by Meta (HTTP ${httpStatus}). Not a real sale.`
+      : `Failed to send TEST EVENT${httpStatus ? ` (HTTP ${httpStatus})` : ""}.`,
     httpStatus,
     eventId,
     value: Number(customData["value"] ?? context.valueCents / 100),

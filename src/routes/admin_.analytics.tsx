@@ -30,16 +30,16 @@ import {
 export const Route = createFileRoute("/admin_/analytics")({
   head: () => ({
     meta: [
-      { title: "Analytics de conversão — Central de Pagamentos" },
+      { title: "Conversion Analytics — Payment Center" },
       {
         name: "description",
         content:
-          "Painel interno de analytics do checkout: funil, métodos de pagamento, recusas, 3DS, dispositivos e atribuição por loja.",
+          "Internal checkout analytics dashboard: funnel, payment methods, declines, 3DS, devices, and store attribution.",
       },
-      { property: "og:title", content: "Analytics de conversão — Central de Pagamentos" },
+      { property: "og:title", content: "Conversion Analytics — Payment Center" },
       {
         property: "og:description",
-        content: "Funil de checkout, wallets, recusas e conversão por loja.",
+        content: "Checkout funnel, wallets, declines, and conversion per store.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -50,13 +50,13 @@ export const Route = createFileRoute("/admin_/analytics")({
 });
 
 const RANGES = [
-  { value: "7", label: "Últimos 7 dias" },
-  { value: "30", label: "Últimos 30 dias" },
-  { value: "90", label: "Últimos 90 dias" },
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
 ];
 
 function money(cents: number, currency = "USD") {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(cents / 100);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
 
 function AnalyticsPage() {
@@ -98,7 +98,7 @@ function AnalyticsPage() {
   });
 
   const lastUpdate = realtime.data
-    ? new Date(realtime.data.generatedAt).toLocaleTimeString("pt-BR", { hour12: false })
+    ? new Date(realtime.data.generatedAt).toLocaleTimeString("en-US", { hour12: false })
     : "--:--:--";
 
   if (status.isLoading) {
@@ -113,12 +113,12 @@ function AnalyticsPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-center">
         <div className="space-y-4">
-          <h1 className="text-xl font-semibold">Acesso restrito</h1>
+          <h1 className="text-xl font-semibold">Restricted Access</h1>
           <p className="text-sm text-muted-foreground">
-            Faça login no painel administrativo para ver o analytics de conversão.
+            Log in to the admin panel to view conversion analytics.
           </p>
           <Button asChild>
-            <Link to="/admin">Ir para o painel</Link>
+            <Link to="/admin">Go to panel</Link>
           </Button>
         </div>
       </main>
@@ -137,7 +137,7 @@ function AnalyticsPage() {
       anchor.click();
       URL.revokeObjectURL(url);
     } catch {
-      toast.error("Não foi possível exportar o CSV.");
+      toast.error("Could not export CSV.");
     }
   }
 
@@ -147,17 +147,17 @@ function AnalyticsPage() {
         <div className="space-y-1">
           <Button asChild variant="ghost" size="sm" className="-ml-2">
             <Link to="/admin">
-              <ArrowLeft className="size-4" /> Painel
+              <ArrowLeft className="size-4" /> Panel
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold">Analytics de conversão</h1>
+          <h1 className="text-2xl font-semibold">Conversion Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            Funil do checkout, métodos de pagamento, recusas e comportamento por loja.
+            Checkout funnel, payment methods, declines, and store behavior.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => void downloadCsv()}>
-            <Download className="size-4" /> Exportar CSV
+            <Download className="size-4" /> Export CSV
           </Button>
           <ClearAnalyticsButton storeId={storeId === "all" ? null : storeId} />
         </div>
@@ -180,10 +180,10 @@ function AnalyticsPage() {
 
         <Select value={storeId} onValueChange={setStoreId}>
           <SelectTrigger className="w-56">
-            <SelectValue placeholder="Todas as lojas" />
+            <SelectValue placeholder="All stores" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todas as lojas</SelectItem>
+            <SelectItem value="all">All stores</SelectItem>
             {(stores.data ?? []).map((store: { id: string; name: string }) => (
               <SelectItem key={store.id} value={store.id}>
                 {store.name}
@@ -197,7 +197,7 @@ function AnalyticsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos dispositivos</SelectItem>
+            <SelectItem value="all">All devices</SelectItem>
             <SelectItem value="mobile">Mobile</SelectItem>
             <SelectItem value="desktop">Desktop</SelectItem>
             <SelectItem value="tablet">Tablet</SelectItem>
@@ -208,40 +208,40 @@ function AnalyticsPage() {
       <section className="space-y-2">
         <div className="grid gap-4 sm:grid-cols-3">
           <RealtimeMetric
-            label="Online agora"
+            label="Online now"
             value={realtime.data?.online}
-            hint="Sessões com atividade nos últimos 60s"
+            hint="Sessions with activity in the last 60s"
           />
           <RealtimeMetric
-            label="Drawer de doação aberto agora"
+            label="Donation drawer open now"
             value={realtime.data?.cart}
-            hint="Drawer aberto no site principal, ativo nos últimos 5 min"
+            hint="Drawer open on main site, active in the last 5 min"
           />
           <RealtimeMetric
-            label="No checkout agora"
+            label="In checkout now"
             value={realtime.data?.checkout}
-            hint="No checkout e ativo nos últimos 5 min"
+            hint="In checkout and active in the last 5 min"
           />
           <RealtimeMetric
-            label="Abandonaram o drawer"
+            label="Abandoned drawer"
             value={realtime.data?.drawerAbandoned}
-            hint="Abriram o drawer, não chegaram ao checkout e estão 5+ min inativos"
+            hint="Opened drawer, did not reach checkout and are 5+ min inactive"
           />
           <RealtimeMetric
-            label="Taxa Drawer → Checkout"
+            label="Drawer → Checkout Rate"
             value={realtime.data?.drawerToCheckoutRate ?? undefined}
             suffix="%"
-            hint={`${realtime.data?.drawerToCheckout ?? 0} de ${realtime.data?.drawerOpened ?? 0} sessões que abriram o drawer (24h)`}
+            hint={`${realtime.data?.drawerToCheckout ?? 0} of ${realtime.data?.drawerOpened ?? 0} sessions that opened the drawer (24h)`}
           />
           <RealtimeMetric
-            label="Taxa de abandono do drawer"
+            label="Drawer abandonment rate"
             value={realtime.data?.drawerAbandonRate ?? undefined}
             suffix="%"
-            hint={`${realtime.data?.drawerAbandoned ?? 0} de ${realtime.data?.drawerOpened ?? 0} sessões que abriram o drawer (24h)`}
+            hint={`${realtime.data?.drawerAbandoned ?? 0} of ${realtime.data?.drawerOpened ?? 0} sessions that opened the drawer (24h)`}
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Última atualização: {lastUpdate} · atualiza automaticamente a cada 7s
+          Last update: {lastUpdate} · updates automatically every 7s
         </p>
       </section>
 
@@ -253,23 +253,23 @@ function AnalyticsPage() {
         <div className="space-y-6">
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Metric label="Checkouts" value={String(data.overview.totalCheckouts)} />
-            <Metric label="Tentativas de pagamento" value={String(data.overview.paymentAttempts)} />
+            <Metric label="Payment attempts" value={String(data.overview.paymentAttempts)} />
             <Metric
-              label="Taxa de conversão"
+              label="Conversion rate"
               value={`${data.overview.conversionRate}%`}
-              hint={`${data.overview.successfulPayments} pagamentos aprovados`}
+              hint={`${data.overview.successfulPayments} approved payments`}
             />
             <Metric
-              label="Taxa de recusa"
+              label="Decline rate"
               value={`${data.overview.declineRate}%`}
-              hint={`Ticket médio ${money(data.overview.averageTicketCents)}`}
+              hint={`Average ticket ${money(data.overview.averageTicketCents)}`}
             />
           </section>
 
           <Card>
             <CardHeader>
-              <CardTitle>Funil do checkout</CardTitle>
-              <CardDescription>Etapas por sessão única no período filtrado.</CardDescription>
+              <CardTitle>Checkout funnel</CardTitle>
+              <CardDescription>Stages per unique session in the filtered period.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {data.funnel.map((stage) => (
@@ -293,21 +293,21 @@ function AnalyticsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Métodos de pagamento</CardTitle>
+              <CardTitle>Payment methods</CardTitle>
               <CardDescription>
-                Disponibilidade, seleção e conversão por método (Apple Pay, Google Pay, Link, cartão).
+                Availability, selection, and conversion by method (Apple Pay, Google Pay, Link, card).
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Método</TableHead>
-                    <TableHead>Disponível</TableHead>
-                    <TableHead>Selecionado</TableHead>
-                    <TableHead>Sucesso</TableHead>
-                    <TableHead>Falha</TableHead>
-                    <TableHead>Conversão pós-seleção</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>Available</TableHead>
+                    <TableHead>Selected</TableHead>
+                    <TableHead>Success</TableHead>
+                    <TableHead>Failure</TableHead>
+                    <TableHead>Conversion after selection</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -327,21 +327,21 @@ function AnalyticsPage() {
           </Card>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <DimensionCard title="Dispositivos" rows={data.devices} />
-            <DimensionCard title="Navegadores" rows={data.browsers} />
-            <DimensionCard title="Sistemas operacionais" rows={data.operatingSystems} />
-            <DimensionCard title="Países" rows={data.countries} />
+            <DimensionCard title="Devices" rows={data.devices} />
+            <DimensionCard title="Browsers" rows={data.browsers} />
+            <DimensionCard title="Operating systems" rows={data.operatingSystems} />
+            <DimensionCard title="Countries" rows={data.countries} />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Recusas</CardTitle>
-                <CardDescription>{data.declines.total} recusas no período.</CardDescription>
+                <CardTitle>Declines</CardTitle>
+                <CardDescription>{data.declines.total} declines in the period.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 {data.declines.byCategory.length === 0 ? (
-                  <p className="text-muted-foreground">Sem recusas registradas.</p>
+                  <p className="text-muted-foreground">No declines recorded.</p>
                 ) : (
                   data.declines.byCategory.map((row) => (
                     <div key={row.category} className="flex justify-between">
@@ -355,17 +355,17 @@ function AnalyticsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Autenticação 3DS</CardTitle>
+                <CardTitle>3DS Authentication</CardTitle>
                 <CardDescription>
-                  {data.threeDs.challengeRate}% das tentativas exigiram autenticação.
+                  {data.threeDs.challengeRate}% of attempts required authentication.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <Row label="Desafios" value={String(data.threeDs.challenges)} />
-                <Row label="Sucesso" value={`${data.threeDs.successRate}%`} />
-                <Row label="Falha/abandono" value={`${data.threeDs.failureRate}%`} />
+                <Row label="Challenges" value={String(data.threeDs.challenges)} />
+                <Row label="Success" value={`${data.threeDs.successRate}%`} />
+                <Row label="Failure/abandonment" value={`${data.threeDs.failureRate}%`} />
                 <Row
-                  label="Tempo mediano até conclusão"
+                  label="Median time to completion"
                   value={`${Math.round(data.timings.medianCompletionSec)}s`}
                 />
               </CardContent>
@@ -374,24 +374,24 @@ function AnalyticsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Origem do tráfego</CardTitle>
-              <CardDescription>Atribuição por UTM ou referrer da sessão.</CardDescription>
+              <CardTitle>Traffic source</CardTitle>
+              <CardDescription>Attribution by UTM or session referrer.</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Origem</TableHead>
-                    <TableHead>Sessões</TableHead>
-                    <TableHead>Tentativas</TableHead>
-                    <TableHead>Conversão</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Sessions</TableHead>
+                    <TableHead>Attempts</TableHead>
+                    <TableHead>Conversion</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.sources.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-muted-foreground">
-                        Sem dados no período.
+                        No data in the period.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -411,9 +411,9 @@ function AnalyticsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Diagnóstico automático</CardTitle>
+              <CardTitle>Automatic diagnostics</CardTitle>
               <CardDescription>
-                Insights só são gerados com amostra estatística mínima de 30 checkouts.
+                Insights are only generated with a minimum statistical sample of 30 checkouts.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -506,7 +506,7 @@ function DimensionCard({
               <TableHead>Segmento</TableHead>
               <TableHead>Checkouts</TableHead>
               <TableHead>Sucessos</TableHead>
-              <TableHead>Conversão</TableHead>
+              <TableHead>Conversion</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

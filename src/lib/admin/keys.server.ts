@@ -32,7 +32,7 @@ export async function listStores(): Promise<AdminStore[]> {
     .from("stores")
     .select("id, name, slug, environment, status")
     .order("created_at", { ascending: true });
-  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível carregar as lojas.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Could not load stores.");
 
   const { data: keys } = await supabaseAdmin
     .from("store_api_keys")
@@ -55,7 +55,7 @@ export async function listApiKeys(): Promise<AdminApiKey[]> {
       "id, store_id, label, key_id, key_prefix, encrypted_key, status, last_used_at, revoked_at, created_at, stores(name)",
     )
     .order("created_at", { ascending: false });
-  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível carregar as credenciais.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Could not load credentials.");
 
   const { data: scopeRows } = await supabaseAdmin
     .from("store_api_key_scopes")
@@ -96,7 +96,7 @@ export async function rotateApiKey(keyId: string): Promise<{ fullKey: string; ke
     .select("id, store_id, label, status, stores(environment, name)")
     .eq("id", keyId)
     .maybeSingle();
-  if (!current) throw new PaymentError("NOT_FOUND", "Credencial não encontrada.");
+  if (!current) throw new PaymentError("NOT_FOUND", "Credential not found.");
 
   const environment =
     (current as { stores?: { environment?: "test" | "live" } | null }).stores?.environment ?? "live";
@@ -118,7 +118,7 @@ export async function rotateApiKey(keyId: string): Promise<{ fullKey: string; ke
     .select("id")
     .single();
   if (error || !inserted) {
-    throw new PaymentError("CONFIG_ERROR", "Não foi possível rotacionar a credencial.");
+    throw new PaymentError("CONFIG_ERROR", "Could not rotate credential.");
   }
 
   const { data: scopeRows } = await supabaseAdmin
@@ -158,7 +158,7 @@ export async function createApiKey(input: { storeId: string; label: string }): P
     .select("id, name, environment")
     .eq("id", input.storeId)
     .maybeSingle();
-  if (!store) throw new PaymentError("NOT_FOUND", "Loja não encontrada.");
+  if (!store) throw new PaymentError("NOT_FOUND", "Store not found.");
 
   const generated = generateStoreApiKey(store.environment);
   const keyHash = await sha256Hex(generated.fullKey);
@@ -172,7 +172,7 @@ export async function createApiKey(input: { storeId: string; label: string }): P
     encrypted_key: await encryptSecret(generated.fullKey),
     status: "ACTIVE",
   });
-  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível criar a credencial.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Could not create credential.");
 
   await recordAudit({
     actorEmail: "admin-panel",
@@ -190,7 +190,7 @@ export async function revokeApiKey(keyId: string): Promise<void> {
     .from("store_api_keys")
     .update({ status: "REVOKED", revoked_at: new Date().toISOString() })
     .eq("id", keyId);
-  if (error) throw new PaymentError("CONFIG_ERROR", "Não foi possível revogar a credencial.");
+  if (error) throw new PaymentError("CONFIG_ERROR", "Could not revoke credential.");
 
   await recordAudit({
     actorEmail: "admin-panel",
@@ -211,12 +211,12 @@ export async function revealApiKey(keyId: string): Promise<{ fullKey: string }> 
     .select("id, key_id, encrypted_key")
     .eq("id", keyId)
     .maybeSingle();
-  if (!data) throw new PaymentError("NOT_FOUND", "Credencial não encontrada.");
+  if (!data) throw new PaymentError("NOT_FOUND", "Credential not found.");
   const encrypted = (data as { encrypted_key?: string | null }).encrypted_key;
   if (!encrypted) {
     throw new PaymentError(
       "NOT_FOUND",
-      "Esta credencial foi criada antes do armazenamento cifrado. Rotacione para obter um valor visível.",
+      "This credential was created before encrypted storage. Rotate it to obtain a visible value.",
     );
   }
 
