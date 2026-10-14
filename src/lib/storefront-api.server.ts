@@ -12,7 +12,10 @@ function isLocal(url: string): boolean {
 /** Bases candidatas, em ordem de preferência. */
 function apiBaseUrls(): string[] {
   const origin = new URL(getRequest().url).origin;
-  const configured = process.env["PAYMENTS_API_BASE_URL"]?.trim().replace(/\/$/, "");
+  const configuredRaw = process.env["PAYMENTS_API_BASE_URL"]?.trim().replace(/\/$/, "");
+  // Ignora valores de exemplo/deixados pelo remix do projeto (ex.: PLACEHOLDER_VALUE_TO_BE_REPLACED)
+  const configured =
+    configuredRaw && /^https?:\/\//i.test(configuredRaw) ? configuredRaw : undefined;
 
   const candidates: string[] = [];
 
