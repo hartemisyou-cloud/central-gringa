@@ -78,6 +78,8 @@ export const Route = createFileRoute("/api/public/v1/orders")({
               publicToken: result.publicToken,
               /** Página de checkout hospedada (redirecionar o cliente para cá). */
               paymentUrl,
+              /** Receipt + ebook delivery page (downloads unlock after webhook-confirmed payment). */
+              receiptUrl: `${origin}/order/${result.publicToken}`,
               totals: {
                 currency: result.totals.currency,
                 subtotalCents: result.totals.subtotalCents,
