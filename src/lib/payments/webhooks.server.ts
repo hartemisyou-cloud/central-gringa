@@ -6,12 +6,25 @@ import type { Database } from "@/integrations/supabase/types";
 
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 
+/** Throws when a Supabase write/RPC failed so the event stays FAILED and Stripe retries. */
+function must<T extends { error: { message: string } | null }>(result: T, what: string): T {
+  if (result.error) throw new Error(`${what} failed: ${result.error.message}`);
+  return result;
+}
+
+/** Payment states that later failure/cancel/success events must never undo. */
+const SETTLED_AFTER_SUCCESS = new Set(["SUCCEEDED", "REFUNDED", "PARTIALLY_REFUNDED"]);
+const REFUND_STATES = new Set(["REFUNDED", "PARTIALLY_REFUNDED"]);
+
 async function markOrder(orderId: string, status: Database["public"]["Enums"]["order_status"]) {
   const patch: Database["public"]["Tables"]["orders"]["Update"] = { status };
   if (status === "PAID") patch.paid_at = new Date().toISOString();
-  await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
+  must(await supabaseAdmin.from("orders").update(patch).eq("id", orderId), "Order update");
 }
 
+async function rpc(name: "commit_order_stock" | "release_order_stock", orderId: string) {
+  must(await supabaseAdmin.rpc(name, { _order_id: orderId }), `RPC ${name}`);
+}
 
 async function logEvent(payment: PaymentRow, type: string, message: string) {
   await supabaseAdmin.from("payment_events").insert({
@@ -23,7 +36,7 @@ async function logEvent(payment: PaymentRow, type: string, message: string) {
   });
 }
 
-/** Espelha o estado financeiro definitivo no analytics (fonte: servidor). */
+/** Mirrors the final financial state into analytics (server source). */
 async function trackPayment(
   payment: PaymentRow,
   type: "payment_succeeded" | "payment_failed" | "payment_canceled",
@@ -45,22 +58,27 @@ async function trackPayment(
 }
 
 async function findPayment(providerPaymentId: string): Promise<PaymentRow | null> {
-  const { data } = await supabaseAdmin
-    .from("payments")
-    .select("*")
-    .eq("provider", "STRIPE")
-    .eq("provider_payment_id", providerPaymentId)
-    .maybeSingle();
+  const { data } = must(
+    await supabaseAdmin
+      .from("payments")
+      .select("*")
+      .eq("provider", "STRIPE")
+      .eq("provider_payment_id", providerPaymentId)
+      .maybeSingle(),
+    "Payment lookup",
+  );
   return data;
 }
 
-async function applyEvent(event: StripeEvent): Promise<string> {
+export async function applyEvent(event: StripeEvent): Promise<string> {
   const object = event.data.object as Record<string, unknown>;
 
   switch (event.type) {
     case "payment_intent.succeeded": {
       const payment = await findPayment(String(object["id"]));
       if (!payment) return "Payment not found locally (ignored).";
+      // A delayed success must never undo a refund.
+      if (REFUND_STATES.has(payment.status)) return "Late success after refund (ignored).";
       const charges = object["charges"] as { data?: Array<Record<string, unknown>> } | undefined;
       const method = charges?.data?.[0]?.["payment_method_details"] as
         | { type?: string }
@@ -68,20 +86,26 @@ async function applyEvent(event: StripeEvent): Promise<string> {
       // Every step below is idempotent so a retried event (after a partial
       // failure) completes the remaining steps instead of being skipped.
       if (payment.status !== "SUCCEEDED") {
+        must(
+          await supabaseAdmin
+            .from("payments")
+            .update({ status: "SUCCEEDED", payment_method: method?.type ?? null })
+            .eq("id", payment.id),
+          "Payment update",
+        );
+      }
+      const { data: order } = must(
         await supabaseAdmin
-          .from("payments")
-          .update({ status: "SUCCEEDED", payment_method: method?.type ?? null })
-          .eq("id", payment.id);
-      }
-      const { data: order } = await supabaseAdmin
-        .from("orders")
-        .select("status, stock_committed")
-        .eq("id", payment.order_id)
-        .maybeSingle();
-      if (order && order.status !== "PAID") await markOrder(payment.order_id, "PAID");
-      if (order && !order.stock_committed) {
-        await supabaseAdmin.rpc("commit_order_stock", { _order_id: payment.order_id });
-      }
+          .from("orders")
+          .select("status, stock_committed")
+          .eq("id", payment.order_id)
+          .maybeSingle(),
+        "Order lookup",
+      );
+      if (!order) throw new Error("Order missing for payment.");
+      if (REFUND_STATES.has(order.status)) return "Late success after refund (ignored).";
+      if (order.status !== "PAID") await markOrder(payment.order_id, "PAID");
+      if (!order.stock_committed) await rpc("commit_order_stock", payment.order_id);
       if (payment.status !== "SUCCEEDED") {
         await logEvent(payment, "PAYMENT_SUCCEEDED", "Payment confirmed by Stripe");
         await trackPayment(payment, "payment_succeeded", { paymentMethod: method?.type ?? null });
@@ -106,29 +130,37 @@ async function applyEvent(event: StripeEvent): Promise<string> {
     case "payment_intent.payment_failed": {
       const payment = await findPayment(String(object["id"]));
       if (!payment) return "Payment not found locally (ignored).";
-      const lastError = object["last_payment_error"] as { message?: string } | null;
-      await supabaseAdmin
-        .from("payments")
-        .update({ status: "FAILED", last_error: lastError?.message ?? null })
-        .eq("id", payment.id);
-      if (payment.status === "SUCCEEDED") return "Late failure after success (ignored).";
+      // Guard BEFORE any mutation: never overwrite success/refund/cancel records.
+      if (SETTLED_AFTER_SUCCESS.has(payment.status)) return "Late failure after success (ignored).";
+      if (payment.status === "CANCELLED") return "Late failure after cancel (ignored).";
+      const lastError = object["last_payment_error"] as
+        | { message?: string; decline_code?: string; code?: string }
+        | null;
+      must(
+        await supabaseAdmin
+          .from("payments")
+          .update({ status: "FAILED", last_error: lastError?.message ?? null })
+          .eq("id", payment.id),
+        "Payment update",
+      );
       await markOrder(payment.order_id, "PAYMENT_FAILED");
-      await supabaseAdmin.rpc("release_order_stock", { _order_id: payment.order_id });
+      await rpc("release_order_stock", payment.order_id);
       await logEvent(payment, "PAYMENT_FAILED", "Payment declined");
       await trackPayment(payment, "payment_failed", {
-        declineCode: (object["last_payment_error"] as { decline_code?: string; code?: string } | null)?.decline_code ??
-          (object["last_payment_error"] as { code?: string } | null)?.code ??
-          null,
+        declineCode: lastError?.decline_code ?? lastError?.code ?? null,
       });
       return "Payment declined.";
     }
     case "payment_intent.canceled": {
       const payment = await findPayment(String(object["id"]));
       if (!payment) return "Payment not found locally (ignored).";
-      if (payment.status === "SUCCEEDED") return "Late cancel after success (ignored).";
-      await supabaseAdmin.from("payments").update({ status: "CANCELLED" }).eq("id", payment.id);
+      if (SETTLED_AFTER_SUCCESS.has(payment.status)) return "Late cancel after success (ignored).";
+      must(
+        await supabaseAdmin.from("payments").update({ status: "CANCELLED" }).eq("id", payment.id),
+        "Payment update",
+      );
       await markOrder(payment.order_id, "CANCELLED");
-      await supabaseAdmin.rpc("release_order_stock", { _order_id: payment.order_id });
+      await rpc("release_order_stock", payment.order_id);
       await logEvent(payment, "PAYMENT_CANCELLED", "Payment cancelled");
       await trackPayment(payment, "payment_canceled");
       return "Payment cancelled.";
@@ -138,21 +170,25 @@ async function applyEvent(event: StripeEvent): Promise<string> {
       if (typeof intentId !== "string") return "Event without payment_intent (ignored).";
       const payment = await findPayment(intentId);
       if (!payment) return "Payment not found locally (ignored).";
-      const refunded = Number(object["amount_refunded"] ?? 0);
+      // Out-of-order refund events never shrink an already recorded refund.
+      const refunded = Math.max(Number(object["amount_refunded"] ?? 0), payment.refunded_cents ?? 0);
       const fully = refunded >= payment.amount_cents;
-      await supabaseAdmin
-        .from("payments")
-        .update({
-          refunded_cents: refunded,
-          status: fully ? "REFUNDED" : "PARTIALLY_REFUNDED",
-        })
-        .eq("id", payment.id);
+      must(
+        await supabaseAdmin
+          .from("payments")
+          .update({ refunded_cents: refunded, status: fully ? "REFUNDED" : "PARTIALLY_REFUNDED" })
+          .eq("id", payment.id),
+        "Payment update",
+      );
       await markOrder(payment.order_id, fully ? "REFUNDED" : "PARTIALLY_REFUNDED");
-      await supabaseAdmin
-        .from("refunds")
-        .update({ status: "SUCCEEDED" })
-        .eq("payment_id", payment.id)
-        .eq("status", "PENDING");
+      must(
+        await supabaseAdmin
+          .from("refunds")
+          .update({ status: "SUCCEEDED" })
+          .eq("payment_id", payment.id)
+          .eq("status", "PENDING"),
+        "Refund update",
+      );
       await logEvent(payment, "REFUND_APPLIED", fully ? "Full refund" : "Partial refund");
       return "Refund recorded.";
     }
@@ -170,8 +206,8 @@ async function applyEvent(event: StripeEvent): Promise<string> {
 }
 
 /**
- * Pipeline do webhook: assinatura -> deduplicação -> registro -> processamento.
- * O corpo RAW nunca é parseado antes da verificação da assinatura.
+ * Webhook pipeline: signature -> dedup -> record -> process.
+ * The RAW body is never parsed before the signature is verified.
  */
 export async function processStripeWebhook(input: {
   integrationId: string;
@@ -214,8 +250,13 @@ export async function processStripeWebhook(input: {
       .eq("provider", "STRIPE")
       .eq("stripe_event_id", event.id)
       .maybeSingle();
-    if (!shouldReprocess(existing)) {
+    if (existing?.processing_status === "PROCESSED") {
       return { status: 200, body: { received: true, duplicate: true } };
+    }
+    if (!shouldReprocess(existing)) {
+      // Another delivery is still in flight. Answer non-2xx so Stripe retries
+      // later; if that delivery crashed, the retry (after 2 min) reprocesses it.
+      return { status: 409, body: { received: true, inFlight: true } };
     }
     await supabaseAdmin
       .from("webhook_events")
@@ -225,6 +266,7 @@ export async function processStripeWebhook(input: {
 
   try {
     const message = await applyEvent(event);
+    // Written last: an event is PROCESSED only after every financial write succeeded.
     await supabaseAdmin
       .from("webhook_events")
       .update({

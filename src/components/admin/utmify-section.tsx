@@ -77,13 +77,13 @@ export function UtmifySection() {
           <CardTitle>Tracking · UTMify</CardTitle>
         </div>
         <CardDescription>
-          Envio server-side da venda aprovada para a API da UTMify, por loja. O API Token fica
-          cifrado no servidor e nunca é exibido novamente. O webhook Stripe → UTMify existente
-          continua ativo — o envio direto é idempotente por pedido e não duplica vendas.
+          Server-side send of approved sales to the UTMify API, per store. The API Token is
+          encrypted on the server and never shown again. The existing Stripe → UTMify webhook
+          stays active — direct sends are idempotent per order and never duplicate sales.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {settings.isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+        {settings.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {(settings.data ?? []).map((store) => {
           const draft: Draft = drafts[store.storeId] ?? {
             webhookId: store.webhookId ?? "",
@@ -189,14 +189,14 @@ export function UtmifySection() {
                     await queryClient.invalidateQueries({ queryKey: ["admin", "utmify"] });
                   }}
                 >
-                  Testar conexão UTMify
+                  Test UTMify connection
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={async () => {
                     const result = await retry({ data: { storeId: store.storeId } });
-                    toast.success(`${result.retried} envio(s) reprocessado(s).`);
+                    toast.success(`${result.retried} send(s) retried.`);
                     await queryClient.invalidateQueries({ queryKey: ["admin", "utmify"] });
                   }}
                 >
@@ -239,9 +239,9 @@ function SingleOrderResend() {
       <CardHeader>
         <CardTitle className="text-base">One-time resend to UTMify (diagnostic)</CardTitle>
         <CardDescription>
-          Reenvia somente a ordem informada, usando `order_attribution.client_ip` em
-          `customer.ip`. Não cria pedido, PaymentIntent ou cobrança, não altera o status
-          financeiro e não dispara Meta.
+          Resends only the given order, using `order_attribution.client_ip` as
+          `customer.ip`. Does not create an order, PaymentIntent or charge, does not change financial status
+          and does not trigger Meta.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
