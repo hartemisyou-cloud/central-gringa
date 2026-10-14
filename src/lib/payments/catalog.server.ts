@@ -26,7 +26,7 @@ export async function listStoreProducts(store: StoreRow): Promise<PublicProduct[
     .eq("active", true)
     .order("name", { ascending: true });
 
-  if (error) throw new PaymentError("INVALID_INPUT", "Falha ao carregar o catálogo.");
+  if (error) throw new PaymentError("INVALID_INPUT", "Failed to load the catalog.");
 
   return (data ?? []).map((row) => ({
     id: row.id,

@@ -27,7 +27,7 @@ async function loadStore(storeId: string) {
     .eq("id", storeId)
     .maybeSingle();
   if (error) throw new PaymentError("PROVIDER_ERROR", error.message);
-  if (!data) throw new PaymentError("NOT_FOUND", "Loja não encontrada.");
+  if (!data) throw new PaymentError("NOT_FOUND", "Store not found.");
   return data;
 }
 

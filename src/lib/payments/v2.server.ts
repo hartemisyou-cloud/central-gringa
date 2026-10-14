@@ -19,7 +19,7 @@ type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"]
  */
 export async function bootstrapCheckoutV2(input: { store: StoreRow; sku: string }) {
   const sku = input.sku.trim();
-  if (!sku) throw new PaymentError("INVALID_INPUT", "SKU obrigatório.");
+  if (!sku) throw new PaymentError("INVALID_INPUT", "SKU is required.");
 
   const { data: product } = await supabaseAdmin
     .from("products")
@@ -28,7 +28,7 @@ export async function bootstrapCheckoutV2(input: { store: StoreRow; sku: string 
     .eq("sku", sku)
     .maybeSingle();
 
-  if (!product) throw new PaymentError("SKU_NOT_FOUND", "SKU não encontrado para esta loja.");
+  if (!product) throw new PaymentError("SKU_NOT_FOUND", "SKU not found for this store.");
 
   const available = product.active === true && product.stock - product.reserved_stock > 0;
   if (!available) {
@@ -38,7 +38,7 @@ export async function bootstrapCheckoutV2(input: { store: StoreRow; sku: string 
   // Publishable key resolvida dinamicamente: loja -> integração Stripe ACTIVE
   // do mesmo ambiente. Nenhuma chave é hardcodada.
   if (!input.store.stripe_integration_id) {
-    throw new PaymentError("CONFIG_ERROR", "Loja sem integração de pagamento configurada.");
+    throw new PaymentError("CONFIG_ERROR", "Store has no payment integration configured.");
   }
   const { data: integrationRow } = await supabaseAdmin
     .from("stripe_integrations")
@@ -51,14 +51,14 @@ export async function bootstrapCheckoutV2(input: { store: StoreRow; sku: string 
     "id" | "status" | "environment" | "publishable_key"
   > | null;
 
-  if (!integration) throw new PaymentError("CONFIG_ERROR", "Integração de pagamento não encontrada.");
+  if (!integration) throw new PaymentError("CONFIG_ERROR", "Payment integration not found.");
   if (integration.status !== "ACTIVE") {
-    throw new PaymentError("CONFIG_ERROR", "Integração de pagamento inativa.");
+    throw new PaymentError("CONFIG_ERROR", "Payment integration inactive.");
   }
   if (integration.environment !== input.store.environment) {
     throw new PaymentError(
       "CONFIG_ERROR",
-      "Ambiente da loja e da integração divergem (test/live não podem se misturar).",
+      "Store and integration environments differ (test/live cannot be mixed).",
     );
   }
 
@@ -111,7 +111,7 @@ export async function getCheckoutV2Status(input: { store: StoreRow; publicToken:
     .eq("store_id", input.store.id) // isolamento entre lojas (anti-IDOR)
     .maybeSingle();
 
-  if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
 
   const { data: payment } = await supabaseAdmin
     .from("payments")

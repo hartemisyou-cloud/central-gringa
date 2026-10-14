@@ -35,7 +35,7 @@ export interface ShippingService {
 export function normalizePostalCode(postalCode: string): string {
   const digits = (postalCode ?? "").replace(/\D/g, "");
   if (digits.length !== 8) {
-    throw new PaymentError("INVALID_INPUT", "CEP inválido. Informe 8 dígitos.");
+    throw new PaymentError("INVALID_INPUT", "Invalid postal code.");
   }
   return digits;
 }
@@ -99,7 +99,7 @@ export class TableRateShippingService implements ShippingService {
     return [
       {
         id: "standard",
-        label: free ? "Entrega padrão (frete grátis)" : "Entrega padrão",
+        label: free ? "Standard shipping (free)" : "Standard shipping",
         amountCents: standard,
         estimatedDays: region === "SUDESTE" ? 4 : 8,
         provider: this.provider,

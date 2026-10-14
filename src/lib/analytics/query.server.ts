@@ -372,7 +372,7 @@ function buildInsights(input: {
     if (Math.abs(delta) >= 5) {
       out.push({
         severity: delta > 0 ? "warning" : "info",
-        title: delta > 0 ? "Conversão no mobile abaixo do desktop" : "Conversão no mobile acima do desktop",
+        title: delta > 0 ? "Mobile conversion below desktop" : "Mobile conversion above desktop",
         detail: `Mobile ${mobile.conversionRate}% vs desktop ${desktop.conversionRate}% (${Math.abs(delta)} p.p.).`,
       });
     }
@@ -385,7 +385,7 @@ function buildInsights(input: {
     if (Math.abs(delta) >= 5) {
       out.push({
         severity: "info",
-        title: "Diferença de conversão entre Apple Pay e cartão",
+        title: "Conversion gap between Apple Pay and card",
         detail: `Apple Pay converte ${delta > 0 ? "+" : ""}${delta} p.p. em relação ao cartão após a seleção.`,
       });
     }
@@ -395,8 +395,8 @@ function buildInsights(input: {
   if (link && link.available === 0) {
     out.push({
       severity: "info",
-      title: "Link indisponível nesta conta/período",
-      detail: "Nenhum evento de disponibilidade do Link foi registrado — isto não é considerado erro.",
+      title: "Link unavailable for this account/period",
+      detail: "No Link availability events were recorded — this is not an error.",
     });
   }
 
@@ -414,7 +414,7 @@ function buildInsights(input: {
   if (input.threeDs.challenges >= MIN_SAMPLE && input.threeDs.failureRate >= 20) {
     out.push({
       severity: "warning",
-      title: "Falha de autenticação 3DS elevada",
+      title: "High 3DS authentication failure",
       detail: `${input.threeDs.failureRate}% das autenticações falharam ou foram abandonadas.`,
     });
   }
