@@ -334,10 +334,10 @@ function PaidOrderTest({ storeId }: { storeId: string }) {
     <div className="space-y-3 rounded-md border border-dashed p-3">
       <Label>Purchase test with real order</Label>
       <p className="text-xs text-muted-foreground">
-        Usamos um pedido PAID apenas como referência para montar o MESMO payload que a produção
-        enviaria (fbp, fbc, IP, User-Agent, e-mail/telefone hashados, event_source_url, UTMs e
-        order_id), acrescentando somente o Test Event Code. O pedido não é alterado: sem
-        PaymentIntent, sem cobrança, sem webhook, sem UTMify e sem gravar em
+        Uses a PAID order only as a reference to build the SAME payload production would
+        send (fbp, fbc, IP, User-Agent, hashed email/phone, event_source_url, UTMs and
+        order_id), adding only the Test Event Code. The order is not changed: no
+        PaymentIntent, no charge, no webhook, no UTMify and no write to
         meta_conversion_events.
       </p>
 
@@ -497,7 +497,7 @@ function AttributedPaidOrderTest({ storeId }: { storeId: string }) {
       <Label>Test Purchase with PAID order</Label>
       <p className="text-xs text-muted-foreground">
         Uses the most recent PAID order from this store that has an attribution record, sending the
-        Purchase apenas como Test Event (test_event_code da loja) com os dados exatamente como
+        Purchase only as a Test Event (the store's test_event_code) with the data exactly as
         they are stored. The order is not changed and nothing in production is triggered.
       </p>
 
@@ -700,8 +700,8 @@ function OrderDiagnosticsTest({ storeId }: { storeId: string }) {
           <div className="space-y-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
             <p className="text-xs">
               Send the Purchase for order #{show(detail.orderNumber)} to Meta as{" "}
-              <strong>TEST EVENT (TEST2904)</strong>? Isto NÃO registra venda, não altera o pedido e
-              usa exatamente os dados exibidos acima.
+              <strong>TEST EVENT (TEST2904)</strong>? This does NOT record a sale, does not change the order and
+              uses exactly the data shown above.
             </p>
             <div className="flex gap-2">
               <Button size="sm" disabled={phase !== "idle"} onClick={send}>
