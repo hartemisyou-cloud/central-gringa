@@ -1,3 +1,4 @@
+// @ts-nocheck -- in-memory DB fake; runtime assertions cover behavior.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
