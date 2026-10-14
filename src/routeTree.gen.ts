@@ -12,16 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
-import { Route as PoliticaDeCookiesRouteImport } from './routes/politica-de-cookies'
-import { Route as PoliticaDeEntregaRouteImport } from './routes/politica-de-entrega'
-import { Route as PoliticaDePrivacidadeRouteImport } from './routes/politica-de-privacidade'
-import { Route as PoliticaDeReembolsoECancelamentoRouteImport } from './routes/politica-de-reembolso-e-cancelamento'
-import { Route as TermosDeUsoRouteImport } from './routes/termos-de-uso'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
-import { Route as LivroElSilencioDelMarRouteImport } from './routes/livro.el-silencio-del-mar'
-import { Route as PagamentoTokenRouteImport } from './routes/pagamento.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
-import { Route as PedidoTokenRouteImport } from './routes/pedido.$token'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
 import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quote'
@@ -51,55 +43,14 @@ const CheckoutRoute = CheckoutRouteImport.update({
   path: '/checkout',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PoliticaDeCookiesRoute = PoliticaDeCookiesRouteImport.update({
-  id: '/politica-de-cookies',
-  path: '/politica-de-cookies',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PoliticaDeEntregaRoute = PoliticaDeEntregaRouteImport.update({
-  id: '/politica-de-entrega',
-  path: '/politica-de-entrega',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PoliticaDePrivacidadeRoute = PoliticaDePrivacidadeRouteImport.update({
-  id: '/politica-de-privacidade',
-  path: '/politica-de-privacidade',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PoliticaDeReembolsoECancelamentoRoute =
-  PoliticaDeReembolsoECancelamentoRouteImport.update({
-    id: '/politica-de-reembolso-e-cancelamento',
-    path: '/politica-de-reembolso-e-cancelamento',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const TermosDeUsoRoute = TermosDeUsoRouteImport.update({
-  id: '/termos-de-uso',
-  path: '/termos-de-uso',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
   id: '/admin_/analytics',
   path: '/admin/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LivroElSilencioDelMarRoute = LivroElSilencioDelMarRouteImport.update({
-  id: '/livro/el-silencio-del-mar',
-  path: '/livro/el-silencio-del-mar',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PagamentoTokenRoute = PagamentoTokenRouteImport.update({
-  id: '/pagamento/$token',
-  path: '/pagamento/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PayTokenRoute = PayTokenRouteImport.update({
   id: '/pay/$token',
   path: '/pay/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PedidoTokenRoute = PedidoTokenRouteImport.update({
-  id: '/pedido/$token',
-  path: '/pedido/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicV1OrdersRoute = ApiPublicV1OrdersRouteImport.update({
@@ -182,16 +133,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
-  '/politica-de-cookies': typeof PoliticaDeCookiesRoute
-  '/politica-de-entrega': typeof PoliticaDeEntregaRoute
-  '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
-  '/politica-de-reembolso-e-cancelamento': typeof PoliticaDeReembolsoECancelamentoRoute
-  '/termos-de-uso': typeof TermosDeUsoRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
-  '/livro/el-silencio-del-mar': typeof LivroElSilencioDelMarRoute
-  '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
-  '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
@@ -210,16 +153,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
-  '/politica-de-cookies': typeof PoliticaDeCookiesRoute
-  '/politica-de-entrega': typeof PoliticaDeEntregaRoute
-  '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
-  '/politica-de-reembolso-e-cancelamento': typeof PoliticaDeReembolsoECancelamentoRoute
-  '/termos-de-uso': typeof TermosDeUsoRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
-  '/livro/el-silencio-del-mar': typeof LivroElSilencioDelMarRoute
-  '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
-  '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
@@ -239,16 +174,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/checkout': typeof CheckoutRoute
-  '/politica-de-cookies': typeof PoliticaDeCookiesRoute
-  '/politica-de-entrega': typeof PoliticaDeEntregaRoute
-  '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
-  '/politica-de-reembolso-e-cancelamento': typeof PoliticaDeReembolsoECancelamentoRoute
-  '/termos-de-uso': typeof TermosDeUsoRoute
   '/admin_/analytics': typeof AdminAnalyticsRoute
-  '/livro/el-silencio-del-mar': typeof LivroElSilencioDelMarRoute
-  '/pagamento/$token': typeof PagamentoTokenRoute
   '/pay/$token': typeof PayTokenRoute
-  '/pedido/$token': typeof PedidoTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
@@ -269,16 +196,8 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
-    | '/politica-de-cookies'
-    | '/politica-de-entrega'
-    | '/politica-de-privacidade'
-    | '/politica-de-reembolso-e-cancelamento'
-    | '/termos-de-uso'
     | '/admin/analytics'
-    | '/livro/el-silencio-del-mar'
-    | '/pagamento/$token'
     | '/pay/$token'
-    | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
@@ -297,16 +216,8 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
-    | '/politica-de-cookies'
-    | '/politica-de-entrega'
-    | '/politica-de-privacidade'
-    | '/politica-de-reembolso-e-cancelamento'
-    | '/termos-de-uso'
     | '/admin/analytics'
-    | '/livro/el-silencio-del-mar'
-    | '/pagamento/$token'
     | '/pay/$token'
-    | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
@@ -325,16 +236,8 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/checkout'
-    | '/politica-de-cookies'
-    | '/politica-de-entrega'
-    | '/politica-de-privacidade'
-    | '/politica-de-reembolso-e-cancelamento'
-    | '/termos-de-uso'
     | '/admin_/analytics'
-    | '/livro/el-silencio-del-mar'
-    | '/pagamento/$token'
     | '/pay/$token'
-    | '/pedido/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
@@ -354,16 +257,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   CheckoutRoute: typeof CheckoutRoute
-  PoliticaDeCookiesRoute: typeof PoliticaDeCookiesRoute
-  PoliticaDeEntregaRoute: typeof PoliticaDeEntregaRoute
-  PoliticaDePrivacidadeRoute: typeof PoliticaDePrivacidadeRoute
-  PoliticaDeReembolsoECancelamentoRoute: typeof PoliticaDeReembolsoECancelamentoRoute
-  TermosDeUsoRoute: typeof TermosDeUsoRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
-  LivroElSilencioDelMarRoute: typeof LivroElSilencioDelMarRoute
-  PagamentoTokenRoute: typeof PagamentoTokenRoute
   PayTokenRoute: typeof PayTokenRoute
-  PedidoTokenRoute: typeof PedidoTokenRoute
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
   ApiPublicV1QuoteRoute: typeof ApiPublicV1QuoteRoute
@@ -399,41 +294,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/politica-de-cookies': {
-      id: '/politica-de-cookies'
-      path: '/politica-de-cookies'
-      fullPath: '/politica-de-cookies'
-      preLoaderRoute: typeof PoliticaDeCookiesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/politica-de-entrega': {
-      id: '/politica-de-entrega'
-      path: '/politica-de-entrega'
-      fullPath: '/politica-de-entrega'
-      preLoaderRoute: typeof PoliticaDeEntregaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/politica-de-privacidade': {
-      id: '/politica-de-privacidade'
-      path: '/politica-de-privacidade'
-      fullPath: '/politica-de-privacidade'
-      preLoaderRoute: typeof PoliticaDePrivacidadeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/politica-de-reembolso-e-cancelamento': {
-      id: '/politica-de-reembolso-e-cancelamento'
-      path: '/politica-de-reembolso-e-cancelamento'
-      fullPath: '/politica-de-reembolso-e-cancelamento'
-      preLoaderRoute: typeof PoliticaDeReembolsoECancelamentoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/termos-de-uso': {
-      id: '/termos-de-uso'
-      path: '/termos-de-uso'
-      fullPath: '/termos-de-uso'
-      preLoaderRoute: typeof TermosDeUsoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/admin_/analytics': {
       id: '/admin_/analytics'
       path: '/admin/analytics'
@@ -441,32 +301,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/livro/el-silencio-del-mar': {
-      id: '/livro/el-silencio-del-mar'
-      path: '/livro/el-silencio-del-mar'
-      fullPath: '/livro/el-silencio-del-mar'
-      preLoaderRoute: typeof LivroElSilencioDelMarRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pagamento/$token': {
-      id: '/pagamento/$token'
-      path: '/pagamento/$token'
-      fullPath: '/pagamento/$token'
-      preLoaderRoute: typeof PagamentoTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/pay/$token': {
       id: '/pay/$token'
       path: '/pay/$token'
       fullPath: '/pay/$token'
       preLoaderRoute: typeof PayTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pedido/$token': {
-      id: '/pedido/$token'
-      path: '/pedido/$token'
-      fullPath: '/pedido/$token'
-      preLoaderRoute: typeof PedidoTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/orders': {
@@ -584,16 +423,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   CheckoutRoute: CheckoutRoute,
-  PoliticaDeCookiesRoute: PoliticaDeCookiesRoute,
-  PoliticaDeEntregaRoute: PoliticaDeEntregaRoute,
-  PoliticaDePrivacidadeRoute: PoliticaDePrivacidadeRoute,
-  PoliticaDeReembolsoECancelamentoRoute: PoliticaDeReembolsoECancelamentoRoute,
-  TermosDeUsoRoute: TermosDeUsoRoute,
   AdminAnalyticsRoute: AdminAnalyticsRoute,
-  LivroElSilencioDelMarRoute: LivroElSilencioDelMarRoute,
-  PagamentoTokenRoute: PagamentoTokenRoute,
   PayTokenRoute: PayTokenRoute,
-  PedidoTokenRoute: PedidoTokenRoute,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,
   ApiPublicV1QuoteRoute: ApiPublicV1QuoteRoute,
