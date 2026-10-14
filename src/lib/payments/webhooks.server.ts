@@ -60,71 +60,84 @@ async function applyEvent(event: StripeEvent): Promise<string> {
   switch (event.type) {
     case "payment_intent.succeeded": {
       const payment = await findPayment(String(object["id"]));
-      if (!payment) return "Pagamento não encontrado localmente (ignorado).";
-      if (payment.status === "SUCCEEDED") return "Já processado.";
+      if (!payment) return "Payment not found locally (ignored).";
       const charges = object["charges"] as { data?: Array<Record<string, unknown>> } | undefined;
       const method = charges?.data?.[0]?.["payment_method_details"] as
         | { type?: string }
         | undefined;
-      await supabaseAdmin
-        .from("payments")
-        .update({ status: "SUCCEEDED", payment_method: method?.type ?? null })
-        .eq("id", payment.id);
-      await markOrder(payment.order_id, "PAID");
-      await supabaseAdmin.rpc("commit_order_stock", { _order_id: payment.order_id });
-      await logEvent(payment, "PAYMENT_SUCCEEDED", "Pagamento confirmado pela Stripe");
-      await trackPayment(payment, "payment_succeeded", { paymentMethod: method?.type ?? null });
-      // Meta CAPI: integração independente. Uma falha aqui NUNCA altera o
-      // estado financeiro do pedido nem interrompe o webhook (UTMify inclusive).
+      // Every step below is idempotent so a retried event (after a partial
+      // failure) completes the remaining steps instead of being skipped.
+      if (payment.status !== "SUCCEEDED") {
+        await supabaseAdmin
+          .from("payments")
+          .update({ status: "SUCCEEDED", payment_method: method?.type ?? null })
+          .eq("id", payment.id);
+      }
+      const { data: order } = await supabaseAdmin
+        .from("orders")
+        .select("status, stock_committed")
+        .eq("id", payment.order_id)
+        .maybeSingle();
+      if (order && order.status !== "PAID") await markOrder(payment.order_id, "PAID");
+      if (order && !order.stock_committed) {
+        await supabaseAdmin.rpc("commit_order_stock", { _order_id: payment.order_id });
+      }
+      if (payment.status !== "SUCCEEDED") {
+        await logEvent(payment, "PAYMENT_SUCCEEDED", "Payment confirmed by Stripe");
+        await trackPayment(payment, "payment_succeeded", { paymentMethod: method?.type ?? null });
+      }
+      // Ebook delivery is gated on orders.status = PAID (see fulfillment.server.ts):
+      // no extra write is needed, so delivery is naturally idempotent.
+      // Meta CAPI / UTMify keep their own idempotency keys and never affect payment state.
       try {
         const { sendPurchaseForOrder } = await import("@/lib/meta/capi.server");
         await sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id });
       } catch (error) {
         console.error("[meta-capi] purchase dispatch failed", (error as Error).message);
       }
-      // UTMify (API direta): independente do webhook Stripe → UTMify existente,
-      // que continua ativo. Idempotente por (store_id, order_id, "paid").
       try {
         const { sendSaleForOrder } = await import("@/lib/utmify/api.server");
         await sendSaleForOrder({ orderId: payment.order_id, storeId: payment.store_id });
       } catch (error) {
         console.error("[utmify] sale dispatch failed", (error as Error).message);
       }
-      return "Pagamento confirmado.";
+      return "Payment confirmed.";
     }
     case "payment_intent.payment_failed": {
       const payment = await findPayment(String(object["id"]));
-      if (!payment) return "Pagamento não encontrado localmente (ignorado).";
+      if (!payment) return "Payment not found locally (ignored).";
       const lastError = object["last_payment_error"] as { message?: string } | null;
       await supabaseAdmin
         .from("payments")
         .update({ status: "FAILED", last_error: lastError?.message ?? null })
         .eq("id", payment.id);
+      if (payment.status === "SUCCEEDED") return "Late failure after success (ignored).";
       await markOrder(payment.order_id, "PAYMENT_FAILED");
       await supabaseAdmin.rpc("release_order_stock", { _order_id: payment.order_id });
-      await logEvent(payment, "PAYMENT_FAILED", "Pagamento recusado");
+      await logEvent(payment, "PAYMENT_FAILED", "Payment declined");
       await trackPayment(payment, "payment_failed", {
         declineCode: (object["last_payment_error"] as { decline_code?: string; code?: string } | null)?.decline_code ??
           (object["last_payment_error"] as { code?: string } | null)?.code ??
           null,
       });
-      return "Pagamento recusado.";
+      return "Payment declined.";
     }
     case "payment_intent.canceled": {
       const payment = await findPayment(String(object["id"]));
-      if (!payment) return "Pagamento não encontrado localmente (ignorado).";
+      if (!payment) return "Payment not found locally (ignored).";
+      if (payment.status === "SUCCEEDED") return "Late cancel after success (ignored).";
       await supabaseAdmin.from("payments").update({ status: "CANCELLED" }).eq("id", payment.id);
       await markOrder(payment.order_id, "CANCELLED");
       await supabaseAdmin.rpc("release_order_stock", { _order_id: payment.order_id });
-      await logEvent(payment, "PAYMENT_CANCELLED", "Pagamento cancelado");
+      await logEvent(payment, "PAYMENT_CANCELLED", "Payment cancelled");
       await trackPayment(payment, "payment_canceled");
-      return "Pagamento cancelado.";
+      return "Payment cancelled.";
     }
     case "charge.refunded": {
       const intentId = object["payment_intent"];
-      if (typeof intentId !== "string") return "Evento sem payment_intent (ignorado).";
+      if (typeof intentId !== "string") return "Event without payment_intent (ignored).";
       const payment = await findPayment(intentId);
-      if (!payment) return "Pagamento não encontrado localmente (ignorado).";
+      if (!payment) return "Payment not found locally (ignored).";
       const refunded = Number(object["amount_refunded"] ?? 0);
       const fully = refunded >= payment.amount_cents;
       await supabaseAdmin
@@ -140,19 +153,19 @@ async function applyEvent(event: StripeEvent): Promise<string> {
         .update({ status: "SUCCEEDED" })
         .eq("payment_id", payment.id)
         .eq("status", "PENDING");
-      await logEvent(payment, "REFUND_APPLIED", fully ? "Reembolso total" : "Reembolso parcial");
-      return "Reembolso registrado.";
+      await logEvent(payment, "REFUND_APPLIED", fully ? "Full refund" : "Partial refund");
+      return "Refund recorded.";
     }
     case "charge.dispute.created": {
       const intentId = object["payment_intent"];
-      if (typeof intentId !== "string") return "Evento sem payment_intent (ignorado).";
+      if (typeof intentId !== "string") return "Event without payment_intent (ignored).";
       const payment = await findPayment(intentId);
-      if (!payment) return "Pagamento não encontrado localmente (ignorado).";
-      await logEvent(payment, "DISPUTE_OPENED", "Disputa/chargeback aberto");
-      return "Disputa registrada.";
+      if (!payment) return "Payment not found locally (ignored).";
+      await logEvent(payment, "DISPUTE_OPENED", "Dispute/chargeback opened");
+      return "Dispute recorded.";
     }
     default:
-      return "Evento não tratado.";
+      return "Unhandled event.";
   }
 }
 
@@ -172,7 +185,7 @@ export async function processStripeWebhook(input: {
     .maybeSingle();
 
   if (!integration?.webhook_secret_ciphertext) {
-    throw new PaymentError("CONFIG_ERROR", "Webhook não configurado para esta integração.");
+    throw new PaymentError("CONFIG_ERROR", "Webhook not configured for this integration.");
   }
 
   const secret = await decryptSecret(integration.webhook_secret_ciphertext);
@@ -180,7 +193,7 @@ export async function processStripeWebhook(input: {
 
   const expectedLive = integration.environment === "live";
   if (event.livemode !== expectedLive) {
-    throw new PaymentError("FORBIDDEN", "Ambiente do evento não corresponde à integração.");
+    throw new PaymentError("FORBIDDEN", "Event environment does not match the integration.");
   }
 
   const { error: insertError } = await supabaseAdmin.from("webhook_events").insert({
@@ -192,8 +205,22 @@ export async function processStripeWebhook(input: {
   });
 
   if (insertError) {
-    // Violação da UNIQUE(provider, stripe_event_id): evento duplicado.
-    return { status: 200, body: { received: true, duplicate: true } };
+    // UNIQUE(provider, stripe_event_id): seen before. Only skip when it was
+    // actually processed; FAILED (or stuck RECEIVED) events are retried so a
+    // transient error never loses a payment confirmation.
+    const { data: existing } = await supabaseAdmin
+      .from("webhook_events")
+      .select("processing_status, received_at")
+      .eq("provider", "STRIPE")
+      .eq("stripe_event_id", event.id)
+      .maybeSingle();
+    if (!shouldReprocess(existing)) {
+      return { status: 200, body: { received: true, duplicate: true } };
+    }
+    await supabaseAdmin
+      .from("webhook_events")
+      .update({ processing_status: "RECEIVED", error_message: null })
+      .eq("stripe_event_id", event.id);
   }
 
   try {
@@ -219,4 +246,18 @@ export async function processStripeWebhook(input: {
       .eq("stripe_event_id", event.id);
     throw error;
   }
+}
+
+/** Decides whether an already-recorded event must be processed again. */
+export function shouldReprocess(
+  existing: { processing_status: string; received_at: string } | null,
+  now: number = Date.now(),
+): boolean {
+  if (!existing) return true;
+  if (existing.processing_status === "FAILED") return true;
+  if (existing.processing_status === "RECEIVED") {
+    // Another delivery may still be in flight; retry only once it looks stuck.
+    return now - new Date(existing.received_at).getTime() > 2 * 60 * 1000;
+  }
+  return false;
 }
