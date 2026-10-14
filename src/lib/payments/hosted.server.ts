@@ -35,12 +35,12 @@ export async function getHostedPaymentSession(
     )
     .eq("public_token", publicToken)
     .maybeSingle();
-  if (!order) throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+  if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
   if (options?.storeId && order.store_id !== options.storeId) {
-    throw new PaymentError("NOT_FOUND", "Pedido não encontrado.");
+    throw new PaymentError("NOT_FOUND", "Order not found.");
   }
   if (!["PENDING_PAYMENT", "PAYMENT_PROCESSING"].includes(order.status)) {
-    throw new PaymentError("INVALID_STATE", "Este pedido não aceita novos pagamentos.");
+    throw new PaymentError("INVALID_STATE", "This order no longer accepts payments.");
   }
 
   const { data: store } = await supabaseAdmin
@@ -48,11 +48,11 @@ export async function getHostedPaymentSession(
     .select("*")
     .eq("id", order.store_id)
     .maybeSingle();
-  if (!store) throw new PaymentError("NOT_FOUND", "Loja não encontrada.");
+  if (!store) throw new PaymentError("NOT_FOUND", "Store not found.");
 
   const payment = await createOrderPayment({ store: store as StoreRow, orderId: order.id });
   if (!payment.clientSecret) {
-    throw new PaymentError("INVALID_STATE", "Não foi possível iniciar o pagamento.");
+    throw new PaymentError("INVALID_STATE", "Could not start the payment.");
   }
 
   const items = order.order_items ?? [];
@@ -61,7 +61,7 @@ export async function getHostedPaymentSession(
     ? items.length > 1
       ? `${first.product_name} + ${items.length - 1} item(s)`
       : first.product_name
-    : `Pedido ${order.order_number}`;
+    : `Order ${order.order_number}`;
 
   const { getPublicMetaConfig } = await import("@/lib/meta/config.server");
   const meta = await getPublicMetaConfig(order.store_id).catch(() => ({ pixelId: null }));

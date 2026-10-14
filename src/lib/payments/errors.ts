@@ -56,6 +56,6 @@ export function toErrorResponse(error: unknown): { status: number; body: Record<
   console.error("[payments] unexpected error", error instanceof Error ? error.message : error);
   return {
     status: 500,
-    body: { error: { code: "INTERNAL_ERROR", message: "Erro interno ao processar a requisição." } },
+    body: { error: { code: "INTERNAL_ERROR", message: "Internal error while processing the request." } },
   };
 }

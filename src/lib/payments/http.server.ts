@@ -23,8 +23,9 @@ export const customerSchema = z.object({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
   email: z.string().trim().email().max(160),
-  // Telefones internacionais variam muito de formato/comprimento.
-  phone: z.string().trim().min(5).max(32),
+  // Optional: digital-only orders never require a phone. Physical orders
+  // are rejected server-side without one (see createOrder).
+  phone: z.string().trim().min(5).max(32).optional(),
 });
 
 /**
@@ -85,11 +86,11 @@ export async function parseBody<T>(request: Request, schema: z.ZodType<T>): Prom
   try {
     raw = await request.json();
   } catch {
-    throw new PaymentError("INVALID_INPUT", "Corpo da requisição inválido.");
+    throw new PaymentError("INVALID_INPUT", "Invalid request body.");
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    throw new PaymentError("INVALID_INPUT", "Dados inválidos.", {
+    throw new PaymentError("INVALID_INPUT", "Invalid data.", {
       issues: parsed.error.issues.map((issue) => ({
         path: issue.path.join("."),
         message: issue.message,
