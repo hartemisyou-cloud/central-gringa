@@ -1,4 +1,8 @@
-# Deploying the Hope Human Books central on Vercel
+# Deploying the Hope Human Books central on Vercel (optional path)
+
+> **Chosen architecture:** the central is hosted on Lovable at `hopehumanbooks.com`; only the
+> external checkout runs on Vercel. See `docs/deploy/architecture.md`. This guide is kept as a
+> tested alternative and is not required.
 
 ## Build configuration
 
