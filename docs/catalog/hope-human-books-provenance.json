@@ -1,0 +1,164 @@
+[
+  {
+    "workId": "the-yellow-wallpaper",
+    "title": "The Yellow Wallpaper",
+    "author": "Charlotte Perkins Gilman",
+    "firstPublished": "1892",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/1952",
+    "sourceEbookNumber": 1952,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/1952/pg1952.txt",
+    "sourceSha256": "0f2d332195a529d58759b09087a412bb484dcb4bea5c38c5a43d2591b20e2047",
+    "file": "the-yellow-wallpaper.txt",
+    "bytes": 32233,
+    "sha256": "fcf771d7dd7a657bee0200f65a44a0bf479b616c8cfa8f6294859bc4b1b130e2",
+    "removed": [],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "the-call-of-the-wild",
+    "title": "The Call of the Wild",
+    "author": "Jack London",
+    "firstPublished": "1903",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/215",
+    "sourceEbookNumber": 215,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/215/pg215.txt",
+    "sourceSha256": "12907ed6a9e20701494ae0544c7d8d8c511511624929e121602ad86f2f3bf460",
+    "file": "the-call-of-the-wild.txt",
+    "bytes": 177180,
+    "sha256": "28fae3de42cbb92a9a92ebecb65605dc907cc8a73e69c744fca48bfd0ad33c48",
+    "removed": [
+      "illustration/cover placeholder"
+    ],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "the-four-million",
+    "title": "The Four Million",
+    "author": "O. Henry",
+    "firstPublished": "1906",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/2776",
+    "sourceEbookNumber": 2776,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/2776/pg2776.txt",
+    "sourceSha256": "2002753a2859e253eff62c58d886204e5b6305564bbd0cc48b1571fad15de9e6",
+    "file": "the-four-million.txt",
+    "bytes": 297051,
+    "sha256": "3b5383d55212c298aade8456043feec9b34a16c0183277c56b5f21ca85dba9af",
+    "removed": [
+      "illustration/cover placeholder"
+    ],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "the-adventures-of-tom-sawyer",
+    "title": "The Adventures of Tom Sawyer",
+    "author": "Mark Twain",
+    "firstPublished": "1876",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/74",
+    "sourceEbookNumber": 74,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/74/pg74.txt",
+    "sourceSha256": "4f27812b4f6b006ce19080b2000f1a441cf18d683fa8faa978057e4fa526ac9a",
+    "file": "the-adventures-of-tom-sawyer.txt",
+    "bytes": 403071,
+    "sha256": "91c92b8e8d9a82577737fdf53def65c2c5a5216db2752da716bc1b18007b3ba5",
+    "removed": [
+      "illustrations list (328 lines)"
+    ],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "little-women",
+    "title": "Little Women",
+    "author": "Louisa May Alcott",
+    "firstPublished": "1868–1869",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/514",
+    "sourceEbookNumber": 514,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/514/pg514.txt",
+    "sourceSha256": "0b626544cbf0d72f2cd398e67fea2c3ce4be02b212789f2decf5ed8eb2be5c7b",
+    "file": "little-women.txt",
+    "bytes": 1031192,
+    "sha256": "b2ff0d03b4b1824c1e4cb9b24a3da93012012431f9f8185146bade0749d97cff",
+    "removed": [],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "adventures-of-huckleberry-finn",
+    "title": "Adventures of Huckleberry Finn",
+    "author": "Mark Twain",
+    "firstPublished": "1884–1885",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/76",
+    "sourceEbookNumber": 76,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/76/pg76.txt",
+    "sourceSha256": "1df933df0988f4aa9cf36c0b293c30e317d4934872de534b82235f55a209e5ef",
+    "file": "adventures-of-huckleberry-finn.txt",
+    "bytes": 587364,
+    "sha256": "1a814b20dc9b890c7888a7228a37d7a5b137e358502fb4a70cf9de878cf3592e",
+    "removed": [
+      "illustrations list (179 lines)"
+    ],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "walden-and-civil-disobedience",
+    "title": "Walden, and On the Duty of Civil Disobedience",
+    "author": "Henry David Thoreau",
+    "firstPublished": "1854 / 1849",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/205",
+    "sourceEbookNumber": 205,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/205/pg205.txt",
+    "sourceSha256": "ae102eeb00d51790a6b024d8b6c73d3b5cc6d63b47fea3cd532c9678a6935469",
+    "file": "walden-and-civil-disobedience.txt",
+    "bytes": 638194,
+    "sha256": "f331822ef03d371f7689f684e4c58958fbb37feb0865d0a2f9e7fce3473fe7bb",
+    "removed": [],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "moby-dick",
+    "title": "Moby-Dick; or, The Whale",
+    "author": "Herman Melville",
+    "firstPublished": "1851",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/2701",
+    "sourceEbookNumber": 2701,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/2701/pg2701.txt",
+    "sourceSha256": "8e63ee7adf8aa97e4f389805006d7ac61b869433c9afb38f076775916fe9d68d",
+    "file": "moby-dick.txt",
+    "bytes": 1234484,
+    "sha256": "5518215e13ef43f90eb0e32c432876e9242c15093b8f947fbcfbf2a33d0ec9f9",
+    "removed": [
+      "transcriber note"
+    ],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "the-wonderful-wizard-of-oz",
+    "title": "The Wonderful Wizard of Oz",
+    "author": "L. Frank Baum",
+    "firstPublished": "1900",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/55",
+    "sourceEbookNumber": 55,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/55/pg55.txt",
+    "sourceSha256": "b0b430562073de8fc7b5d12d50b734b314534c87076e8143f4af8a5ba900e2f7",
+    "file": "the-wonderful-wizard-of-oz.txt",
+    "bytes": 213009,
+    "sha256": "d22fe76a82087d271c5612b66408664532e2283a563d5d1c9d85bd65b3d69883",
+    "removed": [
+      "illustration/cover placeholder"
+    ],
+    "copyrightStatus": "Public domain in the United States"
+  },
+  {
+    "workId": "the-scarlet-letter",
+    "title": "The Scarlet Letter",
+    "author": "Nathaniel Hawthorne",
+    "firstPublished": "1850",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/33",
+    "sourceEbookNumber": 33,
+    "sourceFileUrl": "https://www.gutenberg.org/cache/epub/33/pg33.txt",
+    "sourceSha256": "6ea0fa553784f0411972ef5eb169665db4f0a4f78497d7c45f83e4bb326a5871",
+    "file": "the-scarlet-letter.txt",
+    "bytes": 486061,
+    "sha256": "b17aba190db4256c49f5807e5740e596ed321e81890f7f1a92bf72f4c7a6d69b",
+    "removed": [],
+    "copyrightStatus": "Public domain in the United States"
+  }
+]
