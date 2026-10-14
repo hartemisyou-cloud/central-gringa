@@ -1,14 +1,16 @@
 # Roadmap
 
 - [x] Fix storefront crash from placeholder PAYMENTS_API_BASE_URL
-- [ ] Hope Human Books central (English UI, brand, canonical https://hopehumanbooks.com)
-  - [ ] Remove literal store credential from docs (placeholders)
-  - [ ] Provision store `hope-human-books` (USD) + 11 HHB ebook products (idempotent)
-  - [ ] Digital-goods order path (name/email only, no address/phone, no shipping)
-  - [ ] paymentUrl from current deployment origin; /pay/{publicToken} owns Stripe UI
-  - [ ] Ebook files + provenance manifest; downloads gated on PAID via webhook
-  - [ ] Webhook retry/idempotency review
-  - [ ] English storefront, policies, metadata; remove donation/nonprofit claims
-  - [ ] API contract doc for external checkout
-  - [ ] Tests (digital pricing, paid fulfillment) + build
-  - [ ] Secrets needed from user (Stripe keys, admin password etc.) — blocked on user
+- [x] Remove literal store credential from docs
+- [x] Store `hope-human-books` (USD) + 11 HHB products (idempotent script)
+- [x] Digital-goods order path (name/email only)
+- [x] paymentUrl/receiptUrl from current origin; /pay owns Stripe UI
+- [x] Ebook files (10) in private storage + provenance manifest; PAID-gated downloads
+- [x] Webhook retry/idempotency
+- [x] English storefront, checkout, pay, receipt, 5 policies, metadata
+- [x] API contract doc
+- [x] Tests + typecheck
+- [ ] Admin panel still in Portuguese — translate to English
+- [ ] Stripe integration for the store (needs Stripe keys + webhook secret via admin) — blocked on user
+- [ ] Admin secrets (ADMIN_PANEL_PASSWORD, ADMIN_SESSION_SECRET, PAYMENTS_ENCRYPTION_KEY) — blocked on user
+- [ ] Revoke the historical exposed store key at the old central — blocked on user
