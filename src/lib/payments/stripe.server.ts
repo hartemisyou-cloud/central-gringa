@@ -78,7 +78,7 @@ export class StripeService {
   private readonly apiKey: string;
 
   constructor(apiKey: string) {
-    if (!apiKey) throw new PaymentError("CONFIG_ERROR", "Credencial Stripe ausente.");
+    if (!apiKey) throw new PaymentError("CONFIG_ERROR", "Missing Stripe credential.");
     this.apiKey = apiKey;
   }
 
@@ -108,7 +108,7 @@ export class StripeService {
     try {
       response = await fetch(url, { method, headers, ...(body === undefined ? {} : { body }) });
     } catch {
-      throw new PaymentError("PROVIDER_ERROR", "Não foi possível contatar o provedor de pagamento.");
+      throw new PaymentError("PROVIDER_ERROR", "Could not reach the payment provider.");
     }
 
     const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -116,7 +116,7 @@ export class StripeService {
       const err = (json["error"] ?? {}) as { message?: string; code?: string; type?: string };
       // Log sanitizado: nunca inclui a chave usada.
       console.error(`[stripe] ${method} ${path} -> ${response.status} ${err.code ?? err.type ?? ""}`);
-      throw new PaymentError("PROVIDER_ERROR", err.message ?? "Falha na comunicação com a Stripe.", {
+      throw new PaymentError("PROVIDER_ERROR", err.message ?? "Stripe communication failed.", {
         providerCode: err.code ?? err.type ?? null,
       });
     }
@@ -224,14 +224,14 @@ export async function constructStripeEvent(
   nowSeconds: number = Math.floor(Date.now() / 1000),
 ): Promise<StripeEvent> {
   if (!signatureHeader) {
-    throw new PaymentError("UNAUTHORIZED", "Assinatura do webhook ausente.");
+    throw new PaymentError("UNAUTHORIZED", "Missing webhook signature.");
   }
   const { timestamp, signatures } = parseStripeSignature(signatureHeader);
   if (!timestamp || signatures.length === 0) {
-    throw new PaymentError("UNAUTHORIZED", "Assinatura do webhook malformada.");
+    throw new PaymentError("UNAUTHORIZED", "Malformed webhook signature.");
   }
   if (Math.abs(nowSeconds - timestamp) > toleranceSeconds) {
-    throw new PaymentError("UNAUTHORIZED", "Assinatura do webhook expirada.");
+    throw new PaymentError("UNAUTHORIZED", "Expired webhook signature.");
   }
   const expected = await hmacSha256Hex(webhookSecret, `${timestamp}.${rawBody}`);
   const valid = signatures.some((candidate) => {
@@ -241,7 +241,7 @@ export async function constructStripeEvent(
     return diff === 0;
   });
   if (!valid) {
-    throw new PaymentError("UNAUTHORIZED", "Assinatura do webhook inválida.");
+    throw new PaymentError("UNAUTHORIZED", "Invalid webhook signature.");
   }
   return JSON.parse(rawBody) as StripeEvent;
 }
