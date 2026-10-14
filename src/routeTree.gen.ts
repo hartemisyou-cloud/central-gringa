@@ -18,6 +18,7 @@ import { Route as PrivacyPolicyRouteImport } from './routes/privacy-policy'
 import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
+import { Route as OrderTokenRouteImport } from './routes/order.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
@@ -77,6 +78,11 @@ const TermsRoute = TermsRouteImport.update({
 const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
   id: '/admin_/analytics',
   path: '/admin/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrderTokenRoute = OrderTokenRouteImport.update({
+  id: '/order/$token',
+  path: '/order/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PayTokenRoute = PayTokenRouteImport.update({
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -202,6 +209,7 @@ export interface FileRoutesByTo {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -229,6 +237,7 @@ export interface FileRoutesById {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin_/analytics': typeof AdminAnalyticsRoute
+  '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -257,6 +266,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin/analytics'
+    | '/order/$token'
     | '/pay/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -283,6 +293,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin/analytics'
+    | '/order/$token'
     | '/pay/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -309,6 +320,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin_/analytics'
+    | '/order/$token'
     | '/pay/$token'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -336,6 +348,7 @@ export interface RootRouteChildren {
   RefundPolicyRoute: typeof RefundPolicyRoute
   TermsRoute: typeof TermsRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  OrderTokenRoute: typeof OrderTokenRoute
   PayTokenRoute: typeof PayTokenRoute
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
@@ -413,6 +426,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/analytics'
       fullPath: '/admin/analytics'
       preLoaderRoute: typeof AdminAnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/order/$token': {
+      id: '/order/$token'
+      path: '/order/$token'
+      fullPath: '/order/$token'
+      preLoaderRoute: typeof OrderTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pay/$token': {
@@ -550,6 +570,7 @@ const rootRouteChildren: RootRouteChildren = {
   RefundPolicyRoute: RefundPolicyRoute,
   TermsRoute: TermsRoute,
   AdminAnalyticsRoute: AdminAnalyticsRoute,
+  OrderTokenRoute: OrderTokenRoute,
   PayTokenRoute: PayTokenRoute,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,
