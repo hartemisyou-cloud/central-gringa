@@ -1,7 +1,7 @@
 # Chosen deployment architecture (Hope Human Books)
 
 ```text
-Customer ──> Checkout (Vercel, separate project)
+Customer ──> Checkout (Vercel, https://hopehumanfoundations.org)
                │  server-to-server only: STORE_API_KEY + STORE_SLUG=hope-human-books
                ▼
             Central (Lovable hosting, hopehumanbooks.com, Lovable Cloud database)
@@ -35,7 +35,7 @@ Never publish while these hold placeholder values.
 3. Stripe → Webhooks: add the URL shown in admin with `payment_intent.succeeded`,
    `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.refunded`,
    `charge.dispute.created`; paste the `whsec_` secret back in admin.
-4. `/admin` → create a store credential for `hope-human-books`; save it in the Vercel checkout
+4. `/admin` → create a store credential (allowed_origins already includes `https://hopehumanfoundations.org`; CORS is exact-match, no wildcard) for `hope-human-books`; save it in the Vercel checkout
    project as `STORE_API_KEY` (plus `STORE_SLUG=hope-human-books`, central base
    `https://hopehumanbooks.com`).
 5. Publish the central on Lovable and connect `hopehumanbooks.com`.

@@ -7,6 +7,7 @@ hosted page (`paymentUrl`), and the Stripe webhook is the only thing that marks 
 - Preview base (works before DNS): `https://project--e7d4afd7-096c-4f6f-89f5-7f9fd704f43c-dev.lovable.app`
 - Published base (after publish): `https://project--e7d4afd7-096c-4f6f-89f5-7f9fd704f43c.lovable.app`
 - Intended production base: `https://hopehumanbooks.com` (once the domain is connected)
+- Checkout origin (Vercel): `https://hopehumanfoundations.org` — listed in the store's exact-match `allowed_origins`. Calls should still be server-to-server; the buyer is always redirected to the central `paymentUrl`, never to a checkout-hosted payment page.
 
 `paymentUrl` / `receiptUrl` are always built from the origin that served the request, so they
 follow whichever base you call.
