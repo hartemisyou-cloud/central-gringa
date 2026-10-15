@@ -145,6 +145,85 @@ export function settingsGaps(s: DonationSettings | null, integration: boolean | 
   return gaps;
 }
 
+/* ------------------------------------------------------------------
+ * Direct NGO collection (the only active donation flow).
+ * Hope Human Foundation receives the donation for the selected campaign.
+ * Collection never depends on beneficiary/KYC/Connect/reserve/release gates;
+ * those stay for the deferred transfer flow, which is OFF.
+ * ------------------------------------------------------------------ */
+
+export const COLLECTION_DEFAULT_USE_OF_FUNDS =
+  "Received by Hope Human Foundation in support of the selected campaign. Any future transfer to a campaign recipient requires a separate, human-verified process that is not active.";
+
+export interface CollectionStoreLike {
+  status?: string | null;
+  environment?: string | null;
+}
+
+export interface CollectionContext {
+  store: CollectionStoreLike | null;
+  integration: IntegrationLike | null;
+  settings: DonationSettings | null;
+}
+
+function integrationUsableForTest(i: IntegrationLike | null, store: CollectionStoreLike | null): boolean {
+  return Boolean(
+    i && i.status === "ACTIVE" && i.environment === "test" && i.secret_key_ciphertext && i.stripe_account_id &&
+      store && store.status === "ACTIVE" && store.environment === "test",
+  );
+}
+
+/**
+ * Effective collection settings. Documented TEST-only fallback: when NO settings row exists and
+ * store + integration are truly ACTIVE/test with key and account, sandbox collection is on.
+ * No DB write, no confirmed_by, every release/onboarding/live-approval field stays off/null.
+ * Any saved row (e.g. donations_enabled=false) always wins.
+ */
+export function effectiveCollectionSettings(ctx: CollectionContext): { settings: DonationSettings; testFallback: boolean } {
+  if (ctx.settings) return { settings: ctx.settings, testFallback: false };
+  if (integrationUsableForTest(ctx.integration, ctx.store)) {
+    return { settings: { ...DEFAULT_SETTINGS, donations_enabled: true }, testFallback: true };
+  }
+  return { settings: DEFAULT_SETTINGS, testFallback: false };
+}
+
+/** Gaps that block RECEIVING NGO donations. Empty = collection open. */
+export function collectionGaps(ctx: CollectionContext): string[] {
+  const { store, integration: i } = ctx;
+  const { settings: c } = effectiveCollectionSettings(ctx);
+  const g: string[] = [];
+  if (!store) g.push("Store not found");
+  else if (store.status !== "ACTIVE") g.push("Store not active");
+  if (!i) g.push("Stripe integration not connected");
+  else {
+    if (i.status !== "ACTIVE") g.push("Stripe integration not active");
+    if (!i.secret_key_ciphertext) g.push("Stripe secret key missing");
+    if (!i.stripe_account_id) g.push("Platform Stripe account not identified");
+    if (i.environment !== "test" && i.environment !== "live") g.push("Stripe integration mode unknown");
+    if (store && store.environment !== i.environment) g.push("Store and Stripe integration modes differ");
+    if (i.environment === "live") {
+      // LIVE: no bypass. Signed webhooks + real human approvals are mandatory.
+      if (!i.webhook_secret_ciphertext) g.push("Stripe webhook signing secret missing");
+      if (!c.stripe_fundraising_approved) g.push("Stripe fundraising approval not confirmed");
+      if (!c.legal_account_name_confirmed) g.push("Legal Stripe account name (shown on receipts and terms) not confirmed");
+      if (!c.use_of_funds.trim()) g.push("Use of funds not described");
+      if (!c.confirmed_by || !c.confirmed_at) g.push("Human confirmation missing");
+    }
+  }
+  if (!c.recipient_name.trim()) g.push("Recipient name missing");
+  if (!c.donations_enabled) g.push("Donations switch is off");
+  return g;
+}
+
+/** Campaign gates for collection: known and ACTIVE (review may be PENDING), not past ends_at. */
+export function collectionCampaignGaps(c: { active: boolean; ends_at: string | null } | null, now = Date.now()): string[] {
+  if (!c) return ["Campaign not found"];
+  const g: string[] = [];
+  if (!c.active) g.push("Campaign inactive");
+  if (c.ends_at && new Date(c.ends_at).getTime() <= now) g.push("Campaign ended");
+  return g;
+}
+
 export interface CampaignLike {
   slug: string;
   title: string;
