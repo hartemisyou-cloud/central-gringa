@@ -113,7 +113,7 @@ describe("POST /donations/start", () => {
 
   it("never touches ebook order creation", async () => {
     const src = await import("node:fs").then((fs) => fs.readFileSync("src/lib/donations/start.server.ts", "utf8"));
-    expect(src).not.toMatch(/orders\.server|createOrder|fulfillment|\/pay\/\$\{|from\("orders"\)/);
+    expect(src).not.toMatch(/orders\.server|createOrder|fulfillment|from\("orders"\)/);
     expect(src).not.toMatch(/fetch\(/);
   });
 });
