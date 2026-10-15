@@ -1,0 +1,52 @@
+{
+  "sourceFile": "export-public-schema.sql (schema only, official backup)",
+  "sourceSha256": "1993dfd8bb36a58dc4b5da204125895c60a5ff35c8794dded018f2c622bc3f6e",
+  "destinationSha256": "d8bfac1eb3ae3c45de82a8d6a014891d77f404139418f29667be5ad8ba15cef5",
+  "preservedObjectCounts": {
+    "tables": 35,
+    "enums": 10,
+    "functions": 17,
+    "triggers": 21,
+    "rlsEnabledTables": 35
+  },
+  "removedSupabasePolicies": 34,
+  "removedGrants": 0,
+  "removedForeignKeys": [
+    "ALTER TABLE ONLY public.profiles\n    ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;",
+    "ALTER TABLE ONLY public.user_roles\n    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;"
+  ],
+  "removedClientMetaCommands": [
+    "\\restrict 80NCy5ZHJ9V1xdcq4KBeIle8hyqTg8A9VYqMdF2N2bbcnDYWNSF71qib8dHqsbc",
+    "\\unrestrict 80NCy5ZHJ9V1xdcq4KBeIle8hyqTg8A9VYqMdF2N2bbcnDYWNSF71qib8dHqsbc"
+  ],
+  "sessionControls": "Restored check_function_bodies=true, row_security=on, search_path=public,pg_catalog after dump.",
+  "authSnapshot": "auth.users, profiles and user_roles had 0 rows in the audited source; migration must revalidate before restoring.",
+  "legacyTablesWithoutRuntimeAccess": [
+    "cart_items",
+    "carts",
+    "product_variants",
+    "profiles",
+    "stripe_checkout_sessions",
+    "user_roles"
+  ],
+  "restoreOrder": [
+    "001_pre.sql",
+    "private consistent data export (outside repository)",
+    "002_post.sql",
+    "003_server_acl.sql"
+  ],
+  "sections": {
+    "001_pre.sql": {
+      "sourceSha256": "fbdb8029b587b13eb40e5877f74b9915ced43c749d650ec843041e0e1999e6bd",
+      "destinationSha256": "c2b853e86ceccdccf175c286210b627a6137df37daa0a39b3a8d4def2d5e4997",
+      "removedPolicies": 0,
+      "removedAuthForeignKeys": 0
+    },
+    "002_post.sql": {
+      "sourceSha256": "4c38a832f6691d44cb2b1767d6c0ad3ffae1ab57dd8035b614948397756cefdb",
+      "destinationSha256": "d7bcddea42d1a92d5003cdb42c1b3eb813eacc945d36afad430f2f2383d88106",
+      "removedPolicies": 34,
+      "removedAuthForeignKeys": 2
+    }
+  }
+}
