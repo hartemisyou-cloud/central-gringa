@@ -62,6 +62,8 @@ export function DonationsSection() {
         manual_payout_schedule_confirmed: st.manual_payout_schedule_confirmed ?? false,
         max_hold_days: st.max_hold_days ?? null,
         ...Object.fromEntries(BOOL_GATES.map(([k]) => [k, Boolean(st[k])])),
+        // Reflect the effective TEST-only default so saving keeps it unless unchecked.
+        ...(q.data.testFallback ? { donations_enabled: true } : {}),
       });
     }
   }, [q.data]);
@@ -117,8 +119,15 @@ export function DonationsSection() {
         <CardDescription>Separate from ebooks. Everything stays off until each gate is confirmed by a person.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 text-sm">
+        <div className="rounded-md border border-border p-3">
+          <p className="font-medium">Donation collection (Hope Human Foundation): {q.data.collectionGaps.length ? <Badge variant="secondary">closed</Badge> : <Badge>open</Badge>}</p>
+          {q.data.testFallback ? (
+            <p className="mt-1 text-muted-foreground">TEST-only default: no donation settings are saved, so sandbox collection is ON for this test store. To switch it off, uncheck "Accept donations" below and save. Live collection never uses this default.</p>
+          ) : null}
+          {q.data.collectionGaps.length ? <ul className="mt-2 list-disc pl-5 text-muted-foreground">{q.data.collectionGaps.map((g: string) => <li key={g}>{g}</li>)}</ul> : null}
+        </div>
         <div>
-          <p className="font-medium">Readiness: {q.data.gaps.length ? <Badge variant="secondary">pending</Badge> : <Badge>ready</Badge>}</p>
+          <p className="font-medium">Future recipient transfers (deferred, off): {q.data.gaps.length ? <Badge variant="secondary">pending</Badge> : <Badge>ready</Badge>}</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground">{q.data.gaps.map((g: string) => <li key={g}>{g}</li>)}</ul>
         </div>
 

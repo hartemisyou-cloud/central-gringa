@@ -15,6 +15,10 @@ import {
   sessionMatchesDonation,
   sessionResponseGaps,
   settingsGaps,
+  collectionGaps,
+  collectionCampaignGaps,
+  effectiveCollectionSettings,
+  COLLECTION_DEFAULT_USE_OF_FUNDS,
   verificationGaps,
   type BeneficiaryLike,
   type CreateDonationInput,
@@ -113,25 +117,21 @@ export async function getDonationCatalog(store: StoreRow) {
     db.from("donation_campaigns").select("*").eq("store_id", store.id).order("slug"),
   ]);
   const campaigns = must(campaignsR, "Campaign read").data ?? [];
-  const s = settings ?? DEFAULT_SETTINGS;
-  const globalReady = settingsGaps(settings, integrationGaps(integration)).length === 0;
-  const ids = [...new Set(campaigns.map((c: any) => c.beneficiary_id).filter(Boolean))];
-  const bens = ids.length
-    ? must(await db.from("donation_beneficiaries").select("*").eq("store_id", store.id).in("id", ids), "Beneficiary read").data ?? []
-    : [];
-  const byId = new Map(bens.map((b: any) => [b.id, b]));
+  // ready = NGO COLLECTION capability (independent of any future recipient payout readiness).
+  const cctx = { store, integration, settings };
+  const globalReady = collectionGaps(cctx).length === 0;
+  const s = effectiveCollectionSettings(cctx).settings;
   return {
     purpose: "donation" as const,
     ready: globalReady,
     currency: "USD" as const,
     amountsCents: [...DONATION_AMOUNTS_CENTS],
-    recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds },
+    recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds.trim() || (globalReady ? COLLECTION_DEFAULT_USE_OF_FUNDS : "") },
     campaigns: campaigns.map((c: any) => ({
       slug: c.slug,
       title: c.title,
       active: Boolean(c.active),
-      // Live provider verification happens at creation time; catalog never claims more than local gates.
-      ready: globalReady && campaignGaps(c, (byId.get(c.beneficiary_id) as BeneficiaryLike) ?? null, settings).length === 0,
+      ready: globalReady && collectionCampaignGaps(c).length === 0,
     })),
   };
 }
@@ -167,23 +167,20 @@ export async function createDonation(input: { store: StoreRow; body: CreateDonat
   ]);
   const campaign = must(campaignR, "Campaign read").data;
   if (!campaign) throw new PaymentError("NOT_FOUND", "Unknown campaign.");
-  const gaps = settingsGaps(settings, integrationGaps(integration));
+  const cctx = { store, integration, settings };
+  const gaps = collectionGaps(cctx);
   if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.", { gaps });
-  const beneficiary = await loadBeneficiary(store.id, campaign.beneficiary_id);
-  const cGaps = campaignGaps(campaign, beneficiary, settings);
+  const cGaps = collectionCampaignGaps(campaign);
   if (cGaps.length) throw new PaymentError("INVALID_STATE", "Campaign is not accepting donations.", { gaps: cGaps });
-
-  // Actual Stripe readiness of the recipient, before accepting any payment.
+  // Direct NGO collection: no beneficiary, no recipient account read.
   const provider = await providerFactory(integration!);
-  const verification = await verifyRecipient(provider, beneficiary!.stripe_account_id!);
-  const vGaps = verificationGaps(beneficiary, verification, { settings, livemode: integration!.environment === "live" });
-  if (vGaps.length) throw new PaymentError("INVALID_STATE", "Campaign is not accepting donations.", { gaps: vGaps });
 
   const id = crypto.randomUUID();
   const publicToken = randomToken(40);
   const donationNumber = `HHF-${Date.now().toString(36).toUpperCase()}-${lettersFromHex(await sha256Hex(`num:${id}`), 4)}`;
   const integrationIdentifier = `hhf_donations_${lettersFromHex(await sha256Hex(`iid:${id}`))}`;
-  const s = settings!;
+  const s = effectiveCollectionSettings(cctx).settings;
+  const useOfFunds = s.use_of_funds.trim() || COLLECTION_DEFAULT_USE_OF_FUNDS;
   const sessionRequest = buildSessionRequest({
     donationId: id,
     donationNumber,
@@ -216,18 +213,15 @@ export async function createDonation(input: { store: StoreRow; body: CreateDonat
     integration_id: integration!.id,
     livemode: integration!.environment === "live",
     platform_account_id: integration!.stripe_account_id,
-    beneficiary_id: beneficiary!.id,
-    beneficiary_snapshot: {
-      beneficiary_id: beneficiary!.id,
-      display_name: beneficiary!.display_name,
-      country: beneficiary!.country,
-      account_id: beneficiary!.stripe_account_id,
-      captured_at: new Date().toISOString(),
-    },
+    // Received by the Foundation; no recipient assigned. Future transfers need a separate verified flow.
+    beneficiary_id: null,
+    beneficiary_snapshot: null,
     receipt_snapshot: {
-      recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds },
+      purpose: "donation",
+      recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds },
       campaign: { slug: campaign.slug, title: campaign.title },
-      beneficiaryName: beneficiary!.display_name,
+      beneficiaryName: null,
+      collection: "DIRECT_NGO",
     },
     integration_identifier: integrationIdentifier,
     session_request: sessionRequest,
@@ -259,27 +253,32 @@ function originalBindingGaps(d: any, integration: IntegrationLike | null): strin
   return g;
 }
 
+async function loadStoreById(id: string) {
+  return must(await db.from("stores").select("*").eq("id", id).maybeSingle(), "Store read").data ?? null;
+}
+
+/** Original integration still bound to the donation's account and mode (collection rules). */
+function collectionBindingGaps(d: any, integration: IntegrationLike | null): string[] {
+  const g: string[] = [];
+  if (!integration) return ["Original Stripe integration missing"];
+  if ((integration.environment === "live") !== d.livemode) g.push("Integration environment differs from the donation");
+  if (integration.stripe_account_id !== d.platform_account_id) g.push("Platform Stripe account differs from the donation");
+  return g;
+}
+
 /**
- * CURRENT acceptance gates for an existing donation: human config, original integration,
- * campaign + immutable beneficiary mapping, and (when a provider is given) live recipient readiness.
+ * CURRENT NGO collection gates for an existing donation: store, effective settings (kill switch),
+ * ORIGINAL integration/account/mode binding and an ACTIVE campaign. No recipient/payout gates.
  */
-export async function currentAcceptanceGaps(d: any, provider?: DonationProvider | null): Promise<string[]> {
-  const [settings, integration, campR] = await Promise.all([
+export async function currentAcceptanceGaps(d: any): Promise<string[]> {
+  const [store, settings, integration, campR] = await Promise.all([
+    loadStoreById(d.store_id),
     loadSettings(d.store_id),
     loadIntegrationById(d.integration_id),
     db.from("donation_campaigns").select("*").eq("id", d.campaign_id).eq("store_id", d.store_id).maybeSingle(),
   ]);
   const campaign = must(campR, "Campaign read").data;
-  const gaps = settingsGaps(settings, originalBindingGaps(d, integration));
-  if (!campaign) return [...gaps, "Campaign not found"];
-  const beneficiary = await loadBeneficiary(d.store_id, d.beneficiary_id);
-  if (campaign.beneficiary_id !== d.beneficiary_id) gaps.push("Campaign recipient mapping changed since this donation was created");
-  if (beneficiary && beneficiary.stripe_account_id !== d.beneficiary_snapshot?.account_id) gaps.push("Recipient account differs from the donation snapshot");
-  gaps.push(...campaignGaps(campaign, beneficiary, settings));
-  if (provider !== undefined) {
-    if (!provider || !beneficiary?.stripe_account_id) gaps.push("Recipient account not verified with Stripe");
-    else gaps.push(...verificationGaps(beneficiary, await verifyRecipient(provider, beneficiary.stripe_account_id), { settings, livemode: d.livemode }));
-  }
+  const gaps = [...collectionBindingGaps(d, integration), ...collectionGaps({ store, integration, settings }), ...collectionCampaignGaps(campaign)];
   return [...new Set(gaps)];
 }
 
@@ -301,25 +300,15 @@ async function resumeExisting(d: any, fingerprint: string, origin: string) {
   }
   // Retry the exact stored request under the same key, bound to the ORIGINAL integration,
   // and only if every CURRENT acceptance gate still passes.
-  const integration = await loadIntegrationById(d.integration_id);
-  if (originalBindingGaps(d, integration).length) throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.");
-  const provider = await providerFactory(integration!);
-  const gaps = await currentAcceptanceGaps(d, provider);
+  const gaps = await currentAcceptanceGaps(d);
   if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.", { gaps });
-  return ensureSession(d, origin, provider);
+  const integration = await loadIntegrationById(d.integration_id);
+  return ensureSession(d, origin, await providerFactory(integration!));
 }
 
 /** Pay-page gate: NEW local redirects only while acceptance is open. Does not expire Sessions already open at Stripe. */
 export async function paymentRedirectGaps(d: any): Promise<string[]> {
-  const integration = await loadIntegrationById(d.integration_id);
-  if (originalBindingGaps(d, integration).length) return ["Donation configuration pending"];
-  let provider: DonationProvider | null = null;
-  try {
-    provider = await providerFactory(integration!);
-  } catch {
-    provider = null;
-  }
-  return currentAcceptanceGaps(d, provider);
+  return currentAcceptanceGaps(d);
 }
 
 async function ensureSession(d: any, origin: string, provider: DonationProvider) {

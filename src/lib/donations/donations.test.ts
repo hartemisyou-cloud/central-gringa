@@ -11,6 +11,7 @@ import {
   DEFAULT_SETTINGS,
   FOUNDATION_LOGO_URL,
   providerModelGaps,
+  collectionGaps,
 } from "./rules";
 import { makeTestDb } from "./test-db";
 
@@ -53,7 +54,7 @@ const INT2_ID = "00000000-0000-4000-8000-0000000000a2";
 const BEN_ID = "00000000-0000-4000-8000-0000000000b1";
 const CAMP_OK = "00000000-0000-4000-8000-0000000000c1";
 const CAMP_PENDING = "00000000-0000-4000-8000-0000000000c2";
-const STORE = { id: STORE_ID, slug: "hope-human-books", stripe_integration_id: INT_ID };
+const STORE = { id: STORE_ID, slug: "hope-human-books", stripe_integration_id: INT_ID, status: "ACTIVE", environment: "test" };
 
 const READY = {
   ...DEFAULT_SETTINGS,
@@ -204,28 +205,14 @@ describe("validation and fail-closed configuration", () => {
     expect(beneficiaryGaps({ ...BEN, country: "BR" }, { ...s, stripe_granted_countries: ["BR"] })).toEqual([]);
     expect(beneficiaryGaps({ ...BEN, store_id: STORE2_ID }, READY, STORE_ID)).toContain("Beneficiary belongs to another store");
   });
-  it("catalog lists pending campaigns as not ready and stays globally not ready without integration webhook secret", async () => {
-    await H.pg.exec(`UPDATE stripe_integrations SET webhook_secret_ciphertext = NULL WHERE id='${INT_ID}'`);
-    const c = await svc.getDonationCatalog(STORE);
-    expect(c.ready).toBe(false);
-    expect(c.campaigns.find((x) => x.slug === "mateo")).toEqual({ slug: "mateo", title: "Mateo", active: true, ready: false });
-    await expect(create()).rejects.toThrow(/configuration pending/);
-    expect(stripe.calls.sessions).toHaveLength(0);
-  });
-  it("refuses unknown slug and pending campaigns", async () => {
+  it("refuses unknown slug; inactive campaign rejected; PENDING-review active campaign accepted", async () => {
     await expect(create({ campaignSlug: "nope" })).rejects.toThrow(/Unknown campaign/);
-    await expect(create({ campaignSlug: "mateo" })).rejects.toThrow(/not accepting/);
+    await H.pg.exec(`UPDATE donation_campaigns SET active=false WHERE id='${CAMP_OK}'`);
+    await expect(create()).rejects.toThrow(/not accepting/);
+    const r = await create({ campaignSlug: "mateo", idempotencyKey: "key-mateo-001" });
+    expect(r.purpose).toBe("donation");
   });
-  it("live recipient check fails closed (inactive transfers, unknown account, country mismatch)", async () => {
-    stripe.state.account.transfers = "pending";
-    await expect(create()).rejects.toThrow(/not accepting/);
-    stripe.state.account.country = "GB";
-    await expect(create()).rejects.toThrow(/not accepting/);
-    stripe = fakeStripe({ accountThrow: true });
-    await expect(create()).rejects.toThrow(/not accepting/);
-    expect(stripe.calls.sessions).toHaveLength(0);
-    expect(await rows("SELECT * FROM donations")).toHaveLength(0);
-  });
+
 });
 
 describe("checkout session request", () => {
@@ -414,6 +401,9 @@ describe("release preview math", () => {
 
 async function paidDonation(key = "key-12345678") {
   const r = await svc.createDonation({ store: STORE, body: body({ idempotencyKey: key }), origin: "https://central" });
+  // Deferred-release engine tests only: simulate a future, separately human-verified assignment.
+  await H.pg.query(`UPDATE donations SET beneficiary_id=$1, beneficiary_snapshot=$2 WHERE id=$3`,
+    [BEN_ID, JSON.stringify({ beneficiary_id: BEN_ID, display_name: "Recipient", country: "US", account_id: "acct_123" }), r.donationId]);
   const d = await donation(r.donationId);
   const pi = `pi_${key}`;
   await svc.handleDonationEvent(sessionEvent(d, "checkout.session.completed", { payment_intent: pi }), ctx);
@@ -661,9 +651,9 @@ describe("P1-4 acceptance kill switch on retry and /pay", () => {
     await expect(create()).rejects.toThrow(/configuration pending/);
     expect(stripe.calls.sessions).toHaveLength(1);
   });
-  it("retry after recipient revocation creates no new Session", async () => {
+  it("retry after original integration account changes creates no new Session", async () => {
     await failedFirstAttempt();
-    stripe.state.account.transfers = "restricted";
+    await H.pg.exec(`UPDATE stripe_integrations SET stripe_account_id='acct_other' WHERE id='${INT_ID}'`);
     await expect(create()).rejects.toThrow(/configuration pending/);
     expect(stripe.calls.sessions).toHaveLength(1);
   });
@@ -684,7 +674,7 @@ describe("P1-4 acceptance kill switch on retry and /pay", () => {
     expect(b.donationId).toBe(a.donationId);
     expect(stripe.calls.sessions).toHaveLength(1);
   });
-  it("/pay redirect gate rejects when acceptance is off, campaign suspended or recipient unready", async () => {
+  it("/pay redirect gate rejects when collection is off or campaign suspended; recipient state irrelevant", async () => {
     const r = await create();
     const d = await donation(r.donationId);
     expect(await svc.paymentRedirectGaps(d)).toEqual([]);
@@ -694,7 +684,8 @@ describe("P1-4 acceptance kill switch on retry and /pay", () => {
     expect((await svc.paymentRedirectGaps(d)).length).toBeGreaterThan(0);
     await H.pg.exec(`UPDATE donation_campaigns SET active = true`);
     stripe.state.account.transfers = "inactive";
-    expect((await svc.paymentRedirectGaps(d)).length).toBeGreaterThan(0);
+    expect(await svc.paymentRedirectGaps(d)).toEqual([]);
+    expect(stripe.calls.accounts).toBe(0);
     const v = await svc.receiptView(d, "https://c");
     expect(v.status).toBe("PENDING");
   });
@@ -725,7 +716,6 @@ describe("actual provider responsibilities / dashboard / mode guard", () => {
     it(`blocks new Session, transfer and onboarding link: ${name}`, async () => {
       const d = await paidDonation();
       mut(stripe.state.account);
-      await expect(create({ idempotencyKey: "key-incompat-1" })).rejects.toThrow(/not accepting/);
       await expect(release(d.id)).rejects.toThrow();
       await expect(svc.createOnboardingLink(STORE_ID, BEN_ID, "https://central", () => [])).rejects.toThrow(/Onboarding not available/);
       expect(stripe.calls.transfers).toHaveLength(0);
@@ -734,21 +724,14 @@ describe("actual provider responsibilities / dashboard / mode guard", () => {
     });
   }
   it("reads defaults with the Accounts v2 include list", async () => {
-    await create();
+    await svc.verifyBeneficiary(STORE_ID, BEN_ID);
     expect(stripe.calls.includes[0]).toEqual(["configuration.recipient", "identity", "defaults"]);
   });
   it("compatible model: EXPRESS + express and NONE + none both pass", async () => {
-    await expect(create()).resolves.toBeTruthy();
+    expect((await svc.verifyBeneficiary(STORE_ID, BEN_ID)).gaps).toEqual([]);
     await H.pg.exec(`UPDATE donation_settings SET dashboard_responsibility = 'NONE'`);
     stripe.state.account.dashboard = "none";
-    await expect(create({ idempotencyKey: "key-none-0001" })).resolves.toBeTruthy();
-  });
-  it("retry after a fee-collector change creates no new Session", async () => {
-    stripe = fakeStripe({ sessionThrowOnce: true });
-    await expect(create()).rejects.toThrow(/socket hang up/);
-    stripe.state.account.fees = "stripe";
-    await expect(create()).rejects.toThrow();
-    expect(stripe.calls.sessions).toHaveLength(1);
+    expect((await svc.verifyBeneficiary(STORE_ID, BEN_ID)).gaps).toEqual([]);
   });
   it("resume after reserve with changed loss collector -> zero transfers", async () => {
     const d = await paidDonation();
@@ -771,5 +754,80 @@ describe("actual provider responsibilities / dashboard / mode guard", () => {
   it("pure: no local approval means pending even when provider values look right", () => {
     expect(providerModelGaps(ver as any, { settings: { ...READY, dashboard_responsibility: null }, livemode: false })).toContain("Dashboard model not approved locally");
     expect(providerModelGaps(ver as any, { settings: READY, livemode: undefined })).toContain("Recipient account mode differs from the expected integration mode");
+  });
+});
+
+describe("direct NGO collection (no beneficiary, no recipient read)", () => {
+  const noSettings = async () => H.pg.exec(`DELETE FROM donation_settings`);
+  it("no settings + TEST store/integration: accepts PENDING campaign with NULL beneficiary and immutable receipt snapshot", async () => {
+    await noSettings();
+    await H.pg.exec(`UPDATE stripe_integrations SET webhook_secret_ciphertext=NULL WHERE id='${INT_ID}'`);
+    const c = await svc.getDonationCatalog(STORE);
+    expect(c.ready).toBe(true);
+    expect(c.campaigns).toHaveLength(2);
+    const r = await create({ campaignSlug: "mateo" });
+    const d = await donation(r.donationId);
+    expect(d.beneficiary_id).toBeNull();
+    expect(d.beneficiary_snapshot).toBeNull();
+    expect(d.receipt_snapshot.purpose).toBe("donation");
+    expect(d.receipt_snapshot.recipient.name).toBe("Hope Human Foundation");
+    expect(d.receipt_snapshot.recipient.useOfFunds).toMatch(/selected campaign/);
+    expect(d.receipt_snapshot.campaign).toEqual({ slug: "mateo", title: "Mateo" });
+    expect(stripe.calls.accounts).toBe(0);
+    expect(stripe.calls.sessions).toHaveLength(1);
+    expect(await rows("SELECT * FROM donation_settings")).toHaveLength(0); // no DB mutation
+    expect(r.paymentUrl).toBe(`https://central/donations/pay/${r.publicToken}`);
+  });
+  it("explicit donations_enabled=false wins even in TEST", async () => {
+    await H.pg.exec(`UPDATE donation_settings SET donations_enabled=false`);
+    expect((await svc.getDonationCatalog(STORE)).ready).toBe(false);
+    await expect(create()).rejects.toThrow(/configuration pending/);
+    expect(stripe.calls.sessions).toHaveLength(0);
+  });
+  it("unsupported amount and wrong store/integration mode rejected", async () => {
+    expect(createDonationSchema.safeParse(body({ amountCents: 2500 })).success).toBe(false);
+    await expect(svc.createDonation({ store: { ...STORE, environment: "live" }, body: body(), origin: "https://central" })).rejects.toThrow(/configuration pending/);
+    await H.pg.exec(`UPDATE stripe_integrations SET status='INACTIVE' WHERE id='${INT_ID}'`);
+    await expect(create({ idempotencyKey: "key-inactive-1" })).rejects.toThrow(/configuration pending/);
+    expect(stripe.calls.sessions).toHaveLength(0);
+  });
+  it("no settings + LIVE never uses the fallback; LIVE missing whsec/approvals blocked", async () => {
+    await noSettings();
+    await H.pg.exec(`UPDATE stripe_integrations SET environment='live', webhook_secret_ciphertext=NULL WHERE id='${INT_ID}'`);
+    const live = { ...STORE, environment: "live" };
+    await expect(svc.createDonation({ store: live, body: body(), origin: "https://c" })).rejects.toThrow(/configuration pending/);
+    await H.pg.exec(`INSERT INTO donation_settings (store_id, donations_enabled, recipient_name, recipient_country, use_of_funds) VALUES ('${STORE_ID}', true, 'Hope Human Foundation', 'US', 'x')`);
+    const g = collectionGaps({ store: live, integration: { id: INT_ID, status: "ACTIVE", environment: "live", secret_key_ciphertext: "e", webhook_secret_ciphertext: null, stripe_account_id: "a" }, settings: { ...DEFAULT_SETTINGS, donations_enabled: true, use_of_funds: "x" } });
+    expect(g).toEqual(expect.arrayContaining(["Stripe webhook signing secret missing", "Stripe fundraising approval not confirmed", "Human confirmation missing"]));
+    await expect(svc.createDonation({ store: live, body: body(), origin: "https://c" })).rejects.toThrow(/configuration pending/);
+    expect(stripe.calls.sessions).toHaveLength(0);
+  });
+  it("Session: payment/donate, exact USD preset, no Connect params, no ebook items", async () => {
+    await create({ amountCents: 5000 });
+    const [{ p, o }] = stripe.calls.sessions;
+    expect(p.mode).toBe("payment");
+    expect(p.submit_type).toBe("donate");
+    expect(p.line_items).toHaveLength(1);
+    expect(p.line_items[0].price_data.currency).toBe("usd");
+    expect(p.line_items[0].price_data.unit_amount).toBe(5000);
+    expect(p.line_items[0].price_data.product_data.name).toBe("$50 Donation");
+    expect(p.payment_method_types).toBeUndefined();
+    for (const k of ["transfer_data", "on_behalf_of", "application_fee_amount"]) { expect(p[k]).toBeUndefined(); expect(p.payment_intent_data[k]).toBeUndefined(); }
+    expect(p.metadata.purpose).toBe("donation");
+    expect(o.idempotencyKey).toMatch(/^donation-checkout:/);
+  });
+  it("TEST missing whsec: PENDING until a signed matching event; spoofed ctx never pays", async () => {
+    await noSettings();
+    await H.pg.exec(`UPDATE stripe_integrations SET webhook_secret_ciphertext=NULL WHERE id='${INT_ID}'`);
+    const r = await create();
+    const d = await donation(r.donationId);
+    await svc.handleDonationEvent(sessionEvent(d, "checkout.session.completed", { payment_intent: "pi_x" }), undefined);
+    await svc.handleDonationEvent(sessionEvent(d, "checkout.session.completed", { payment_intent: "pi_x" }), { integrationId: INT2_ID, livemode: false });
+    expect((await donation(d.id)).status).toBe("PENDING");
+    expect((await svc.receiptView(await donation(d.id), "https://c")).status).toBe("PENDING");
+  });
+  it("collection never touches ebook payments", async () => {
+    await create();
+    expect(await rows("SELECT provider_payment_id FROM payments")).toEqual([{ provider_payment_id: "pi_ebook" }]);
   });
 });
