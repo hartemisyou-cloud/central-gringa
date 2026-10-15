@@ -31,3 +31,10 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Server credentials and private migration exports
+.env
+.env.*
+!.env.example
+*.backup
+*-data.sql

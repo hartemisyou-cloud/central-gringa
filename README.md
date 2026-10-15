@@ -10,3 +10,15 @@ Payment central and storefront for Hope Human Books (curated public-domain ebook
 - Idempotent store/catalog setup script: `docs/catalog/hope-human-books-seed.sql`
 
 Secrets live only in the project's secret store. Never commit keys to docs or code.
+# Vercel migration copy
+
+This is an isolated copy of Central Gringa for Vercel, PostgreSQL and private Vercel Blob. The original Lovable deployment remains the source of production traffic until the migration is provisioned and verified.
+
+Use Node22 and the committed Bun lockfile. Run `bun install --frozen-lockfile`, `bun run typecheck`, `bun run test` and `VERCEL=1 bun run build`. The build produces Nitro's Vercel output; do not add a second Nitro plugin or a static SPA rewrite.
+
+Only server settings from `.env.example` are used. Keep the original `PAYMENTS_ENCRYPTION_KEY` to preserve encrypted integrations. `DATABASE_URL` must use the restricted runtime role; the separate migration connection and role password are never deployed to the web application.
+
+The reviewed schema, access controls and import order are in `migrations/README.md`. The import script refuses nonempty destination schemas and validates every table, column, count and COPY digest before committing. Private database exports and ebook files are deliberately absent from this repository.
+
+The public book catalog and donation purpose are preserved. Donation payment navigation remains Foundation → Books → Stripe; storefront pages do not gain donation prompts. Testing and cutover must keep the existing TEST/LIVE mode, approval gates, Stripe webhook identity, and encrypted integration data.
+
