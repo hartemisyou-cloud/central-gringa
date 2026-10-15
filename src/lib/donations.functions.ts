@@ -22,30 +22,38 @@ async function admin() {
 
 export const adminDonationOverview = createServerFn({ method: "GET" }).handler(async () => {
   const db = await admin();
-  const { settingsGaps, campaignGaps } = await import("./donations/rules");
+  const { settingsGaps, campaignGaps, integrationGaps, onboardingGaps, beneficiaryGaps } = await import("./donations/rules");
   const { data: store } = await db.from("stores").select("*").eq("slug", "hope-human-books").maybeSingle();
   if (!store) return null;
   const [{ data: settings }, { data: integration }, { data: campaigns }, { data: beneficiaries }, { data: donations }] =
     await Promise.all([
       db.from("donation_settings").select("*").eq("store_id", store.id).maybeSingle(),
       store.stripe_integration_id
-        ? db.from("stripe_integrations").select("status").eq("id", store.stripe_integration_id).maybeSingle()
+        ? db.from("stripe_integrations").select("id, status, environment, secret_key_ciphertext, webhook_secret_ciphertext, stripe_account_id").eq("id", store.stripe_integration_id).maybeSingle()
         : Promise.resolve({ data: null }),
       db.from("donation_campaigns").select("*").eq("store_id", store.id).order("slug"),
       db.from("donation_beneficiaries").select("*").eq("store_id", store.id).order("display_name"),
       db.from("donations").select("id, donation_number, status, amount_cents, created_at, campaign_id").eq("store_id", store.id).order("created_at", { ascending: false }).limit(50),
     ]);
+  const { data: releases } = await db.from("donation_releases").select("donation_id, status, transfer_id, error");
+  const relBy = new Map((releases ?? []).map((r: { donation_id: string }) => [r.donation_id, r]));
   const benById = new Map((beneficiaries ?? []).map((b: { id: string }) => [b.id, b]));
   return {
     storeId: store.id as string,
     settings,
-    gaps: settingsGaps(settings, integration?.status === "ACTIVE"),
+    gaps: settingsGaps(settings, integrationGaps(integration ? { ...integration } : null)),
     campaigns: (campaigns ?? []).map((c: Record<string, unknown>) => ({
       ...c,
       gaps: campaignGaps(c as never, (benById.get(c["beneficiary_id"] as string) as never) ?? null, settings),
     })),
-    beneficiaries: beneficiaries ?? [],
-    donations: donations ?? [],
+    beneficiaries: (beneficiaries ?? []).map((b: Record<string, unknown>) => ({
+      id: b["id"], display_name: b["display_name"], country: b["country"], stripe_account_id: b["stripe_account_id"],
+      service_agreement: b["service_agreement"], review_status: b["review_status"],
+      provider_verified_at: b["provider_verified_at"], provider_country: b["provider_country"], provider_transfers_status: b["provider_transfers_status"],
+      gaps: beneficiaryGaps(b as never, settings, store.id),
+      onboardingGaps: onboardingGaps(settings, b as never),
+    })),
+    donations: (donations ?? []).map((d: { id: string }) => ({ ...d, release: relBy.get(d.id) ?? null })),
   };
 });
 
@@ -61,10 +69,13 @@ const settingsSchema = z.object({
   adaptive_pricing_eligible: z.boolean(),
   adaptive_pricing_enabled: z.boolean(),
   allowed_recipient_countries: z.array(z.string().trim().length(2)).max(60),
-  recipient_service_agreement_allowed: z.boolean(),
+  stripe_granted_countries: z.array(z.string().trim().length(2)).max(60).default([]),
   fee_coverage_policy: z.enum(["NGO_COVERS_ALL"]).nullable(),
-  dashboard_responsibility: z.enum(["PLATFORM", "STRIPE"]).nullable(),
-  negative_balance_liability: z.enum(["PLATFORM", "STRIPE"]).nullable(),
+  // Only choices compatible with platform-paid fees and platform-owned losses are accepted.
+  dashboard_responsibility: z.enum(["EXPRESS", "NONE"]).nullable(),
+  negative_balance_liability: z.enum(["PLATFORM"]).nullable(),
+  legal_account_name_confirmed: z.boolean().default(false),
+  onboarding_enabled: z.boolean().default(false),
   donations_enabled: z.boolean(),
   releases_enabled: z.boolean(),
   ngo_fee_funding_cents: z.number().int().min(0).max(100_000_000),
@@ -79,7 +90,7 @@ export const adminSaveDonationSettings = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const db = await admin();
     const { storeId, confirmedBy, ...rest } = data;
-    const needsConfirm = rest.donations_enabled || rest.releases_enabled || rest.fee_coverage_policy || rest.dashboard_responsibility || rest.negative_balance_liability || rest.manual_payout_schedule_confirmed || rest.max_hold_days;
+    const needsConfirm = rest.donations_enabled || rest.releases_enabled || rest.fee_coverage_policy || rest.dashboard_responsibility || rest.negative_balance_liability || rest.manual_payout_schedule_confirmed || rest.max_hold_days || rest.onboarding_enabled || rest.legal_account_name_confirmed || rest.stripe_granted_countries.length > 0;
     if (needsConfirm && !confirmedBy) {
       return { ok: false as const, message: "Type your full name to confirm financial responsibilities." };
     }
@@ -87,6 +98,7 @@ export const adminSaveDonationSettings = createServerFn({ method: "POST" })
       store_id: storeId,
       ...rest,
       allowed_recipient_countries: rest.allowed_recipient_countries.map((c) => c.toUpperCase()),
+      stripe_granted_countries: rest.stripe_granted_countries.map((c) => c.toUpperCase()),
       recipient_country: rest.recipient_country.toUpperCase(),
       platform_country: rest.platform_country?.toUpperCase() ?? null,
       confirmed_by: confirmedBy || null,
@@ -116,7 +128,7 @@ export const adminUpdateCampaign = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid(),
-      review_status: z.enum(["UNREVIEWED", "IN_REVIEW", "APPROVED", "REJECTED"]),
+      review_status: z.enum(["PENDING", "UNREVIEWED", "IN_REVIEW", "APPROVED", "REJECTED"]),
       active: z.boolean(),
       ends_at: z.string().datetime().nullable(),
       release_mode: z.enum(["MANUAL", "CAMPAIGN_END"]),
@@ -130,7 +142,12 @@ export const adminUpdateCampaign = createServerFn({ method: "POST" })
     if (patch.review_status === "APPROVED" && !reviewedBy) {
       return { ok: false as const, message: "Type your name to record the campaign review." };
     }
-    const { data: current } = await db.from("donation_campaigns").select("beneficiary_id").eq("id", id).maybeSingle();
+    const { data: current } = await db.from("donation_campaigns").select("beneficiary_id, store_id").eq("id", id).maybeSingle();
+    if (!current) return { ok: false as const, message: "Campaign not found." };
+    if (patch.beneficiary_id) {
+      const { data: ben } = await db.from("donation_beneficiaries").select("id").eq("id", patch.beneficiary_id).eq("store_id", current.store_id).maybeSingle();
+      if (!ben) return { ok: false as const, message: "Beneficiary does not belong to this store." };
+    }
     if (current && current.beneficiary_id !== patch.beneficiary_id) {
       // Existing donations keep their immutable snapshot; we only warn via count.
       const { count } = await db.from("donations").select("id", { count: "exact", head: true }).eq("campaign_id", id).in("status", ["PAID", "PROCESSING", "PENDING"]);
@@ -153,8 +170,6 @@ export const adminSaveBeneficiary = createServerFn({ method: "POST" })
       display_name: z.string().trim().min(1).max(160),
       country: z.string().trim().length(2),
       stripe_account_id: z.string().regex(/^acct_[A-Za-z0-9]+$/).nullable(),
-      onboarding_status: z.enum(["NOT_STARTED", "PENDING", "COMPLETE"]),
-      transfers_capability: z.enum(["inactive", "pending", "active"]),
       service_agreement: z.enum(["full", "recipient"]).nullable(),
       review_status: z.enum(["UNREVIEWED", "APPROVED", "REJECTED"]),
       reviewedBy: z.string().trim().max(120).optional(),
@@ -173,7 +188,7 @@ export const adminSaveBeneficiary = createServerFn({ method: "POST" })
       ...(rest.review_status === "APPROVED" ? { reviewed_by: reviewedBy, reviewed_at: new Date().toISOString() } : {}),
     };
     const { error } = id
-      ? await db.from("donation_beneficiaries").update(row).eq("id", id)
+      ? await db.from("donation_beneficiaries").update(row).eq("id", id).eq("store_id", storeId)
       : await db.from("donation_beneficiaries").insert(row);
     return error ? { ok: false as const, message: "Save failed." } : { ok: true as const };
   });
@@ -209,5 +224,54 @@ export const adminExecuteRelease = createServerFn({ method: "POST" })
     } catch (e) {
       const details = (e as { details?: unknown }).details;
       return { ok: false as const, message: (e as Error).message, details: details ?? null };
+    }
+  });
+
+export const adminResumeRelease = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ donationId: z.string().uuid(), confirmedBy: z.string().trim().min(3).max(120) }).parse(d))
+  .handler(async ({ data }) => {
+    await admin();
+    const { resumeRelease } = await import("./donations/service.server");
+    try {
+      return { ok: true as const, ...(await resumeRelease(data.donationId)) };
+    } catch (e) {
+      return { ok: false as const, message: (e as Error).message };
+    }
+  });
+
+export const adminVerifyBeneficiary = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ storeId: z.string().uuid(), beneficiaryId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    await admin();
+    const { verifyBeneficiary } = await import("./donations/service.server");
+    try {
+      const r = await verifyBeneficiary(data.storeId, data.beneficiaryId);
+      return { ok: true as const, gaps: r.gaps, transfersStatus: r.verification.transfersStatus, country: r.verification.country };
+    } catch (e) {
+      const gaps = (e as { details?: { gaps?: string[] } }).details?.gaps ?? [];
+      return { ok: false as const, message: (e as Error).message, gaps };
+    }
+  });
+
+/** Stripe-hosted onboarding for an EXISTING connected account; never creates accounts or stores KYC data. */
+export const adminStartOnboarding = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({
+      storeId: z.string().uuid(),
+      beneficiaryId: z.string().uuid(),
+      confirmedBy: z.string().trim().min(3).max(120),
+      confirmText: z.literal("OPEN STRIPE ONBOARDING"),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await admin();
+    const { createOnboardingLink } = await import("./donations/service.server");
+    const { onboardingGaps } = await import("./donations/rules");
+    const { getRequest } = await import("@tanstack/react-start/server");
+    try {
+      return { ok: true as const, ...(await createOnboardingLink(data.storeId, data.beneficiaryId, new URL(getRequest().url).origin, onboardingGaps)) };
+    } catch (e) {
+      const gaps = (e as { details?: { gaps?: string[] } }).details?.gaps ?? [];
+      return { ok: false as const, message: (e as Error).message, gaps };
     }
   });

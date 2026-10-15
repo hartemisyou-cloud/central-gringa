@@ -1,16 +1,41 @@
 /**
  * Pure donation rules (no I/O) — readiness gates, request validation,
- * fingerprints, webhook matching, status transitions and release math.
+ * fingerprints, webhook matching, session request snapshot and release math.
  * Everything here fails closed: missing configuration means "not ready".
+ * Donation status transitions live in the database (donation_apply_event).
  */
 import { z } from "zod";
 
 export const DONATION_AMOUNTS_CENTS = [2000, 3000, 5000, 10000, 25000, 50000] as const;
 export const DONATION_CURRENCY = "USD" as const;
 export const DONATION_STRIPE_API_VERSION = "2026-08-26.dahlia";
-
-/** Self-serve cross-border regions are an operator choice, never assumed worldwide. */
 export const FEE_POLICY_NGO_COVERS_ALL = "NGO_COVERS_ALL";
+
+/** Genuine, unmodified public Foundation logo. Used only on donation Checkout Sessions. */
+export const FOUNDATION_LOGO_URL =
+  "https://www.hopehumanfoundation.org/__l5e/assets-v1/48bd9da7-fcfd-4aff-975f-d04afa35f809/hope-human-logo.png";
+export const DONATION_BRANDING = {
+  display_name: "Hope Human Foundation",
+  logo: { type: "url", url: FOUNDATION_LOGO_URL },
+  button_color: "#08733D",
+  background_color: "#FFFFFF",
+  border_style: "rounded",
+} as const;
+
+/**
+ * Self-serve Connect cross-border payout regions (docs.stripe.com/connect/cross-border-payouts):
+ * US, UK, EEA, CA, CH. Anything else needs an explicit Stripe grant recorded by a human.
+ */
+export const CROSS_BORDER_SELF_SERVE = new Set([
+  "US", "GB", "CA", "CH",
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU",
+  "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "IS", "LI", "NO",
+]);
+
+/** Accounts v2 dashboard choices compatible with platform-paid fees and platform-owned losses. */
+export const DASHBOARD_CHOICES = ["EXPRESS", "NONE"] as const;
+/** Separate charges and transfers: the platform owns negative balances. */
+export const LIABILITY_CHOICES = ["PLATFORM"] as const;
 
 export interface DonationSettings {
   recipient_name: string;
@@ -23,17 +48,18 @@ export interface DonationSettings {
   adaptive_pricing_eligible: boolean;
   adaptive_pricing_enabled: boolean;
   allowed_recipient_countries: string[];
-  recipient_service_agreement_allowed: boolean;
+  /** Countries Stripe explicitly granted outside the self-serve regions. */
+  stripe_granted_countries?: string[];
   fee_coverage_policy: string | null;
   dashboard_responsibility: string | null;
   negative_balance_liability: string | null;
   donations_enabled: boolean;
   releases_enabled: boolean;
   ngo_fee_funding_cents: number;
-  /** Human confirmed Stripe automatic bank payouts are set to manual (otherwise available balance can leave). */
   manual_payout_schedule_confirmed?: boolean;
-  /** Max days funds may be held before transfer, per the platform country's actual Stripe limits. */
   max_hold_days?: number | null;
+  legal_account_name_confirmed?: boolean;
+  onboarding_enabled?: boolean;
   confirmed_by: string | null;
   confirmed_at: string | null;
 }
@@ -49,7 +75,7 @@ export const DEFAULT_SETTINGS: DonationSettings = {
   adaptive_pricing_eligible: false,
   adaptive_pricing_enabled: false,
   allowed_recipient_countries: [],
-  recipient_service_agreement_allowed: false,
+  stripe_granted_countries: [],
   fee_coverage_policy: null,
   dashboard_responsibility: null,
   negative_balance_liability: null,
@@ -58,26 +84,63 @@ export const DEFAULT_SETTINGS: DonationSettings = {
   ngo_fee_funding_cents: 0,
   manual_payout_schedule_confirmed: false,
   max_hold_days: null,
+  legal_account_name_confirmed: false,
+  onboarding_enabled: false,
   confirmed_by: null,
   confirmed_at: null,
 };
 
-/** Gaps that block accepting donations. Empty list = ready. */
-export function settingsGaps(s: DonationSettings | null, integrationActive: boolean): string[] {
-  const c = s ?? DEFAULT_SETTINGS;
+export interface IntegrationLike {
+  id: string;
+  status: string;
+  environment: string;
+  secret_key_ciphertext: string | null;
+  webhook_secret_ciphertext?: string | null;
+  stripe_account_id?: string | null;
+}
+
+/** Active, signed, identified platform integration — or the reasons it is not. */
+export function integrationGaps(i: IntegrationLike | null): string[] {
+  if (!i) return ["Stripe integration not connected"];
+  const g: string[] = [];
+  if (i.status !== "ACTIVE") g.push("Stripe integration not active");
+  if (!i.secret_key_ciphertext) g.push("Stripe secret key missing");
+  if (!i.webhook_secret_ciphertext) g.push("Stripe webhook signing secret missing");
+  if (!i.stripe_account_id) g.push("Platform Stripe account not identified");
+  return g;
+}
+
+/** Human responsibility / approval gates shared by payment acceptance and release. */
+export function responsibilityGaps(c: DonationSettings): string[] {
   const gaps: string[] = [];
-  if (!c.recipient_name.trim()) gaps.push("Recipient name missing");
-  if (!c.recipient_country.trim()) gaps.push("Recipient country missing");
-  if (!c.use_of_funds.trim()) gaps.push("Use of funds not described");
   if (!c.platform_country) gaps.push("Platform Stripe account country not set");
   if (!c.stripe_fundraising_approved) gaps.push("Stripe fundraising approval not confirmed");
   if (!c.connect_approved) gaps.push("Stripe Connect approval not confirmed");
   if (!c.usd_settlement_eligible) gaps.push("USD settlement eligibility not confirmed");
   if (c.fee_coverage_policy !== FEE_POLICY_NGO_COVERS_ALL) gaps.push("Fee coverage policy not confirmed");
   if (!c.dashboard_responsibility) gaps.push("Dashboard responsibility not selected");
+  else if (!(DASHBOARD_CHOICES as readonly string[]).includes(c.dashboard_responsibility))
+    gaps.push("Dashboard choice is incompatible with platform-paid fees and platform-owned losses");
   if (!c.negative_balance_liability) gaps.push("Negative balance liability not selected");
+  else if (!(LIABILITY_CHOICES as readonly string[]).includes(c.negative_balance_liability))
+    gaps.push("Stripe-owned negative balance liability is incompatible with separate charges and transfers");
+  if (!c.manual_payout_schedule_confirmed) gaps.push("Manual payout schedule not confirmed");
+  if (!c.max_hold_days) gaps.push("Country hold limit not configured");
+  if (!c.legal_account_name_confirmed) gaps.push("Legal Stripe account name (shown on receipts and terms) not confirmed");
   if (!c.confirmed_by || !c.confirmed_at) gaps.push("Human confirmation of financial responsibilities missing");
-  if (!integrationActive) gaps.push("Stripe integration not active");
+  return gaps;
+}
+
+/** Gaps that block accepting donations. Empty list = ready. */
+export function settingsGaps(s: DonationSettings | null, integration: boolean | string[]): string[] {
+  const c = s ?? DEFAULT_SETTINGS;
+  const gaps: string[] = [];
+  if (!c.recipient_name.trim()) gaps.push("Recipient name missing");
+  if (!c.recipient_country.trim()) gaps.push("Recipient country missing");
+  if (!c.use_of_funds.trim()) gaps.push("Use of funds not described");
+  gaps.push(...responsibilityGaps(c));
+  if (integration === false) gaps.push("Stripe integration not active");
+  if (Array.isArray(integration)) gaps.push(...integration);
   if (!c.donations_enabled) gaps.push("Donations switch is off");
   return gaps;
 }
@@ -92,30 +155,60 @@ export interface CampaignLike {
 }
 export interface BeneficiaryLike {
   id: string;
+  store_id?: string;
   display_name: string;
   country: string;
   stripe_account_id: string | null;
-  onboarding_status: string;
-  transfers_capability: string;
   service_agreement: string | null;
   review_status: string;
 }
 
-export function beneficiaryGaps(b: BeneficiaryLike | null, s: DonationSettings | null): string[] {
+/** Result of a live provider read of the connected account (never operator-typed). */
+export interface RecipientVerification {
+  accountId: string;
+  country: string | null;
+  transfersStatus: string | null;
+  recipientConfigured: boolean;
+  error?: string;
+}
+
+export function recipientCountryAllowed(country: string, c: DonationSettings): string | null {
+  if (!c.allowed_recipient_countries.includes(country)) return "Recipient country not enabled";
+  if (!c.platform_country) return "Platform Stripe account country not set";
+  if (country === c.platform_country) return null;
+  const granted = (c.stripe_granted_countries ?? []).includes(country);
+  const selfServe = CROSS_BORDER_SELF_SERVE.has(c.platform_country) && CROSS_BORDER_SELF_SERVE.has(country);
+  if (!selfServe && !granted) return "Cross-border payouts to this country are not supported or granted by Stripe";
+  return null;
+}
+
+export function beneficiaryGaps(b: BeneficiaryLike | null, s: DonationSettings | null, storeId?: string): string[] {
   const c = s ?? DEFAULT_SETTINGS;
   if (!b) return ["No beneficiary mapped"];
   const gaps: string[] = [];
+  if (storeId && b.store_id !== storeId) gaps.push("Beneficiary belongs to another store");
   if (b.review_status !== "APPROVED") gaps.push("Beneficiary not reviewed");
   if (!b.stripe_account_id) gaps.push("Beneficiary has no connected account");
-  if (b.onboarding_status !== "COMPLETE") gaps.push("Recipient onboarding incomplete");
-  if (b.transfers_capability !== "active") gaps.push("Transfers capability not active");
-  if (!c.allowed_recipient_countries.includes(b.country)) gaps.push("Recipient country not enabled");
+  const countryGap = recipientCountryAllowed(b.country, c);
+  if (countryGap) gaps.push(countryGap);
   const crossBorder = c.platform_country !== null && b.country !== c.platform_country;
-  if (crossBorder) {
-    if (b.service_agreement !== "recipient") gaps.push("Cross-border recipient needs recipient service agreement");
-    if (!c.recipient_service_agreement_allowed) gaps.push("Cross-border recipients not enabled");
+  if (crossBorder && b.service_agreement !== "full") {
+    // Stripe: cross-border payouts cannot go to accounts under the recipient service agreement.
+    gaps.push("Cross-border recipients must be under the full service agreement");
   }
   return gaps;
+}
+
+export function verificationGaps(b: BeneficiaryLike | null, v: RecipientVerification | null): string[] {
+  if (!b?.stripe_account_id) return [];
+  if (!v) return ["Recipient account not verified with Stripe"];
+  if (v.error) return [`Recipient account could not be verified: ${v.error}`];
+  const g: string[] = [];
+  if (v.accountId !== b.stripe_account_id) g.push("Stripe returned a different account");
+  if (!v.recipientConfigured) g.push("Account has no recipient configuration on this platform");
+  if (v.transfersStatus !== "active") g.push(`Stripe transfers capability is ${v.transfersStatus ?? "unknown"}`);
+  if (!v.country || v.country !== b.country) g.push("Stripe account country differs from the registry");
+  return g;
 }
 
 export function campaignGaps(
@@ -129,6 +222,26 @@ export function campaignGaps(
   if (!campaign.active) gaps.push("Campaign inactive");
   if (campaign.ends_at && new Date(campaign.ends_at).getTime() <= now) gaps.push("Campaign ended");
   return [...gaps, ...beneficiaryGaps(beneficiary, s)];
+}
+
+/** Gaps for starting Stripe-hosted onboarding of an existing connected account. */
+export function onboardingGaps(s: DonationSettings | null, b: BeneficiaryLike | null): string[] {
+  const c = s ?? DEFAULT_SETTINGS;
+  const g: string[] = [];
+  if (!c.onboarding_enabled) g.push("Recipient onboarding switch is off");
+  if (!c.connect_approved) g.push("Stripe Connect approval not confirmed");
+  if (!c.stripe_fundraising_approved) g.push("Stripe fundraising approval not confirmed");
+  if (!c.dashboard_responsibility || !(DASHBOARD_CHOICES as readonly string[]).includes(c.dashboard_responsibility))
+    g.push("Compatible dashboard choice not confirmed");
+  if (c.negative_balance_liability !== "PLATFORM") g.push("Platform negative balance liability not accepted");
+  if (!c.confirmed_by) g.push("Human confirmation of financial responsibilities missing");
+  if (!b) g.push("No beneficiary selected");
+  else {
+    if (!b.stripe_account_id) g.push("No existing connected account (account creation is not authorized in this build)");
+    const cg = recipientCountryAllowed(b.country, c);
+    if (cg) g.push(cg);
+  }
+  return g;
 }
 
 export const createDonationSchema = z
@@ -154,7 +267,7 @@ export const createDonationSchema = z
   });
 export type CreateDonationInput = z.infer<typeof createDonationSchema>;
 
-function stable(value: unknown): string {
+export function stable(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   const o = value as Record<string, unknown>;
@@ -176,7 +289,93 @@ export function formatDonationName(amountCents: number): string {
   return `$${Number.isInteger(d) ? d : d.toFixed(2)} Donation`;
 }
 
-// ---------- Status machine ----------
+/** Deterministic 8-letter suffix: the same donation always yields the same identifier. */
+export function lettersFromHex(hex: string, n = 8): string {
+  const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let out = "";
+  for (let i = 0; i < n; i++) out += a[parseInt(hex.slice(i * 2, i * 2 + 2), 16) % 26];
+  return out;
+}
+
+/**
+ * Immutable Checkout Session request, persisted before the remote call so every
+ * retry sends identical parameters under the same idempotency key.
+ */
+export function buildSessionRequest(i: {
+  donationId: string;
+  donationNumber: string;
+  storeId: string;
+  integrationId: string;
+  publicToken: string;
+  amountCents: number;
+  donorEmail: string | null;
+  origin: string;
+  campaign: { slug: string; title: string };
+  recipientName: string;
+  adaptivePricing: boolean;
+  integrationIdentifier: string;
+}) {
+  const metadata = {
+    purpose: "donation",
+    donation_id: i.donationId,
+    donation_number: i.donationNumber,
+    store_id: i.storeId,
+    integration_id: i.integrationId,
+    campaign_slug: i.campaign.slug,
+    campaign_title: i.campaign.title.slice(0, 450),
+    recipient: i.recipientName,
+    base_amount_cents: String(i.amountCents),
+    base_currency: "USD",
+  };
+  const receipt = `${i.origin}/donations/receipt/${i.publicToken}`;
+  return {
+    mode: "payment",
+    submit_type: "donate",
+    client_reference_id: i.donationId,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: "usd",
+          unit_amount: i.amountCents,
+          product_data: {
+            name: formatDonationName(i.amountCents),
+            description: `Donation to ${i.recipientName} — ${i.campaign.title}`.slice(0, 500),
+            images: [FOUNDATION_LOGO_URL],
+          },
+        },
+      },
+    ],
+    success_url: receipt,
+    cancel_url: receipt,
+    metadata,
+    payment_intent_data: { description: `Donation ${i.donationNumber} to ${i.recipientName}`, metadata },
+    adaptive_pricing: { enabled: i.adaptivePricing },
+    branding_settings: DONATION_BRANDING,
+    integration_identifier: i.integrationIdentifier,
+    ...(i.donorEmail ? { customer_email: i.donorEmail } : {}),
+  };
+}
+
+/** Validates the Session Stripe returned before anything is persisted. */
+export function sessionResponseGaps(
+  s: Record<string, unknown> | null | undefined,
+  d: { id: string; amount_cents: number; livemode: boolean },
+): string[] {
+  if (!s) return ["empty response"];
+  const g: string[] = [];
+  if (typeof s["id"] !== "string" || !String(s["id"]).startsWith("cs_")) g.push("session id");
+  if (typeof s["url"] !== "string" || !String(s["url"]).startsWith("https://checkout.stripe.com/")) g.push("session url");
+  if ("livemode" in s && Boolean(s["livemode"]) !== d.livemode) g.push("livemode");
+  if ("amount_total" in s && s["amount_total"] !== d.amount_cents) g.push("amount");
+  if ("currency" in s && String(s["currency"]).toLowerCase() !== "usd") g.push("currency");
+  if ("client_reference_id" in s && s["client_reference_id"] !== d.id) g.push("client_reference_id");
+  const md = s["metadata"] as Record<string, string> | undefined;
+  if (md && md["donation_id"] !== undefined && md["donation_id"] !== d.id) g.push("metadata donation_id");
+  return g;
+}
+
+// ---------- Status ----------
 
 export type DonationStatus =
   | "PENDING"
@@ -198,39 +397,8 @@ export type DonationSignal =
   | "EXPIRED"
   | "PI_FAILED"
   | "PI_CANCELED"
-  | "REFUND_FULL"
-  | "REFUND_PARTIAL"
-  | "DISPUTE"
-  | "RELEASED";
-
-/** Returns the next status, or null when the signal must be ignored. */
-export function nextDonationStatus(current: DonationStatus, signal: DonationSignal): DonationStatus | null {
-  const open = current === "PENDING" || current === "PROCESSING";
-  switch (signal) {
-    case "SESSION_PAID":
-      return open ? "PAID" : null;
-    case "SESSION_UNPAID":
-      return current === "PENDING" ? "PROCESSING" : null;
-    case "ASYNC_FAILED":
-    case "PI_FAILED":
-      return open ? "FAILED" : null;
-    case "PI_CANCELED":
-      return open ? "CANCELLED" : null;
-    case "EXPIRED":
-      return current === "PENDING" ? "EXPIRED" : null;
-    case "REFUND_FULL":
-      if (current === "RELEASED" || current === "REVERSAL_REQUIRED") return "REVERSAL_REQUIRED";
-      return ["PAID", "PARTIALLY_REFUNDED", "DISPUTED"].includes(current) ? "REFUNDED" : null;
-    case "REFUND_PARTIAL":
-      if (current === "RELEASED" || current === "REVERSAL_REQUIRED") return "REVERSAL_REQUIRED";
-      return current === "PAID" ? "PARTIALLY_REFUNDED" : null;
-    case "DISPUTE":
-      if (current === "RELEASED" || current === "REVERSAL_REQUIRED") return "REVERSAL_REQUIRED";
-      return ["PAID", "PARTIALLY_REFUNDED", "PROCESSING"].includes(current) ? "DISPUTED" : null;
-    case "RELEASED":
-      return current === "PAID" ? "RELEASED" : null;
-  }
-}
+  | "REFUND"
+  | "DISPUTE";
 
 // ---------- Webhook matching ----------
 
@@ -267,6 +435,8 @@ export function sessionMatchesDonation(
 
 // ---------- Release math ----------
 
+export type ReleaseState = "NONE" | "IN_FLIGHT" | "SUCCEEDED" | "FAILED";
+
 export interface ReleaseInputs {
   donation: {
     id: string;
@@ -276,10 +446,16 @@ export interface ReleaseInputs {
     refunded_cents: number;
     disputed: boolean;
     charge_id: string | null;
+    paid_at?: string | null;
+    payment_confirmed?: boolean;
     beneficiary_snapshot: { account_id?: string; display_name?: string; country?: string } | null;
   };
   beneficiary: BeneficiaryLike | null;
   settings: DonationSettings | null;
+  /** Live Stripe read of the recipient account. */
+  verification: RecipientVerification | null;
+  /** Gaps of the donation's ORIGINAL integration (not the store's current one). */
+  integrationGaps: string[];
   charge: {
     id: string;
     amount: number;
@@ -292,13 +468,13 @@ export interface ReleaseInputs {
     feeDetails: Array<{ type: string; amount: number; description?: string | null }>;
     fundsAvailable: boolean;
   } | null;
-  /** Platform available balance in USD (cents) right now. */
+  /** Platform available balance in USD (cents) right now, in the original platform account. */
   availableUsdCents: number;
-  /** Gross of OTHER held (paid, unreleased) donations that must stay untouched. */
+  /** Still-held principal of OTHER donations in the same platform account/environment (all stores). */
   otherHeldObligationsCents: number;
-  /** Fee coverage already consumed by previous releases. */
+  /** Fee coverage reserved or consumed by releases in the same platform account/environment. */
   feeCoverageUsedCents: number;
-  existingRelease: boolean;
+  releaseState: ReleaseState;
   now?: number;
 }
 
@@ -314,9 +490,11 @@ export interface ReleasePreview {
   feeComponents: Array<{ type: string; amount: number; description?: string | null }>;
   ngoCoverageRequiredCents: number;
   dedicatedFundingRemainingCents: number;
+  otherHeldObligationsCents: number;
   freeBalanceCents: number;
   fundingDeficitCents: number;
   sourceChargeId: string | null;
+  releaseState: ReleaseState;
   blockers: string[];
   allowed: boolean;
 }
@@ -326,20 +504,18 @@ export function computeReleasePreview(i: ReleaseInputs): ReleasePreview {
   const d = i.donation;
   const snap = d.beneficiary_snapshot;
   const blockers: string[] = [];
-  if (d.status !== "PAID") blockers.push(`Donation status is ${d.status}, not PAID`);
+  if (i.releaseState === "SUCCEEDED") blockers.push("A transfer already exists for this donation");
+  if (i.releaseState === "IN_FLIGHT") blockers.push("A release is already in progress — resume it (no new transfer is created)");
+  if (d.status !== "PAID" || d.payment_confirmed === false) blockers.push(`Donation status is ${d.status}, not PAID`);
   if (d.refunded_cents > 0) blockers.push("Donation has refunds");
   if (d.disputed) blockers.push("Donation is disputed");
-  if (i.existingRelease) blockers.push("A transfer already exists for this donation");
   if (d.currency !== "USD") blockers.push("Only USD donations can be released");
   if (!s.releases_enabled) blockers.push("Releases switch is off");
-  if (s.fee_coverage_policy !== FEE_POLICY_NGO_COVERS_ALL) blockers.push("Fee coverage policy not confirmed");
-  if (!s.connect_approved) blockers.push("Stripe Connect approval not confirmed");
-  if (!s.manual_payout_schedule_confirmed) blockers.push("Manual payout schedule not confirmed (automatic bank payouts can remove available balance)");
-  if (!s.max_hold_days) blockers.push("Country hold limit not configured");
-  else {
-    const paidAt = (d as { paid_at?: string | null }).paid_at;
+  blockers.push(...responsibilityGaps(s));
+  blockers.push(...i.integrationGaps);
+  if (s.max_hold_days && d.paid_at) {
     const now = i.now ?? Date.now();
-    if (paidAt && now - Date.parse(paidAt) > s.max_hold_days * 86400000) {
+    if (now - Date.parse(d.paid_at) > s.max_hold_days * 86400000) {
       blockers.push("Hold limit exceeded: reconciliation needed before any release");
     }
   }
@@ -348,6 +524,7 @@ export function computeReleasePreview(i: ReleaseInputs): ReleasePreview {
     blockers.push("Beneficiary account does not match the donation snapshot");
   }
   blockers.push(...beneficiaryGaps(i.beneficiary, i.settings));
+  blockers.push(...verificationGaps(i.beneficiary, i.verification));
 
   const c = i.charge;
   if (!c) blockers.push("Charge not confirmed");
@@ -364,14 +541,13 @@ export function computeReleasePreview(i: ReleaseInputs): ReleasePreview {
   const gross = d.amount_cents;
   const fee = c?.feeCents ?? 0;
   const dedicatedRemaining = Math.max(0, s.ngo_fee_funding_cents - i.feeCoverageUsedCents);
-  // Platform keeps gross-fee from this charge; full gross leaves. The rest must
-  // come from free balance that is NOT owed to other held donations.
+  // Full gross leaves; every other held donation's principal must stay untouched.
   const freeBalance = i.availableUsdCents - i.otherHeldObligationsCents - gross;
-  const coverage = fee;
-  const deficit = Math.max(0, coverage - dedicatedRemaining, -freeBalance);
+  const deficit = Math.max(0, fee - dedicatedRemaining, -freeBalance);
   if (deficit > 0) blockers.push(`NGO fee funding deficit of ${deficit} cents`);
   if (gross > (c?.amount ?? 0)) blockers.push("Transfer would exceed source charge");
 
+  const unique = [...new Set(blockers)];
   return {
     donationId: d.id,
     recipientName: snap?.display_name ?? null,
@@ -382,13 +558,15 @@ export function computeReleasePreview(i: ReleaseInputs): ReleasePreview {
     currency: "USD",
     stripeFeeCents: fee,
     feeComponents: c?.feeDetails ?? [],
-    ngoCoverageRequiredCents: coverage,
+    ngoCoverageRequiredCents: fee,
     dedicatedFundingRemainingCents: dedicatedRemaining,
+    otherHeldObligationsCents: i.otherHeldObligationsCents,
     freeBalanceCents: freeBalance,
     fundingDeficitCents: deficit,
     sourceChargeId: c?.id ?? null,
-    blockers: [...new Set(blockers)],
-    allowed: blockers.length === 0,
+    releaseState: i.releaseState,
+    blockers: unique,
+    allowed: unique.length === 0,
   };
 }
 
@@ -402,4 +580,21 @@ export function previewHashInput(p: ReleasePreview): string {
     f: p.stripeFeeCents,
     s: p.sourceChargeId,
   });
+}
+
+/** Zero-decimal and three-decimal currencies per Stripe's currency docs. */
+const ZERO_DECIMAL = new Set(["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"]);
+const THREE_DECIMAL = new Set(["BHD", "JOD", "KWD", "OMR", "TND"]);
+export function currencyExponent(currency: string): number {
+  const c = currency.toUpperCase();
+  return ZERO_DECIMAL.has(c) ? 0 : THREE_DECIMAL.has(c) ? 3 : 2;
+}
+export function formatMinorUnits(amount: number, currency: string, locale = "en-US"): string {
+  const exp = currencyExponent(currency);
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: currency.toUpperCase(),
+    minimumFractionDigits: exp,
+    maximumFractionDigits: exp,
+  }).format(amount / 10 ** exp);
 }

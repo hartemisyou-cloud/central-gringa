@@ -453,6 +453,9 @@ export type Database = {
           display_name: string
           id: string
           onboarding_status: string
+          provider_country: string | null
+          provider_transfers_status: string | null
+          provider_verified_at: string | null
           review_status: string
           reviewed_at: string | null
           reviewed_by: string | null
@@ -468,6 +471,9 @@ export type Database = {
           display_name: string
           id?: string
           onboarding_status?: string
+          provider_country?: string | null
+          provider_transfers_status?: string | null
+          provider_verified_at?: string | null
           review_status?: string
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -483,6 +489,9 @@ export type Database = {
           display_name?: string
           id?: string
           onboarding_status?: string
+          provider_country?: string | null
+          provider_transfers_status?: string | null
+          provider_verified_at?: string | null
           review_status?: string
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -580,6 +589,7 @@ export type Database = {
           entry_type: string
           id: string
           metadata: Json
+          stripe_event_id: string | null
           stripe_object_id: string | null
         }
         Insert: {
@@ -590,6 +600,7 @@ export type Database = {
           entry_type: string
           id?: string
           metadata?: Json
+          stripe_event_id?: string | null
           stripe_object_id?: string | null
         }
         Update: {
@@ -600,6 +611,7 @@ export type Database = {
           entry_type?: string
           id?: string
           metadata?: Json
+          stripe_event_id?: string | null
           stripe_object_id?: string | null
         }
         Relationships: [
@@ -614,7 +626,9 @@ export type Database = {
       }
       donation_releases: {
         Row: {
+          adverse_during_release: boolean
           amount_cents: number
+          attempt: number
           confirmed_by: string
           created_at: string
           currency: string
@@ -624,14 +638,21 @@ export type Database = {
           fee_coverage_cents: number
           id: string
           idempotency_key: string
+          integration_id: string | null
+          livemode: boolean | null
+          platform_account_id: string | null
           preview_hash: string
+          resolved_at: string | null
           source_charge_id: string
           status: string
+          submitted_at: string | null
           transfer_id: string | null
           updated_at: string
         }
         Insert: {
+          adverse_during_release?: boolean
           amount_cents: number
+          attempt?: number
           confirmed_by: string
           created_at?: string
           currency?: string
@@ -641,14 +662,21 @@ export type Database = {
           fee_coverage_cents?: number
           id?: string
           idempotency_key: string
+          integration_id?: string | null
+          livemode?: boolean | null
+          platform_account_id?: string | null
           preview_hash: string
+          resolved_at?: string | null
           source_charge_id: string
           status?: string
+          submitted_at?: string | null
           transfer_id?: string | null
           updated_at?: string
         }
         Update: {
+          adverse_during_release?: boolean
           amount_cents?: number
+          attempt?: number
           confirmed_by?: string
           created_at?: string
           currency?: string
@@ -658,9 +686,14 @@ export type Database = {
           fee_coverage_cents?: number
           id?: string
           idempotency_key?: string
+          integration_id?: string | null
+          livemode?: boolean | null
+          platform_account_id?: string | null
           preview_hash?: string
+          resolved_at?: string | null
           source_charge_id?: string
           status?: string
+          submitted_at?: string | null
           transfer_id?: string | null
           updated_at?: string
         }
@@ -670,6 +703,13 @@ export type Database = {
             columns: ["donation_id"]
             isOneToOne: true
             referencedRelation: "donations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "donation_releases_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "stripe_integrations"
             referencedColumns: ["id"]
           },
         ]
@@ -687,10 +727,12 @@ export type Database = {
           donations_enabled: boolean
           fee_coverage_policy: string | null
           id: string
+          legal_account_name_confirmed: boolean
           manual_payout_schedule_confirmed: boolean
           max_hold_days: number | null
           negative_balance_liability: string | null
           ngo_fee_funding_cents: number
+          onboarding_enabled: boolean
           platform_country: string | null
           recipient_country: string
           recipient_name: string
@@ -698,6 +740,7 @@ export type Database = {
           releases_enabled: boolean
           store_id: string
           stripe_fundraising_approved: boolean
+          stripe_granted_countries: string[]
           updated_at: string
           usd_settlement_eligible: boolean
           use_of_funds: string
@@ -714,10 +757,12 @@ export type Database = {
           donations_enabled?: boolean
           fee_coverage_policy?: string | null
           id?: string
+          legal_account_name_confirmed?: boolean
           manual_payout_schedule_confirmed?: boolean
           max_hold_days?: number | null
           negative_balance_liability?: string | null
           ngo_fee_funding_cents?: number
+          onboarding_enabled?: boolean
           platform_country?: string | null
           recipient_country?: string
           recipient_name?: string
@@ -725,6 +770,7 @@ export type Database = {
           releases_enabled?: boolean
           store_id: string
           stripe_fundraising_approved?: boolean
+          stripe_granted_countries?: string[]
           updated_at?: string
           usd_settlement_eligible?: boolean
           use_of_funds?: string
@@ -741,10 +787,12 @@ export type Database = {
           donations_enabled?: boolean
           fee_coverage_policy?: string | null
           id?: string
+          legal_account_name_confirmed?: boolean
           manual_payout_schedule_confirmed?: boolean
           max_hold_days?: number | null
           negative_balance_liability?: string | null
           ngo_fee_funding_cents?: number
+          onboarding_enabled?: boolean
           platform_country?: string | null
           recipient_country?: string
           recipient_name?: string
@@ -752,6 +800,7 @@ export type Database = {
           releases_enabled?: boolean
           store_id?: string
           stripe_fundraising_approved?: boolean
+          stripe_granted_countries?: string[]
           updated_at?: string
           usd_settlement_eligible?: boolean
           use_of_funds?: string
@@ -787,15 +836,21 @@ export type Database = {
           id: string
           idempotency_key: string
           integration_id: string | null
+          integration_identifier: string | null
+          last_payment_error: string | null
           livemode: boolean
           paid_at: string | null
+          payment_confirmed: boolean
           payment_intent_id: string | null
+          platform_account_id: string | null
           presentment_amount: number | null
           presentment_currency: string | null
           public_token: string
+          receipt_snapshot: Json | null
           refunded_cents: number
           released_at: string | null
           request_fingerprint: string
+          session_request: Json | null
           status: string
           store_id: string
           updated_at: string
@@ -820,15 +875,21 @@ export type Database = {
           id?: string
           idempotency_key: string
           integration_id?: string | null
+          integration_identifier?: string | null
+          last_payment_error?: string | null
           livemode?: boolean
           paid_at?: string | null
+          payment_confirmed?: boolean
           payment_intent_id?: string | null
+          platform_account_id?: string | null
           presentment_amount?: number | null
           presentment_currency?: string | null
           public_token: string
+          receipt_snapshot?: Json | null
           refunded_cents?: number
           released_at?: string | null
           request_fingerprint: string
+          session_request?: Json | null
           status?: string
           store_id: string
           updated_at?: string
@@ -853,15 +914,21 @@ export type Database = {
           id?: string
           idempotency_key?: string
           integration_id?: string | null
+          integration_identifier?: string | null
+          last_payment_error?: string | null
           livemode?: boolean
           paid_at?: string | null
+          payment_confirmed?: boolean
           payment_intent_id?: string | null
+          platform_account_id?: string | null
           presentment_amount?: number | null
           presentment_currency?: string | null
           public_token?: string
+          receipt_snapshot?: Json | null
           refunded_cents?: number
           released_at?: string | null
           request_fingerprint?: string
+          session_request?: Json | null
           status?: string
           store_id?: string
           updated_at?: string
@@ -2101,6 +2168,39 @@ export type Database = {
         Returns: number
       }
       commit_order_stock: { Args: { _order_id: string }; Returns: undefined }
+      donation_apply_event: {
+        Args: {
+          _donation_id: string
+          _event_id: string
+          _facts: Json
+          _object_id: string
+          _signal: string
+        }
+        Returns: Json
+      }
+      donation_release_mark: {
+        Args: {
+          _error: string
+          _outcome: string
+          _release_id: string
+          _transfer_id: string
+        }
+        Returns: Json
+      }
+      donation_release_reserve: {
+        Args: {
+          _amount: number
+          _available_usd: number
+          _confirmed_by: string
+          _dest: string
+          _donation_id: string
+          _fee: number
+          _fee_budget: number
+          _preview_hash: string
+          _source: string
+        }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
