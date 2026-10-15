@@ -20,4 +20,6 @@
 - [ ] Publish central + connect hopehumanbooks.com — blocked on user
 - [ ] Revoke the historical exposed store key at the old central — blocked on user
 - [x] Donation subsystem (separate tables/ledger, API, Stripe-hosted Checkout, webhook dispatch, admin gates, release preview) — default off
-- [ ] Donations activation — blocked on Stripe approvals, human gate confirmations, campaign manifest + reviews, beneficiary onboarding
+- [x] Donation financial correctness fixes (atomic webhook RPC, durable releases, original-integration binding, live recipient checks, branding, receipt fixes, Connect plan)
+- [x] 54-campaign manifest imported as PENDING
+- [ ] Donations activation — blocked on Stripe approvals, human gate confirmations (docs/deploy/hope-human-donations-connect-plan.md), campaign reviews, beneficiary accounts + Stripe-hosted onboarding

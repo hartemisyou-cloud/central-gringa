@@ -97,3 +97,15 @@ stays UNREVIEWED), reviewed beneficiaries with Stripe-hosted onboarding complete
 - A transfer moves funds into the creator's Stripe balance. That is not a bank payout; the creator's own payout schedule controls when money reaches their bank.
 - The NGO covers processing and Connect fees. Optional Adaptive Pricing currency conversion fees are disclosed to the donor by Stripe and are not "zero fees".
 - A recipient country counts as eligible only if the real account/allowlist capability eligibility is confirmed. General Stripe country availability is not enough.
+
+## Financial correctness (revision after review)
+
+- **Checkout retries.** Before calling Stripe, the full Checkout Session request is stored and cannot change afterwards. That includes the fixed 8-letter `integration_identifier`, the origin, recipient and campaign. Every retry sends the same request under `donation-checkout:<id>`. The Session Stripe returns (id, url, livemode, amount, currency, client_reference_id, metadata) is checked before it is saved.
+- **Webhooks.** State, total refunded amount (only ever increases), dispute flag (stays set), ledger entry and the in-flight release marker are all applied in one locked database function, `donation_apply_event`, which only the server can call.
+  - Duplicate events are recognised by Stripe event id.
+  - Events that cannot yet be linked to a donation are retried, not acknowledged.
+  - A paid Session after a card decline still confirms the payment.
+  - Refund or dispute facts recorded before payment confirmation are kept.
+- **Releases.** Handled by `donation_release_reserve` / `donation_release_mark`, which add a lock per platform account and store a durable operation: RESERVED → SUBMITTED → SUCCEEDED | UNKNOWN | FAILED. FAILED is used only for a clear Stripe rejection.
+- **Status contract** is unchanged. `payoutStatus` now reports `RELEASE_IN_PROGRESS` for RESERVED/SUBMITTED/UNKNOWN.
+- Configuration plan: `docs/deploy/hope-human-donations-connect-plan.md`.
