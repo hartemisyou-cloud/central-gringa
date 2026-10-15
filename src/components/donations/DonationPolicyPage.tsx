@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
+/** Fixed policy date (set by the operator, America/Bahia), not the server clock. */
+export const POLICY_DATE = "October 14, 2026";
+
 export function donationPolicyHead(title: string, description: string) {
   return {
     meta: [
@@ -23,6 +26,7 @@ export function DonationPolicyPage({ title, children }: { title: string; childre
         <Link to="/donations/refunds" className="hover:text-foreground">Donation refunds</Link>
       </nav>
       <h1 className="text-3xl font-semibold">{title}</h1>
+      <p className="text-sm text-muted-foreground">Last updated: {POLICY_DATE}</p>
       <p className="text-muted-foreground">
         These pages apply only to donations to Hope Human Foundation. Ebook purchases are separate and covered by the store policies.
       </p>
