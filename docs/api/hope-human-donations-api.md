@@ -119,3 +119,17 @@ Every fresh recipient read (new/retried Session, new/resumed transfer, admin ver
 - Onboarding: responsibilities, dashboard, mode, country and account ownership are required before a link is created; a pending transfers capability does NOT block beginning onboarding (onboarding completes it). Sessions and transfers still require it `active`.
 
 This is compatibility validation only, not a forecast of future fees. With separate charges the platform already pays processing fees regardless of `fees_collector`. The full original USD principal is transferred to the recipient's Stripe balance; it is not a guarantee of bank net proceeds after payout/FX fees. Actual configured fee/payout/FX coverage remains an external activation check for a human.
+
+## FINAL NARROW SCOPE: direct NGO collection (supersedes acceptance rules above)
+Hope Human Foundation receives each donation for the selected campaign. New donations persist `beneficiary_id = NULL` and `beneficiary_snapshot = NULL` plus an immutable `receipt_snapshot` (purpose `donation`, Foundation recipient, campaign, use of funds). No recipient is auto-assigned or fabricated; a future transfer is unavailable until a separate human-verified flow is designed.
+
+Collection eligibility (catalog `ready`, create, retry and `/donations/pay/<token>`) requires only: known ACTIVE campaign (review may stay PENDING, not past `ends_at`), supported USD preset, ACTIVE store, ACTIVE integration with key and platform account, store/integration mode match, original integration/account/mode binding on retries, and the collection switch. It does NOT read Accounts v2 or require campaign review, beneficiary/KYC, Connect, fee reserves, payout schedule, hold limits or release settings. Catalog always lists every campaign entry (54 in production) even when not ready.
+
+- TEST: may create native Stripe-hosted Sessions without a webhook signing secret. Without it nothing can become PAID; only a verified signed matching webhook confirms payment, so receipts stay PENDING/PROCESSING.
+- TEST-only default (documented fallback, no DB write): when NO `donation_settings` row exists and store + integration are ACTIVE/test with key and account, collection is on. All release/onboarding/live-approval fields stay off/null and `confirmed_by` stays null. Any saved row wins; `donations_enabled=false` always closes collection. /admin shows this effective default and switching off = uncheck "Accept donations" and save.
+- LIVE: requires webhook signing secret, Stripe fundraising approval, legal account-name confirmation, a use-of-funds text, human confirmation and explicit `donations_enabled`. No fallback, no bypass.
+- `/pay` only blocks NEW local redirects; an already-open Stripe page is not revoked.
+
+Deferred and OFF (not part of this scope): beneficiary onboarding, Connect, reserves, payouts/releases. Known release activation blocker: CAMPAIGN_END release timing based on `ends_at` is not designed/verified; releases must stay OFF until it is.
+
+Remaining setup for TEST collection to confirm payments: add the TEST webhook signing secret through the secure Stripe integration form in /admin.
