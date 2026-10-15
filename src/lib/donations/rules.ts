@@ -30,6 +30,10 @@ export interface DonationSettings {
   donations_enabled: boolean;
   releases_enabled: boolean;
   ngo_fee_funding_cents: number;
+  /** Human confirmed Stripe automatic bank payouts are set to manual (otherwise available balance can leave). */
+  manual_payout_schedule_confirmed?: boolean;
+  /** Max days funds may be held before transfer, per the platform country's actual Stripe limits. */
+  max_hold_days?: number | null;
   confirmed_by: string | null;
   confirmed_at: string | null;
 }
@@ -52,6 +56,8 @@ export const DEFAULT_SETTINGS: DonationSettings = {
   donations_enabled: false,
   releases_enabled: false,
   ngo_fee_funding_cents: 0,
+  manual_payout_schedule_confirmed: false,
+  max_hold_days: null,
   confirmed_by: null,
   confirmed_at: null,
 };
@@ -293,6 +299,7 @@ export interface ReleaseInputs {
   /** Fee coverage already consumed by previous releases. */
   feeCoverageUsedCents: number;
   existingRelease: boolean;
+  now?: number;
 }
 
 export interface ReleasePreview {
@@ -327,6 +334,15 @@ export function computeReleasePreview(i: ReleaseInputs): ReleasePreview {
   if (!s.releases_enabled) blockers.push("Releases switch is off");
   if (s.fee_coverage_policy !== FEE_POLICY_NGO_COVERS_ALL) blockers.push("Fee coverage policy not confirmed");
   if (!s.connect_approved) blockers.push("Stripe Connect approval not confirmed");
+  if (!s.manual_payout_schedule_confirmed) blockers.push("Manual payout schedule not confirmed (automatic bank payouts can remove available balance)");
+  if (!s.max_hold_days) blockers.push("Country hold limit not configured");
+  else {
+    const paidAt = (d as { paid_at?: string | null }).paid_at;
+    const now = i.now ?? Date.now();
+    if (paidAt && now - Date.parse(paidAt) > s.max_hold_days * 86400000) {
+      blockers.push("Hold limit exceeded: reconciliation needed before any release");
+    }
+  }
   if (!snap?.account_id) blockers.push("Donation has no beneficiary snapshot");
   if (!i.beneficiary || i.beneficiary.stripe_account_id !== snap?.account_id) {
     blockers.push("Beneficiary account does not match the donation snapshot");
