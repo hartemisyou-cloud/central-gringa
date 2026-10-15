@@ -22,7 +22,7 @@ export const Route = createFileRoute("/donations/pay/$token")({
           const { paymentRedirectGaps } = await import("@/lib/donations/service.server");
           const gaps = await paymentRedirectGaps(d).catch(() => ["check failed"]);
           if (gaps.length) {
-            return new Response(null, { status: 303, headers: { location: `${receipt}?unavailable=1`, "cache-control": "no-store" } });
+            return new Response(null, { status: 303, headers: { location: receipt, "cache-control": "no-store" } });
           }
           return new Response(null, { status: 303, headers: { location: url, "cache-control": "no-store" } });
         }

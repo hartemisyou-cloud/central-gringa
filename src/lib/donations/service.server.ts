@@ -394,8 +394,11 @@ export async function receiptView(d: any, origin: string) {
     campaign = c.data ? { slug: c.data.slug, title: c.data.title } : null;
     recipient = { name: st.recipient_name, country: st.recipient_country, useOfFunds: st.use_of_funds };
   }
+  // Local gates only (no provider call): tells a PENDING donor truthfully whether new payment is open.
+  const acceptingPayments = d.status === "PENDING" ? (await currentAcceptanceGaps(d).catch(() => ["error"])).length === 0 : null;
   return {
     ...publicView(d, origin),
+    acceptingPayments,
     baseAmountCents: d.amount_cents,
     refundedCents: d.refunded_cents,
     disputed: Boolean(d.disputed),

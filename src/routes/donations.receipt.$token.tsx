@@ -50,6 +50,12 @@ function Receipt() {
       <p className="text-sm uppercase tracking-wide text-muted-foreground">Donation · {d.donationNumber}</p>
       <h1 className="text-3xl font-semibold">{copy.title}</h1>
       <p className="text-muted-foreground">{copy.body}</p>
+      {d.status === "PENDING" && d.acceptingPayments === false ? (
+        <p className="rounded-md border border-border p-3 text-sm">
+          New payments for this donation are not available right now. If you already submitted a payment on a Stripe page you
+          opened earlier, its result is recorded here once Stripe confirms it.
+        </p>
+      ) : null}
       {OPEN.has(d.status) ? (
         <button type="button" className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted" onClick={() => router.invalidate()}>
           Refresh status
