@@ -843,6 +843,7 @@ describe("native Adaptive Pricing flag", () => {
   it("LIVE is true only when both flags are true", async () => {
     await H.pg.exec(`UPDATE stripe_integrations SET environment='live' WHERE id='${INT_ID}'; UPDATE donation_settings SET stripe_fundraising_approved=true, legal_account_name_confirmed=true, use_of_funds='x', confirmed_by='H', confirmed_at=now()`);
     const live = { ...STORE, environment: "live" };
+    stripe = fakeStripe({ sessionPatch: { livemode: true } });
     const mk = (k: string) => svc.createDonation({ store: live, body: body({ idempotencyKey: k }), origin: "https://c" });
     for (const [e, n, want, k] of [[false, false, false, "key-live-ap-00"], [true, false, false, "key-live-ap-01"], [false, true, false, "key-live-ap-10"], [true, true, true, "key-live-ap-11"]] as const) {
       await H.pg.exec(`UPDATE donation_settings SET adaptive_pricing_eligible=${e}, adaptive_pricing_enabled=${n}`);
@@ -856,9 +857,13 @@ describe("native Adaptive Pricing flag", () => {
     await expect(create()).rejects.toThrow(/socket hang up/);
     const [d] = await rows("SELECT id, session_request FROM donations");
     const old = { ...d.session_request, adaptive_pricing: { enabled: false } };
-    await H.pg.query(`UPDATE donations SET session_request=$1 WHERE id=$2`, [JSON.stringify(old), d.id]).catch(() => null);
+    // Simulate the pre-change stored AP=false request (bypassing the immutability trigger only for setup).
+    await H.pg.exec(`ALTER TABLE donations DISABLE TRIGGER USER`);
+    await H.pg.query(`UPDATE donations SET session_request=$1 WHERE id=$2`, [JSON.stringify(old), d.id]);
+    await H.pg.exec(`ALTER TABLE donations ENABLE TRIGGER USER`);
     const [cur] = await rows("SELECT session_request FROM donations");
     await create();
+    expect(cur.session_request.adaptive_pricing).toEqual({ enabled: false });
     expect(stable(stripe.calls.sessions[1].p)).toBe(stable(cur.session_request));
     expect(stripe.calls.sessions[1].o.idempotencyKey).toBe(stripe.calls.sessions[0].o.idempotencyKey);
   });
