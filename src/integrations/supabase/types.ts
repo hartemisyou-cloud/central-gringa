@@ -446,6 +446,445 @@ export type Database = {
           },
         ]
       }
+      donation_beneficiaries: {
+        Row: {
+          country: string
+          created_at: string
+          display_name: string
+          id: string
+          onboarding_status: string
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          service_agreement: string | null
+          store_id: string
+          stripe_account_id: string | null
+          transfers_capability: string
+          updated_at: string
+        }
+        Insert: {
+          country: string
+          created_at?: string
+          display_name: string
+          id?: string
+          onboarding_status?: string
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          service_agreement?: string | null
+          store_id: string
+          stripe_account_id?: string | null
+          transfers_capability?: string
+          updated_at?: string
+        }
+        Update: {
+          country?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          onboarding_status?: string
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          service_agreement?: string | null
+          store_id?: string
+          stripe_account_id?: string | null
+          transfers_capability?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donation_beneficiaries_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      donation_campaigns: {
+        Row: {
+          active: boolean
+          beneficiary_id: string | null
+          created_at: string
+          ends_at: string | null
+          id: string
+          release_mode: string
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          slug: string
+          store_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          beneficiary_id?: string | null
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          release_mode?: string
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          slug: string
+          store_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          beneficiary_id?: string | null
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          release_mode?: string
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          slug?: string
+          store_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donation_campaigns_beneficiary_id_fkey"
+            columns: ["beneficiary_id"]
+            isOneToOne: false
+            referencedRelation: "donation_beneficiaries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "donation_campaigns_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      donation_ledger: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          currency: string
+          donation_id: string
+          entry_type: string
+          id: string
+          metadata: Json
+          stripe_object_id: string | null
+        }
+        Insert: {
+          amount_cents?: number
+          created_at?: string
+          currency?: string
+          donation_id: string
+          entry_type: string
+          id?: string
+          metadata?: Json
+          stripe_object_id?: string | null
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          currency?: string
+          donation_id?: string
+          entry_type?: string
+          id?: string
+          metadata?: Json
+          stripe_object_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donation_ledger_donation_id_fkey"
+            columns: ["donation_id"]
+            isOneToOne: false
+            referencedRelation: "donations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      donation_releases: {
+        Row: {
+          amount_cents: number
+          confirmed_by: string
+          created_at: string
+          currency: string
+          destination_account_id: string
+          donation_id: string
+          error: string | null
+          fee_coverage_cents: number
+          id: string
+          idempotency_key: string
+          preview_hash: string
+          source_charge_id: string
+          status: string
+          transfer_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          confirmed_by: string
+          created_at?: string
+          currency?: string
+          destination_account_id: string
+          donation_id: string
+          error?: string | null
+          fee_coverage_cents?: number
+          id?: string
+          idempotency_key: string
+          preview_hash: string
+          source_charge_id: string
+          status?: string
+          transfer_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          confirmed_by?: string
+          created_at?: string
+          currency?: string
+          destination_account_id?: string
+          donation_id?: string
+          error?: string | null
+          fee_coverage_cents?: number
+          id?: string
+          idempotency_key?: string
+          preview_hash?: string
+          source_charge_id?: string
+          status?: string
+          transfer_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donation_releases_donation_id_fkey"
+            columns: ["donation_id"]
+            isOneToOne: true
+            referencedRelation: "donations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      donation_settings: {
+        Row: {
+          adaptive_pricing_eligible: boolean
+          adaptive_pricing_enabled: boolean
+          allowed_recipient_countries: string[]
+          confirmed_at: string | null
+          confirmed_by: string | null
+          connect_approved: boolean
+          created_at: string
+          dashboard_responsibility: string | null
+          donations_enabled: boolean
+          fee_coverage_policy: string | null
+          id: string
+          negative_balance_liability: string | null
+          ngo_fee_funding_cents: number
+          platform_country: string | null
+          recipient_country: string
+          recipient_name: string
+          recipient_service_agreement_allowed: boolean
+          releases_enabled: boolean
+          store_id: string
+          stripe_fundraising_approved: boolean
+          updated_at: string
+          usd_settlement_eligible: boolean
+          use_of_funds: string
+        }
+        Insert: {
+          adaptive_pricing_eligible?: boolean
+          adaptive_pricing_enabled?: boolean
+          allowed_recipient_countries?: string[]
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          connect_approved?: boolean
+          created_at?: string
+          dashboard_responsibility?: string | null
+          donations_enabled?: boolean
+          fee_coverage_policy?: string | null
+          id?: string
+          negative_balance_liability?: string | null
+          ngo_fee_funding_cents?: number
+          platform_country?: string | null
+          recipient_country?: string
+          recipient_name?: string
+          recipient_service_agreement_allowed?: boolean
+          releases_enabled?: boolean
+          store_id: string
+          stripe_fundraising_approved?: boolean
+          updated_at?: string
+          usd_settlement_eligible?: boolean
+          use_of_funds?: string
+        }
+        Update: {
+          adaptive_pricing_eligible?: boolean
+          adaptive_pricing_enabled?: boolean
+          allowed_recipient_countries?: string[]
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          connect_approved?: boolean
+          created_at?: string
+          dashboard_responsibility?: string | null
+          donations_enabled?: boolean
+          fee_coverage_policy?: string | null
+          id?: string
+          negative_balance_liability?: string | null
+          ngo_fee_funding_cents?: number
+          platform_country?: string | null
+          recipient_country?: string
+          recipient_name?: string
+          recipient_service_agreement_allowed?: boolean
+          releases_enabled?: boolean
+          store_id?: string
+          stripe_fundraising_approved?: boolean
+          updated_at?: string
+          usd_settlement_eligible?: boolean
+          use_of_funds?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donation_settings_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      donations: {
+        Row: {
+          amount_cents: number
+          attribution: Json
+          beneficiary_id: string | null
+          beneficiary_snapshot: Json | null
+          campaign_id: string
+          charge_id: string | null
+          checkout_expires_at: string | null
+          checkout_session_id: string | null
+          checkout_url: string | null
+          created_at: string
+          currency: string
+          disputed: boolean
+          donation_number: string
+          donor_email: string | null
+          donor_first_name: string | null
+          donor_last_name: string | null
+          id: string
+          idempotency_key: string
+          integration_id: string | null
+          livemode: boolean
+          paid_at: string | null
+          payment_intent_id: string | null
+          presentment_amount: number | null
+          presentment_currency: string | null
+          public_token: string
+          refunded_cents: number
+          released_at: string | null
+          request_fingerprint: string
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          attribution?: Json
+          beneficiary_id?: string | null
+          beneficiary_snapshot?: Json | null
+          campaign_id: string
+          charge_id?: string | null
+          checkout_expires_at?: string | null
+          checkout_session_id?: string | null
+          checkout_url?: string | null
+          created_at?: string
+          currency?: string
+          disputed?: boolean
+          donation_number: string
+          donor_email?: string | null
+          donor_first_name?: string | null
+          donor_last_name?: string | null
+          id?: string
+          idempotency_key: string
+          integration_id?: string | null
+          livemode?: boolean
+          paid_at?: string | null
+          payment_intent_id?: string | null
+          presentment_amount?: number | null
+          presentment_currency?: string | null
+          public_token: string
+          refunded_cents?: number
+          released_at?: string | null
+          request_fingerprint: string
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          attribution?: Json
+          beneficiary_id?: string | null
+          beneficiary_snapshot?: Json | null
+          campaign_id?: string
+          charge_id?: string | null
+          checkout_expires_at?: string | null
+          checkout_session_id?: string | null
+          checkout_url?: string | null
+          created_at?: string
+          currency?: string
+          disputed?: boolean
+          donation_number?: string
+          donor_email?: string | null
+          donor_first_name?: string | null
+          donor_last_name?: string | null
+          id?: string
+          idempotency_key?: string
+          integration_id?: string | null
+          livemode?: boolean
+          paid_at?: string | null
+          payment_intent_id?: string | null
+          presentment_amount?: number | null
+          presentment_currency?: string | null
+          public_token?: string
+          refunded_cents?: number
+          released_at?: string | null
+          request_fingerprint?: string
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donations_beneficiary_id_fkey"
+            columns: ["beneficiary_id"]
+            isOneToOne: false
+            referencedRelation: "donation_beneficiaries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "donations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "donation_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "donations_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "stripe_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "donations_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_conversion_events: {
         Row: {
           attempt_count: number

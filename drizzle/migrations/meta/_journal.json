@@ -8,6 +8,13 @@
       "when": 1792020920920,
       "tag": "0000_hhb_allowed_origins",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792032054485,
+      "tag": "0001_donations_subsystem",
+      "breakpoints": true
     }
   ]
 }
