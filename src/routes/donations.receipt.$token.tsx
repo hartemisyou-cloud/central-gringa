@@ -56,7 +56,7 @@ function Receipt() {
       </dl>
       <p className="text-xs text-muted-foreground">
         This is a payment receipt for a donation, not a purchase. No goods or services are provided in exchange.
-        This receipt makes no statement about tax deductibility. See <Link to="/donation-policy" className="underline">donation terms</Link>.
+        This receipt makes no statement about tax deductibility. See <Link to="/donations/terms" className="underline">donation terms</Link>.
       </p>
     </main>
   );

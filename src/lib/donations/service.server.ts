@@ -280,7 +280,33 @@ async function ledger(donationId: string, type: string, amount: number, objectId
 export async function getDonationStatus(store: StoreRow, token: string, origin: string) {
   const { data: d } = await db.from("donations").select("*").eq("store_id", store.id).eq("public_token", token).maybeSingle();
   if (!d) throw new PaymentError("NOT_FOUND", "Donation not found.");
-  return { donation: await receiptView(d, origin) };
+  const [{ data: campaign }, { data: rel }] = await Promise.all([
+    db.from("donation_campaigns").select("slug").eq("id", d.campaign_id).maybeSingle(),
+    db.from("donation_releases").select("status").eq("donation_id", d.id).maybeSingle(),
+  ]);
+  // Normalized contract: donation fields only — never ebook items or downloads.
+  return {
+    purpose: "donation" as const,
+    donationId: d.id,
+    donationNumber: d.donation_number,
+    publicToken: d.public_token,
+    status: d.status as DonationStatus,
+    amountCents: d.amount_cents,
+    currency: "USD" as const,
+    receiptUrl: `${origin}/donations/receipt/${d.public_token}`,
+    campaignSlug: campaign?.slug ?? null,
+    payoutStatus: payoutStatus(d.status, rel?.status ?? null),
+  };
+}
+
+/** HELD = paid and waiting for a human-approved transfer (payment was captured automatically). */
+export function payoutStatus(status: string, releaseStatus: string | null) {
+  if (status === "REVERSAL_REQUIRED") return "REVERSAL_REQUIRED" as const;
+  if (releaseStatus === "SUCCEEDED" || status === "RELEASED") return "RELEASED" as const;
+  if (releaseStatus === "PENDING") return "RELEASE_IN_PROGRESS" as const;
+  if (releaseStatus === "FAILED") return "RELEASE_FAILED" as const;
+  if (status === "PAID") return "HELD" as const;
+  return "NOT_APPLICABLE" as const;
 }
 
 export async function receiptView(d: any, origin: string) {
