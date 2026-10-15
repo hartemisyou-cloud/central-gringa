@@ -70,8 +70,17 @@ async function findPayment(providerPaymentId: string): Promise<PaymentRow | null
   return data;
 }
 
-export async function applyEvent(event: StripeEvent): Promise<string> {
+export async function applyEvent(
+  event: StripeEvent,
+  ctx?: { integrationId: string; livemode: boolean },
+): Promise<string> {
   const object = event.data.object as Record<string, unknown>;
+
+  // Donations are a separate subsystem (own tables/ledger). They never touch
+  // ebook orders, stock RPCs or downloads; non-donation events return null.
+  const { handleDonationEvent } = await import("@/lib/donations/service.server");
+  const donationResult = await handleDonationEvent(event as never, ctx);
+  if (donationResult !== null) return donationResult;
 
   switch (event.type) {
     case "payment_intent.succeeded": {
@@ -265,7 +274,7 @@ export async function processStripeWebhook(input: {
   }
 
   try {
-    const message = await applyEvent(event);
+    const message = await applyEvent(event, { integrationId: integration.id, livemode: expectedLive });
     // Written last: an event is PROCESSED only after every financial write succeeded.
     await supabaseAdmin
       .from("webhook_events")
