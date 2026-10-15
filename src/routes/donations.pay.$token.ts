@@ -9,24 +9,23 @@ export const Route = createFileRoute("/donations/pay/$token")({
     handlers: {
       GET: async ({ request, params }) => {
         const { donationByToken } = await import("@/lib/donations/service.server");
+        const { isOfficialStripeCheckoutUrl, payBridgeResponse, seeOther, PAY_SECURITY_HEADERS } = await import("@/lib/donations/pay-bridge");
         const d = await donationByToken(params.token);
         const origin = new URL(request.url).origin;
         const receipt = `${origin}/donations/receipt/${encodeURIComponent(params.token)}`;
-        if (!d) return new Response("Donation not found.", { status: 404 });
+        if (!d) return new Response("Donation not found.", { status: 404, headers: { ...PAY_SECURITY_HEADERS, "content-type": "text/plain; charset=utf-8" } });
         const url = typeof d.checkout_url === "string" ? d.checkout_url : "";
-        const official = /^https:\/\/checkout\.stripe\.com\//.test(url);
+        const official = isOfficialStripeCheckoutUrl(url);
         const notExpired = !d.checkout_expires_at || new Date(d.checkout_expires_at).getTime() > Date.now();
         if (d.status === "PENDING" && official && notExpired) {
           // New local redirects only while acceptance is open (config, campaign, live recipient check).
           // This cannot close a Stripe page that is already open elsewhere.
           const { paymentRedirectGaps } = await import("@/lib/donations/service.server");
           const gaps = await paymentRedirectGaps(d).catch(() => ["check failed"]);
-          if (gaps.length) {
-            return new Response(null, { status: 303, headers: { location: receipt, "cache-control": "no-store" } });
-          }
-          return new Response(null, { status: 303, headers: { location: url, "cache-control": "no-store" } });
+          if (gaps.length) return seeOther(receipt);
+          return payBridgeResponse(url);
         }
-        return new Response(null, { status: 303, headers: { location: receipt, "cache-control": "no-store" } });
+        return seeOther(receipt);
       },
     },
   },
