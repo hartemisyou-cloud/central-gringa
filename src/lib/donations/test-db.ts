@@ -10,7 +10,7 @@ CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
 CREATE OR REPLACE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END $$;
 CREATE TABLE public.stripe_integrations (id uuid PRIMARY KEY, status text, environment text, secret_key_ciphertext text,
   webhook_secret_ciphertext text, stripe_account_id text);
-CREATE TABLE public.stores (id uuid PRIMARY KEY, slug text, stripe_integration_id uuid, allowed_origins text[] DEFAULT '{}');
+CREATE TABLE public.stores (id uuid PRIMARY KEY, slug text, stripe_integration_id uuid, allowed_origins text[] DEFAULT '{}', status text DEFAULT 'ACTIVE', environment text DEFAULT 'test');
 CREATE TABLE public.payments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), provider_payment_id text);
 `;
 

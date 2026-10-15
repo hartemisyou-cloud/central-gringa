@@ -53,7 +53,7 @@ const INT2_ID = "00000000-0000-4000-8000-0000000000a2";
 const BEN_ID = "00000000-0000-4000-8000-0000000000b1";
 const CAMP_OK = "00000000-0000-4000-8000-0000000000c1";
 const CAMP_PENDING = "00000000-0000-4000-8000-0000000000c2";
-const STORE = { id: STORE_ID, slug: "hope-human-books", stripe_integration_id: INT_ID };
+const STORE = { id: STORE_ID, slug: "hope-human-books", stripe_integration_id: INT_ID, status: "ACTIVE", environment: "test" };
 
 const READY = {
   ...DEFAULT_SETTINGS,
