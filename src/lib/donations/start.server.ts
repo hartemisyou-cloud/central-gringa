@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DONATION_AMOUNTS_CENTS, createDonationSchema, type CreateDonationInput } from "./rules";
+import { normalizeAttribution } from "@/lib/payments/attribution";
 
 /**
  * Same-tab form POST from the Foundation site -> 303 to this central's /donations/pay/<token>.
@@ -96,12 +97,15 @@ export async function handleDonationStart(request: Request, deps: StartDeps): Pr
     if (!store) return see(back);
     await deps.rateLimit(`donation-start:${store.id}:${deps.clientIp(request)}`);
     // Same normalized body as the server-to-server API (no donor here; Stripe collects contact details).
+    // Attribution is allowlist-filtered and control-char-sanitized (deterministic across retries;
+    // idempotencyKey is untouched) before the shared donation schema.
+    const attribution = normalizeAttribution(p.attribution);
     const body = createDonationSchema.parse({
       campaignSlug: p.campaignSlug,
       amountCents: p.amountCents,
       currency: "USD",
       idempotencyKey: p.idempotencyKey,
-      ...(p.attribution ? { attribution: p.attribution } : {}),
+      ...(Object.keys(attribution).length > 0 ? { attribution } : {}),
     });
     const r = await deps.createDonation({ store, body, origin: self });
     if (!r?.publicToken) return see(back);
