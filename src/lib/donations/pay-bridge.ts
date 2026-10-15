@@ -35,7 +35,7 @@ export function payBridgeResponse(target: string): Response {
     headers: {
       ...PAY_SECURITY_HEADERS,
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; navigate-to https://checkout.stripe.com`,
+      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     },
   });
 }
