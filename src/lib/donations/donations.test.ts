@@ -862,9 +862,12 @@ describe("native Adaptive Pricing flag", () => {
     await H.pg.query(`UPDATE donations SET session_request=$1 WHERE id=$2`, [JSON.stringify(old), d.id]);
     await H.pg.exec(`ALTER TABLE donations ENABLE TRIGGER USER`);
     const [cur] = await rows("SELECT session_request FROM donations");
+    const firstKey = stripe.calls.sessions[0].o.idempotencyKey;
+    stripe = fakeStripe(); // provider that saw the legacy AP=false request
+    svc.__setDonationProviderFactory(async () => stripe);
     await create();
     expect(cur.session_request.adaptive_pricing).toEqual({ enabled: false });
-    expect(stable(stripe.calls.sessions[1].p)).toBe(stable(cur.session_request));
-    expect(stripe.calls.sessions[1].o.idempotencyKey).toBe(stripe.calls.sessions[0].o.idempotencyKey);
+    expect(stable(stripe.calls.sessions[0].p)).toBe(stable(cur.session_request));
+    expect(stripe.calls.sessions[0].o.idempotencyKey).toBe(firstKey);
   });
 });
