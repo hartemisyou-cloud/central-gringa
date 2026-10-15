@@ -5,7 +5,7 @@ import { getDonationReceipt } from "@/lib/donations.functions";
 const STATUS_COPY: Record<string, { title: string; body: string }> = {
   PENDING: { title: "Donation not completed yet", body: "We have not received a confirmed payment for this donation yet. If you just paid, use Refresh status in a moment." },
   PROCESSING: { title: "Payment processing", body: "Your payment method is still processing. Stripe confirms the result to us separately; use Refresh status to check again." },
-  PAID: { title: "Thank you for your donation", body: "Your donation payment is confirmed." },
+  PAID: { title: "Thank you for your donation", body: "Your donation payment is confirmed. Hope Human Foundation received it in support of the selected campaign. Any future transfer to a campaign recipient awaits a separate verification and release process." },
   RELEASED: { title: "Thank you for your donation", body: "Your donation payment is confirmed and the full amount was transferred to the program recipient's Stripe balance. When it reaches their bank depends on the recipient's own payout schedule." },
   FAILED: { title: "Payment failed", body: "The payment did not go through. If your bank shows a pending charge, it should not be completed." },
   EXPIRED: { title: "Payment session expired", body: "The payment page expired before a payment was made. You were not charged." },
