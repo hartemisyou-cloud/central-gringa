@@ -319,10 +319,12 @@ export async function paymentRedirectGaps(d: any): Promise<string[]> {
 
 async function ensureSession(d: any, origin: string, provider: DonationProvider) {
   // Immutable start of this Session key's retry window, recorded BEFORE the remote call.
-  must(
-    await db.from("donations").update({ checkout_first_attempt_at: new Date().toISOString() }).eq("id", d.id).is("checkout_first_attempt_at", null),
-    "Checkout attempt save",
-  );
+  if (!d.checkout_first_attempt_at) {
+    must(
+      await db.from("donations").update({ checkout_first_attempt_at: new Date().toISOString() }).eq("id", d.id).is("checkout_first_attempt_at", null),
+      "Checkout attempt save",
+    );
+  }
   const session = await provider.checkout.sessions.create(d.session_request, { idempotencyKey: `donation-checkout:${d.id}` });
   const bad = sessionResponseGaps(session, d);
   if (bad.length) throw new Error(`Stripe session response rejected: ${bad.join(", ")}`);
