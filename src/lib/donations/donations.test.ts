@@ -157,6 +157,8 @@ describe("create + idempotency", () => {
     expect(p.payment_intent_data.application_fee_amount).toBeUndefined();
     expect(p.payment_intent_data.metadata.purpose).toBe("donation");
     expect(p.adaptive_pricing.enabled).toBe(false);
+    // Hold = delayed transfer after automatic capture; manual capture is never used.
+    expect(p.payment_intent_data.capture_method).toBeUndefined();
     expect(p.integration_identifier).toMatch(/^hhf_donations_[A-Z]{8}$/);
     expect(p.success_url).toBe(`https://central/donations/receipt/${r.publicToken}`);
   });
@@ -280,6 +282,25 @@ describe("execute release (mocked Stripe)", () => {
     expect(d.status).toBe("RELEASED");
     await expect(svc.executeRelease({ donationId: d.id, previewHash: hash, confirmedBy: "Human", maxAmountCents: 2000, stripeOverride: stripe })).rejects.toThrow();
     expect(transfers).toHaveLength(1);
+  });
+});
+
+describe("status contract", () => {
+  it("returns the normalized donation-only shape", async () => {
+    const d = await made();
+    const st = await svc.getDonationStatus(STORE, d.public_token, "https://c");
+    expect(Object.keys(st).sort()).toEqual(["amountCents","campaignSlug","currency","donationId","donationNumber","payoutStatus","publicToken","purpose","receiptUrl","status"]);
+    expect(st.receiptUrl).toBe(`https://c/donations/receipt/${d.public_token}`);
+    expect(st.payoutStatus).toBe("NOT_APPLICABLE");
+    await svc.handleDonationEvent(sessionEvent(d, "checkout.session.completed"), ctx);
+    expect((await svc.getDonationStatus(STORE, d.public_token, "https://c")).payoutStatus).toBe("HELD");
+  });
+});
+
+describe("full-gross guard", () => {
+  it("blocks when available USD cannot cover gross without touching other held donations", () => {
+    const p = computeReleasePreview(base({ availableUsdCents: 2500, otherHeldObligationsCents: 2000 }));
+    expect(p.allowed).toBe(false);
   });
 });
 
