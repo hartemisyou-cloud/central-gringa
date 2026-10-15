@@ -143,6 +143,36 @@ describe("POST /donations/start", () => {
     expect(d.byKey.size).toBe(1);
   });
 
+  it("drops unknown attribution keys, keeps/sanitizes allowed ones, deterministic on retry", async () => {
+    const attribution = {
+      utm_source: " fb\u0007 ",
+      utm_campaign: "spring",
+      evil_key: "drop-me",
+      referrer: "https://example.org/x",
+      empty: "",
+    };
+    const body = new URLSearchParams({ payload: JSON.stringify(payload({ attribution })) }).toString();
+    const d = deps();
+    const r1 = await handleDonationStart(req({ body }), d);
+    const r2 = await handleDonationStart(req({ body }), d);
+    expect(r1.status).toBe(303);
+    expect(r1.headers.get("location")).toBe(r2.headers.get("location"));
+    expect(d.byKey.size).toBe(1);
+    const sent = d.calls[0].body.attribution;
+    expect(sent).toEqual({ utm_source: "fb", utm_campaign: "spring", referrer: "https://example.org/x" });
+    expect(sent).not.toHaveProperty("evil_key");
+    expect(sent).not.toHaveProperty("empty");
+    expect(d.calls[0].body.idempotencyKey).toBe("site-key-123456");
+  });
+
+  it("attribution with only unknown/empty keys is omitted entirely", async () => {
+    const body = new URLSearchParams({ payload: JSON.stringify(payload({ attribution: { nope: "x", blank: "   " } })) }).toString();
+    const d = deps();
+    const r = await handleDonationStart(req({ body }), d);
+    expect(r.status).toBe(303);
+    expect(d.calls[0].body.attribution).toBeUndefined();
+  });
+
   it("never touches ebook order creation", async () => {
     const src = await import("node:fs").then((fs) => fs.readFileSync("src/lib/donations/start.server.ts", "utf8"));
     expect(src).not.toMatch(/orders\.server|createOrder|fulfillment|from\("orders"\)/);
