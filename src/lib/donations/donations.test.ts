@@ -216,6 +216,20 @@ describe("validation and fail-closed configuration", () => {
 });
 
 describe("checkout session request", () => {
+  it("serialized new session uses only Central technical URLs, identity unchanged", async () => {
+    const r = await create();
+    const p = stripe.calls.sessions[0].p;
+    const json = JSON.stringify(p);
+    expect(json).not.toMatch(/hopehumanfoundations?\.org/);
+    expect(p.line_items[0].price_data.product_data.images).toEqual(["https://hopehumanbooks.com/brand/hope-human-logo.png"]);
+    expect(p.branding_settings.logo.url).toBe("https://hopehumanbooks.com/brand/hope-human-logo.png");
+    expect(p.success_url).toBe(`https://central/donations/receipt/${r.publicToken}`);
+    expect(p.cancel_url).toBe(p.success_url);
+    expect(p.metadata.purpose).toBe("donation");
+    expect(p.submit_type).toBe("donate");
+    expect(p.branding_settings.display_name).toBe("Hope Human Foundation");
+    expect(json).not.toMatch(/utm_|fbclid|gclid|landing_page/);
+  });
   it("sends branded donate session with deterministic identifier and no Connect params", async () => {
     const r = await create();
     expect(r.paymentUrl).toBe(`https://central/donations/pay/${r.publicToken}`);
