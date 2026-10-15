@@ -39,6 +39,8 @@ describe("POST /donations/start", () => {
     expect(r.status).toBe(303);
     expect(r.headers.get("location")).toBe(`${SELF}/donations/pay/tok_1`);
     expect(r.headers.get("cache-control")).toBe("no-store");
+    expect(r.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
     expect(await r.text()).toBe("");
     expect(d.loadStore).toHaveBeenCalledWith("hope-human-books");
     expect(d.calls[0].body).toEqual({ campaignSlug: "help-maria", amountCents: 2000, currency: "USD", idempotencyKey: "site-key-123456" });
@@ -81,6 +83,36 @@ describe("POST /donations/start", () => {
       expect(r.status).toBe(400);
       expect(d.createDonation).not.toHaveBeenCalled();
     }
+  });
+
+  it("chunked body >8KiB without Content-Length is cancelled mid-stream, no creation", async () => {
+    let pulled = 0, cancelled = false;
+    const chunk = new TextEncoder().encode("payload=" + "a".repeat(1016));
+    const stream = new ReadableStream({
+      pull(c) { pulled++; c.enqueue(chunk); },
+      cancel() { cancelled = true; },
+    });
+    const r0 = new Request(`${SELF}/donations/start`, { method: "POST", body: stream, duplex: "half", headers: { origin: "https://hopehumanfoundation.org", "content-type": "application/x-www-form-urlencoded" } });
+    expect(r0.headers.get("content-length")).toBeNull();
+    const d = deps();
+    const r = await handleDonationStart(r0, d);
+    expect(r.status).toBe(400);
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(20);
+    expect(d.loadStore).not.toHaveBeenCalled();
+    expect(d.rateLimit).not.toHaveBeenCalled();
+    expect(d.createDonation).not.toHaveBeenCalled();
+  });
+
+  it.each(["-1", "abc", "1.5", "99999999"])("invalid Content-Length %s -> 400 before store/rate/create", async (cl) => {
+    const d = deps();
+    const h = new Headers({ origin: "https://hopehumanfoundation.org", "content-type": "application/x-www-form-urlencoded", "content-length": cl });
+    const fake = { method: "POST", url: `${SELF}/donations/start`, headers: h, body: null };
+    const r = await handleDonationStart(fake, d);
+    expect(r.status).toBe(400);
+    expect(d.loadStore).not.toHaveBeenCalled();
+    expect(d.createDonation).not.toHaveBeenCalled();
   });
 
   it.each(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"])("%s -> 405 without creation", async (method) => {

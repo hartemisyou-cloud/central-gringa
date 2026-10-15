@@ -30,10 +30,36 @@ export interface StartDeps {
   clientIp(r: Request): string;
 }
 
-const noStore = { "cache-control": "no-store" };
+const noStore = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" };
 const plain = (status: number, msg: string, extra: Record<string, string> = {}) =>
   new Response(msg, { status, headers: { ...noStore, "content-type": "text/plain; charset=utf-8", ...extra } });
 const see = (location: string) => new Response(null, { status: 303, headers: { ...noStore, location } });
+
+/** Reads at most `max` bytes, cancelling the stream as soon as the limit is exceeded. */
+export async function readBounded(request: Request, max: number): Promise<Uint8Array | null> {
+  if (!request.body) return new Uint8Array(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.byteLength; }
+  return out;
+}
 
 export function methodNotAllowed(): Response {
   return plain(405, "Method Not Allowed", { allow: "POST" });
@@ -46,10 +72,10 @@ export async function handleDonationStart(request: Request, deps: StartDeps): Pr
   if (!origin || (origin !== self && !START_ALLOWED_ORIGINS.has(origin))) return plain(403, "Forbidden origin.");
   const ctype = (request.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
   if (ctype !== "application/x-www-form-urlencoded") return plain(400, "Unsupported content type.");
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > START_MAX_BODY_BYTES) return plain(400, "Request too large.");
-  const buf = await request.arrayBuffer().catch(() => null);
-  if (!buf || buf.byteLength > START_MAX_BODY_BYTES) return plain(400, "Request too large.");
+  const cl = request.headers.get("content-length");
+  if (cl !== null && (!/^\d{1,7}$/.test(cl.trim()) || Number(cl) > START_MAX_BODY_BYTES)) return plain(400, "Request too large.");
+  const buf = await readBounded(request, START_MAX_BODY_BYTES);
+  if (!buf) return plain(400, "Request too large.");
 
   const form = new URLSearchParams(new TextDecoder().decode(buf));
   const keys = [...form.keys()];
