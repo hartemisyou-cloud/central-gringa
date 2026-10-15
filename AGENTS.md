@@ -17,3 +17,4 @@
 - External checkouts call only this central's API; Stripe UI and keys stay in this project (`/pay/{publicToken}`). Why: card data and Stripe credentials stay in one place.
 - Hosting target is chosen by Nitro auto-detection (Lovable build env → Lovable hosting; `VERCEL=1` → vercel preset) with `vercel.json` framework tanstack-start; never hardcode deployment origins — derive URLs from the serving request. Why: one codebase must work on preview, Lovable and Vercel without stale domains.
 - Stripe keys and webhook secrets are entered only via /admin and stored encrypted (PAYMENTS_ENCRYPTION_KEY); never env vars in checkout projects. Why: card/payment credentials stay in the central.
+- Donations live in `src/lib/donations/` with their own tables, ledger and Stripe SDK instance (dahlia API); they never touch ebook orders/stock/downloads, and every gate defaults off. Why: donor funds must stay separate and fail closed.

@@ -19,3 +19,5 @@
 - [ ] Store credential → STORE_API_KEY in Vercel checkout — blocked on admin
 - [ ] Publish central + connect hopehumanbooks.com — blocked on user
 - [ ] Revoke the historical exposed store key at the old central — blocked on user
+- [x] Donation subsystem (separate tables/ledger, API, Stripe-hosted Checkout, webhook dispatch, admin gates, release preview) — default off
+- [ ] Donations activation — blocked on Stripe approvals, human gate confirmations, campaign manifest + reviews, beneficiary onboarding
