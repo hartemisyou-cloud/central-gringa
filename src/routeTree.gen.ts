@@ -20,14 +20,18 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
 import { Route as OrderTokenRouteImport } from './routes/order.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
+import { Route as DonationsPayTokenRouteImport } from './routes/donations.pay.$token'
+import { Route as ApiPublicV1DonationsRouteImport } from './routes/api/public/v1/donations'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
 import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quote'
 import { Route as ApiPublicV1AnalyticsEventsRouteImport } from './routes/api/public/v1/analytics.events'
 import { Route as ApiPublicV1AnalyticsPresenceRouteImport } from './routes/api/public/v1/analytics.presence'
+import { Route as ApiPublicV1DonationsCatalogRouteImport } from './routes/api/public/v1/donations.catalog'
 import { Route as ApiPublicV2CheckoutBootstrapRouteImport } from './routes/api/public/v2/checkout.bootstrap'
 import { Route as ApiPublicWebhooksStripeIntegrationIdRouteImport } from './routes/api/public/webhooks/stripe.$integrationId'
 import { Route as ApiPublicV1CheckoutSessionPublicTokenRouteImport } from './routes/api/public/v1/checkout.session.$publicToken'
+import { Route as ApiPublicV1DonationsStatusPublicTokenRouteImport } from './routes/api/public/v1/donations.status.$publicToken'
 import { Route as ApiPublicV1DownloadsPublicTokenWorkIdRouteImport } from './routes/api/public/v1/downloads.$publicToken.$workId'
 import { Route as ApiPublicV1OrdersOrderIdPaymentRouteImport } from './routes/api/public/v1/orders.$orderId.payment'
 import { Route as ApiPublicV1OrdersTokenAttributionRouteImport } from './routes/api/public/v1/orders.$token.attribution'
@@ -90,6 +94,16 @@ const PayTokenRoute = PayTokenRouteImport.update({
   path: '/pay/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DonationsPayTokenRoute = DonationsPayTokenRouteImport.update({
+  id: '/donations/pay/$token',
+  path: '/donations/pay/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1DonationsRoute = ApiPublicV1DonationsRouteImport.update({
+  id: '/api/public/v1/donations',
+  path: '/api/public/v1/donations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicV1OrdersRoute = ApiPublicV1OrdersRouteImport.update({
   id: '/api/public/v1/orders',
   path: '/api/public/v1/orders',
@@ -117,6 +131,12 @@ const ApiPublicV1AnalyticsPresenceRoute =
     path: '/api/public/v1/analytics/presence',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicV1DonationsCatalogRoute =
+  ApiPublicV1DonationsCatalogRouteImport.update({
+    id: '/catalog',
+    path: '/catalog',
+    getParentRoute: () => ApiPublicV1DonationsRoute,
+  } as any)
 const ApiPublicV2CheckoutBootstrapRoute =
   ApiPublicV2CheckoutBootstrapRouteImport.update({
     id: '/api/public/v2/checkout/bootstrap',
@@ -134,6 +154,12 @@ const ApiPublicV1CheckoutSessionPublicTokenRoute =
     id: '/api/public/v1/checkout/session/$publicToken',
     path: '/api/public/v1/checkout/session/$publicToken',
     getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicV1DonationsStatusPublicTokenRoute =
+  ApiPublicV1DonationsStatusPublicTokenRouteImport.update({
+    id: '/status/$publicToken',
+    path: '/status/$publicToken',
+    getParentRoute: () => ApiPublicV1DonationsRoute,
   } as any)
 const ApiPublicV1DownloadsPublicTokenWorkIdRoute =
   ApiPublicV1DownloadsPublicTokenWorkIdRouteImport.update({
@@ -184,14 +210,18 @@ export interface FileRoutesByFullPath {
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
+  '/donations/pay/$token': typeof DonationsPayTokenRoute
+  '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v1/donations/catalog': typeof ApiPublicV1DonationsCatalogRoute
   '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
+  '/api/public/v1/donations/status/$publicToken': typeof ApiPublicV1DonationsStatusPublicTokenRoute
   '/api/public/v1/downloads/$publicToken/$workId': typeof ApiPublicV1DownloadsPublicTokenWorkIdRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/$token/attribution': typeof ApiPublicV1OrdersTokenAttributionRoute
@@ -211,14 +241,18 @@ export interface FileRoutesByTo {
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
+  '/donations/pay/$token': typeof DonationsPayTokenRoute
+  '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v1/donations/catalog': typeof ApiPublicV1DonationsCatalogRoute
   '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
+  '/api/public/v1/donations/status/$publicToken': typeof ApiPublicV1DonationsStatusPublicTokenRoute
   '/api/public/v1/downloads/$publicToken/$workId': typeof ApiPublicV1DownloadsPublicTokenWorkIdRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/$token/attribution': typeof ApiPublicV1OrdersTokenAttributionRoute
@@ -239,14 +273,18 @@ export interface FileRoutesById {
   '/admin_/analytics': typeof AdminAnalyticsRoute
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
+  '/donations/pay/$token': typeof DonationsPayTokenRoute
+  '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v1/donations/catalog': typeof ApiPublicV1DonationsCatalogRoute
   '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
   '/api/public/v1/checkout/session/$publicToken': typeof ApiPublicV1CheckoutSessionPublicTokenRoute
+  '/api/public/v1/donations/status/$publicToken': typeof ApiPublicV1DonationsStatusPublicTokenRoute
   '/api/public/v1/downloads/$publicToken/$workId': typeof ApiPublicV1DownloadsPublicTokenWorkIdRoute
   '/api/public/v1/orders/$orderId/payment': typeof ApiPublicV1OrdersOrderIdPaymentRoute
   '/api/public/v1/orders/$token/attribution': typeof ApiPublicV1OrdersTokenAttributionRoute
@@ -268,14 +306,18 @@ export interface FileRouteTypes {
     | '/admin/analytics'
     | '/order/$token'
     | '/pay/$token'
+    | '/donations/pay/$token'
+    | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v1/donations/catalog'
     | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
+    | '/api/public/v1/donations/status/$publicToken'
     | '/api/public/v1/downloads/$publicToken/$workId'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/$token/attribution'
@@ -295,14 +337,18 @@ export interface FileRouteTypes {
     | '/admin/analytics'
     | '/order/$token'
     | '/pay/$token'
+    | '/donations/pay/$token'
+    | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v1/donations/catalog'
     | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
+    | '/api/public/v1/donations/status/$publicToken'
     | '/api/public/v1/downloads/$publicToken/$workId'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/$token/attribution'
@@ -322,14 +368,18 @@ export interface FileRouteTypes {
     | '/admin_/analytics'
     | '/order/$token'
     | '/pay/$token'
+    | '/donations/pay/$token'
+    | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v1/donations/catalog'
     | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
     | '/api/public/v1/checkout/session/$publicToken'
+    | '/api/public/v1/donations/status/$publicToken'
     | '/api/public/v1/downloads/$publicToken/$workId'
     | '/api/public/v1/orders/$orderId/payment'
     | '/api/public/v1/orders/$token/attribution'
@@ -350,6 +400,8 @@ export interface RootRouteChildren {
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   OrderTokenRoute: typeof OrderTokenRoute
   PayTokenRoute: typeof PayTokenRoute
+  DonationsPayTokenRoute: typeof DonationsPayTokenRoute
+  ApiPublicV1DonationsRoute: typeof ApiPublicV1DonationsRouteWithChildren
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
   ApiPublicV1QuoteRoute: typeof ApiPublicV1QuoteRoute
@@ -442,6 +494,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PayTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/donations/pay/$token': {
+      id: '/donations/pay/$token'
+      path: '/donations/pay/$token'
+      fullPath: '/donations/pay/$token'
+      preLoaderRoute: typeof DonationsPayTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/donations': {
+      id: '/api/public/v1/donations'
+      path: '/api/public/v1/donations'
+      fullPath: '/api/public/v1/donations'
+      preLoaderRoute: typeof ApiPublicV1DonationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/v1/orders': {
       id: '/api/public/v1/orders'
       path: '/api/public/v1/orders'
@@ -477,6 +543,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicV1AnalyticsPresenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/v1/donations/catalog': {
+      id: '/api/public/v1/donations/catalog'
+      path: '/catalog'
+      fullPath: '/api/public/v1/donations/catalog'
+      preLoaderRoute: typeof ApiPublicV1DonationsCatalogRouteImport
+      parentRoute: typeof ApiPublicV1DonationsRoute
+    }
     '/api/public/v2/checkout/bootstrap': {
       id: '/api/public/v2/checkout/bootstrap'
       path: '/api/public/v2/checkout/bootstrap'
@@ -497,6 +570,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/v1/checkout/session/$publicToken'
       preLoaderRoute: typeof ApiPublicV1CheckoutSessionPublicTokenRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/donations/status/$publicToken': {
+      id: '/api/public/v1/donations/status/$publicToken'
+      path: '/status/$publicToken'
+      fullPath: '/api/public/v1/donations/status/$publicToken'
+      preLoaderRoute: typeof ApiPublicV1DonationsStatusPublicTokenRouteImport
+      parentRoute: typeof ApiPublicV1DonationsRoute
     }
     '/api/public/v1/downloads/$publicToken/$workId': {
       id: '/api/public/v1/downloads/$publicToken/$workId'
@@ -543,6 +623,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ApiPublicV1DonationsRouteChildren {
+  ApiPublicV1DonationsCatalogRoute: typeof ApiPublicV1DonationsCatalogRoute
+  ApiPublicV1DonationsStatusPublicTokenRoute: typeof ApiPublicV1DonationsStatusPublicTokenRoute
+}
+
+const ApiPublicV1DonationsRouteChildren: ApiPublicV1DonationsRouteChildren = {
+  ApiPublicV1DonationsCatalogRoute: ApiPublicV1DonationsCatalogRoute,
+  ApiPublicV1DonationsStatusPublicTokenRoute:
+    ApiPublicV1DonationsStatusPublicTokenRoute,
+}
+
+const ApiPublicV1DonationsRouteWithChildren =
+  ApiPublicV1DonationsRoute._addFileChildren(ApiPublicV1DonationsRouteChildren)
+
 interface ApiPublicV1OrdersRouteChildren {
   ApiPublicV1OrdersOrderIdPaymentRoute: typeof ApiPublicV1OrdersOrderIdPaymentRoute
   ApiPublicV1OrdersTokenAttributionRoute: typeof ApiPublicV1OrdersTokenAttributionRoute
@@ -572,6 +666,8 @@ const rootRouteChildren: RootRouteChildren = {
   AdminAnalyticsRoute: AdminAnalyticsRoute,
   OrderTokenRoute: OrderTokenRoute,
   PayTokenRoute: PayTokenRoute,
+  DonationsPayTokenRoute: DonationsPayTokenRoute,
+  ApiPublicV1DonationsRoute: ApiPublicV1DonationsRouteWithChildren,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,
   ApiPublicV1QuoteRoute: ApiPublicV1QuoteRoute,
