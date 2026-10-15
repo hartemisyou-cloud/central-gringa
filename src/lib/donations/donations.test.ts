@@ -75,7 +75,7 @@ const READY = {
   dashboard_responsibility: "PLATFORM",
   negative_balance_liability: "PLATFORM",
   donations_enabled: true,
-  releases_enabled: true,
+  releases_enabled: true, manual_payout_schedule_confirmed: true, max_hold_days: 90,
   ngo_fee_funding_cents: 10000,
   confirmed_by: "Test Human",
   confirmed_at: "2026-01-01T00:00:00Z",
