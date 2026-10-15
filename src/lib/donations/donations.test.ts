@@ -1,6 +1,6 @@
 // @ts-nocheck -- test doubles; runtime assertions cover behavior.
 // Real Postgres (PGlite) runs the actual migrations + RPCs; Stripe is a strict fake. No network.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   computeReleasePreview,
   createDonationSchema,
@@ -15,35 +15,30 @@ import {
 } from "./rules";
 import { makeTestDb } from "./test-db";
 
-const H: { client: any; pg: any; failNext: Set<string> } = { client: null, pg: null, failNext: new Set() };
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (t: string) => {
-      const b = H.client.from(t);
-      const origUpdate = b.update;
-      b.update = (v: any) => {
-        if (H.failNext.has(`update:${t}`)) {
-          H.failNext.delete(`update:${t}`);
-          const r = origUpdate(v);
-          const fail = { data: null, error: { message: "simulated DB failure" } };
-          r.single = async () => fail;
-          r.maybeSingle = async () => fail;
-          r.then = (res: any) => Promise.resolve(fail).then(res);
-          return r;
-        }
-        return origUpdate(v);
-      };
-      return b;
-    },
-    rpc: (n: string, a: any) => {
-      if (H.failNext.has(`rpc:${n}:${a._outcome ?? ""}`)) {
-        H.failNext.delete(`rpc:${n}:${a._outcome ?? ""}`);
-        return Promise.resolve({ data: null, error: { message: "simulated DB failure" } });
+const H: { client: any; pg: any; close: any; failNext: Set<string> } = { client: null, pg: null, close: null, failNext: new Set() };
+vi.mock("@/lib/db/client.server", async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    sql: new Proxy(function (strings: TemplateStringsArray, ...values: any[]) {
+      const statement = strings.join("?");
+      const key = /UPDATE\s+public\.donations/i.test(statement) ? "update:donations"
+        : /SELECT count\(\*\) AS count FROM public\.donations/i.test(statement) ? "count:donations"
+        : statement.includes("public.donation_release_mark(") ? `rpc:donation_release_mark:${values[1] ?? ""}`
+        : statement.includes("public.donation_release_submit_guard(") ? "rpc:donation_release_submit_guard:" : "";
+      if (key && H.failNext.has(key)) {
+        H.failNext.delete(key);
+        return Promise.reject(new Error("simulated DB failure"));
       }
-      return H.client.rpc(n, a);
-    },
-  },
-}));
+      return H.client(strings, ...values);
+    }, {
+      get(_target, property) {
+        const value = H.client[property];
+        return typeof value === "function" ? value.bind(H.client) : value;
+      },
+    }),
+  };
+});
 
 const svc = await import("./service.server");
 
@@ -155,17 +150,30 @@ function mkSession(p: any) {
 }
 
 let stripe: any;
+// Fixture setup executes real SQL without emulating an application query builder.
+async function insertFixture(table: string, payload: any) {
+  if (!["donation_settings", "donation_beneficiaries", "donation_campaigns"].includes(table)) throw new Error("Unknown fixture table");
+  for (const record of (Array.isArray(payload) ? payload : [payload])) {
+    const columns = Object.keys(record);
+    const parameters = Object.values(record).map((v) => v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v);
+    await H.pg.query(`INSERT INTO public.${table} (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${parameters.map((_, i) => `$${i + 1}`).join(",")})`, parameters);
+  }
+}
+async function rpcResult(query: PromiseLike<any>) {
+  try { return { data: (await query)[0]?.result ?? null, error: null }; }
+  catch (e) { return { data: null, error: { message: e.message } }; }
+}
 async function seed() {
-  const { pg, client } = await makeTestDb();
-  H.pg = pg; H.client = client; H.failNext.clear();
+  const { pg, client, close } = await makeTestDb();
+  H.pg = pg; H.client = client; H.close = close; H.failNext.clear();
   await pg.exec(`
     INSERT INTO stripe_integrations VALUES ('${INT_ID}','ACTIVE','test','enc','encw','acct_platform'),('${INT2_ID}','ACTIVE','test','enc','encw','acct_platform_2');
     INSERT INTO stores (id, slug, stripe_integration_id) VALUES ('${STORE_ID}','hope-human-books','${INT_ID}'),('${STORE2_ID}','other','${INT_ID}');
     INSERT INTO payments (provider_payment_id) VALUES ('pi_ebook');
   `);
-  await client.from("donation_settings").insert({ store_id: STORE_ID, ...READY });
-  await client.from("donation_beneficiaries").insert(BEN);
-  await client.from("donation_campaigns").insert([
+  await insertFixture("donation_settings", { store_id: STORE_ID, ...READY });
+  await insertFixture("donation_beneficiaries", BEN);
+  await insertFixture("donation_campaigns", [
     { id: CAMP_OK, store_id: STORE_ID, slug: "ok", title: "OK", review_status: "APPROVED", active: true, beneficiary_id: BEN_ID },
     { id: CAMP_PENDING, store_id: STORE_ID, slug: "mateo", title: "Mateo", review_status: "PENDING", active: true, beneficiary_id: null },
   ]);
@@ -178,6 +186,7 @@ const body = (o = {}) => ({ campaignSlug: "ok", amountCents: 2000, currency: "US
 const create = (o = {}) => svc.createDonation({ store: STORE, body: body(o), origin: "https://central" });
 
 beforeEach(seed);
+afterEach(async () => { await H.close?.(); });
 
 describe("validation and fail-closed configuration", () => {
   it("rejects unsupported amount, currency and extra fields", () => {
@@ -216,6 +225,20 @@ describe("validation and fail-closed configuration", () => {
 });
 
 describe("checkout session request", () => {
+  it("serialized new session uses only Central technical URLs, identity unchanged", async () => {
+    const r = await create();
+    const p = stripe.calls.sessions[0].p;
+    const json = JSON.stringify(p);
+    expect(json).not.toMatch(/hopehumanfoundations?\.org/);
+    expect(p.line_items[0].price_data.product_data.images).toEqual(["https://hopehumanbooks.com/brand/hope-human-logo.png"]);
+    expect(p.branding_settings.logo.url).toBe("https://hopehumanbooks.com/brand/hope-human-logo.png");
+    expect(p.success_url).toBe(`https://central/donations/receipt/${r.publicToken}`);
+    expect(p.cancel_url).toBe(p.success_url);
+    expect(p.metadata.purpose).toBe("donation");
+    expect(p.submit_type).toBe("donate");
+    expect(p.branding_settings.display_name).toBe("Hope Human Foundation");
+    expect(json).not.toMatch(/utm_|fbclid|gclid|landing_page/);
+  });
   it("sends branded donate session with deterministic identifier and no Connect params", async () => {
     const r = await create();
     expect(r.paymentUrl).toBe(`https://central/donations/pay/${r.publicToken}`);
@@ -361,6 +384,17 @@ describe("webhook (atomic RPC)", () => {
     await expect(svc.handleDonationEvent(ev, ctx)).rejects.toBeInstanceOf(svc.RetryableDonationError);
     await expect(svc.handleDonationEvent(refundEvent(2000), ctx)).rejects.toBeInstanceOf(svc.RetryableDonationError);
     expect((await donation(d.id)).status).toBe("PENDING");
+  });
+  it("refund/dispute lookup SQL failure is propagated without acknowledging the event", async () => {
+    const d = await made();
+    for (const event of [refundEvent(2000), disputeEvent()]) {
+      H.failNext.add("count:donations");
+      await expect(svc.handleDonationEvent(event, ctx)).rejects.toThrow(/Pending donation read failed: simulated DB failure/);
+      expect(H.failNext.has("count:donations")).toBe(false);
+      expect((await donation(d.id)).status).toBe("PENDING");
+      expect(await rows(`SELECT * FROM donation_ledger WHERE donation_id='${d.id}' AND entry_type <> 'CREATED'`)).toHaveLength(0);
+      await expect(svc.handleDonationEvent(event, ctx)).rejects.toBeInstanceOf(svc.RetryableDonationError);
+    }
   });
   it("ebook events fall through; unknown sessions ignored", async () => {
     expect(await svc.handleDonationEvent({ type: "payment_intent.succeeded", livemode: false, data: { object: { id: "pi_ebook", metadata: {} } } }, ctx)).toBeNull();
@@ -599,7 +633,7 @@ describe("P1-2 Resume and final submit honor CURRENT guards", () => {
     const d = await paidDonation();
     await reserveOnly(d.id);
     await H.pg.exec(`UPDATE donations SET disputed = true WHERE id='${d.id}'`);
-    const r = await H.client.rpc("donation_release_submit_guard", { _release_id: (await relRow(d.id)).id, _window_seconds: 82800 });
+    const r = await rpcResult(H.client`SELECT public.donation_release_submit_guard(_release_id => ${(await relRow(d.id)).id}::uuid, _window_seconds => ${82800}::integer) AS result`);
     expect(r.data.allowed).toBe(false);
   });
 });
@@ -616,8 +650,10 @@ describe("P1-3 shared Stripe account scope across integration rows", () => {
   beforeEach(async () => {
     await H.pg.exec(`UPDATE stripe_integrations SET stripe_account_id = 'acct_platform' WHERE id='${INT2_ID}'`);
   });
-  const reserve = (id, available, budget = 10000) => H.client.rpc("donation_release_reserve", { _donation_id: id, _preview_hash: "h", _confirmed_by: "Human",
-    _amount: 2000, _fee: 88, _dest: "acct_123", _source: `ch_${id.slice(-1)}`, _available_usd: available, _fee_budget: budget });
+  const reserve = (id, available, budget = 10000) => rpcResult(H.client`SELECT public.donation_release_reserve(
+    _donation_id => ${id}::uuid, _preview_hash => ${"h"}::text, _confirmed_by => ${"Human"}::text,
+    _amount => ${2000}::integer, _fee => ${88}::integer, _dest => ${"acct_123"}::text,
+    _source => ${`ch_${id.slice(-1)}`}::text, _available_usd => ${available}::bigint, _fee_budget => ${budget}::integer) AS result`);
   it("held principal under a different integration row on the same account is protected", async () => {
     const a = await directPaid(1, INT_ID);
     await directPaid(2, INT2_ID);

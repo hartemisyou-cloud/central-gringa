@@ -13,7 +13,7 @@ export const FEE_POLICY_NGO_COVERS_ALL = "NGO_COVERS_ALL";
 
 /** Genuine, unmodified public Foundation logo. Used only on donation Checkout Sessions. */
 export const FOUNDATION_LOGO_URL =
-  "https://www.hopehumanfoundation.org/__l5e/assets-v1/48bd9da7-fcfd-4aff-975f-d04afa35f809/hope-human-logo.png";
+  "https://hopehumanbooks.com/brand/hope-human-logo.png";
 export const DONATION_BRANDING = {
   display_name: "Hope Human Foundation",
   logo: { type: "url", url: FOUNDATION_LOGO_URL },

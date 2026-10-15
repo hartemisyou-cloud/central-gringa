@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows, one, exec, count } from "@/lib/db/client.server";
 import { PaymentError } from "@/lib/payments/errors";
 import { randomToken, sha256Hex } from "@/lib/payments/crypto.server";
 import type { StoreRow } from "@/lib/payments/store-auth.server";
@@ -32,7 +32,6 @@ import {
 } from "./rules";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const db = supabaseAdmin as any;
 
 function must<T extends { error: { message: string } | null }>(r: T, what: string): T {
   if (r.error) throw new Error(`${what} failed: ${r.error.message}`);
@@ -68,21 +67,20 @@ export function __setDonationProviderFactory(f: ProviderFactory) {
 // ---------------- Loaders ----------------
 
 export async function loadSettings(storeId: string): Promise<DonationSettings | null> {
-  const r = must(await db.from("donation_settings").select("*").eq("store_id", storeId).maybeSingle(), "Settings read");
+  const r = must(await one<any>(sql`SELECT * FROM public.donation_settings WHERE store_id = ${storeId}::uuid`, true), "Settings read");
   return (r.data as DonationSettings | null) ?? null;
 }
 
-const INTEGRATION_COLS = "id, status, environment, secret_key_ciphertext, webhook_secret_ciphertext, stripe_account_id";
 async function loadIntegrationById(id: string | null): Promise<IntegrationLike | null> {
   if (!id) return null;
-  const r = must(await db.from("stripe_integrations").select(INTEGRATION_COLS).eq("id", id).maybeSingle(), "Integration read");
+  const r = must(await one<any>(sql`SELECT id, status, environment, secret_key_ciphertext, webhook_secret_ciphertext, stripe_account_id FROM public.stripe_integrations WHERE id = ${id}::uuid`, true), "Integration read");
   return r.data ?? null;
 }
 
 async function loadBeneficiary(storeId: string, id: string | null): Promise<BeneficiaryLike | null> {
   if (!id) return null;
   const r = must(
-    await db.from("donation_beneficiaries").select("*").eq("id", id).eq("store_id", storeId).maybeSingle(),
+    await one<any>(sql`SELECT * FROM public.donation_beneficiaries WHERE id = ${id}::uuid AND store_id = ${storeId}::uuid`, true),
     "Beneficiary read",
   );
   return r.data ?? null;
@@ -114,7 +112,7 @@ export async function getDonationCatalog(store: StoreRow) {
   const [settings, integration, campaignsR] = await Promise.all([
     loadSettings(store.id),
     loadIntegrationById(store.stripe_integration_id ?? null),
-    db.from("donation_campaigns").select("*").eq("store_id", store.id).order("slug"),
+    rows<any>(sql`SELECT * FROM public.donation_campaigns WHERE store_id = ${store.id}::uuid ORDER BY slug ASC`),
   ]);
   const campaigns = must(campaignsR, "Campaign read").data ?? [];
   // ready = NGO COLLECTION capability (independent of any future recipient payout readiness).
@@ -163,7 +161,7 @@ export async function createDonation(input: { store: StoreRow; body: CreateDonat
   const [settings, integration, campaignR] = await Promise.all([
     loadSettings(store.id),
     loadIntegrationById(store.stripe_integration_id ?? null),
-    db.from("donation_campaigns").select("*").eq("store_id", store.id).eq("slug", body.campaignSlug).maybeSingle(),
+    one<any>(sql`SELECT * FROM public.donation_campaigns WHERE store_id = ${store.id}::uuid AND slug = ${body.campaignSlug}`, true),
   ]);
   const campaign = must(campaignR, "Campaign read").data;
   if (!campaign) throw new PaymentError("NOT_FOUND", "Unknown campaign.");
@@ -227,19 +225,34 @@ export async function createDonation(input: { store: StoreRow; body: CreateDonat
     integration_identifier: integrationIdentifier,
     session_request: sessionRequest,
   };
-  const ins = await db.from("donations").insert(row).select("*").single();
+  const ins = await one<any>(sql`
+    INSERT INTO public.donations (
+      id, store_id, campaign_id, donation_number, public_token, status, amount_cents, currency,
+      donor_first_name, donor_last_name, donor_email, attribution, idempotency_key, request_fingerprint,
+      integration_id, livemode, platform_account_id, beneficiary_id, beneficiary_snapshot,
+      receipt_snapshot, integration_identifier, session_request
+    ) VALUES (
+      ${row.id}::uuid, ${row.store_id}::uuid, ${row.campaign_id}::uuid, ${row.donation_number},
+      ${row.public_token}, ${row.status}, ${row.amount_cents}::integer, ${row.currency},
+      ${row.donor_first_name}, ${row.donor_last_name}, ${row.donor_email}, ${sql.json(row.attribution)},
+      ${row.idempotency_key}, ${row.request_fingerprint}, ${row.integration_id}::uuid, ${row.livemode}::boolean,
+      ${row.platform_account_id ?? null}, NULL, NULL, ${sql.json(row.receipt_snapshot)},
+      ${row.integration_identifier}, ${sql.json(row.session_request)}
+    ) RETURNING *
+  `);
   if (ins.error) {
     // Concurrent request with the same key won the race.
     const raced = await findByKey(store.id, body.idempotencyKey);
     if (raced) return resumeExisting(raced, fingerprint, origin);
     throw new Error(`Donation insert failed: ${ins.error.message}`);
   }
-  must(await db.from("donation_ledger").insert({ donation_id: id, entry_type: "CREATED", amount_cents: body.amountCents, metadata: {} }), "Ledger write");
+  must(await exec(sql`INSERT INTO public.donation_ledger (donation_id, entry_type, amount_cents, metadata)
+    VALUES (${id}::uuid, 'CREATED', ${body.amountCents}::integer, ${sql.json({})})`), "Ledger write");
   return ensureSession(ins.data, origin, provider);
 }
 
 async function findByKey(storeId: string, key: string) {
-  const r = must(await db.from("donations").select("*").eq("store_id", storeId).eq("idempotency_key", key).maybeSingle(), "Donation read");
+  const r = must(await one<any>(sql`SELECT * FROM public.donations WHERE store_id = ${storeId}::uuid AND idempotency_key = ${key}`, true), "Donation read");
   return r.data;
 }
 
@@ -255,7 +268,7 @@ function originalBindingGaps(d: any, integration: IntegrationLike | null): strin
 }
 
 async function loadStoreById(id: string) {
-  return must(await db.from("stores").select("*").eq("id", id).maybeSingle(), "Store read").data ?? null;
+  return must(await one<any>(sql`SELECT * FROM public.stores WHERE id = ${id}::uuid`, true), "Store read").data ?? null;
 }
 
 /** Original integration still bound to the donation's account and mode (collection rules). */
@@ -276,7 +289,7 @@ export async function currentAcceptanceGaps(d: any): Promise<string[]> {
     loadStoreById(d.store_id),
     loadSettings(d.store_id),
     loadIntegrationById(d.integration_id),
-    db.from("donation_campaigns").select("*").eq("id", d.campaign_id).eq("store_id", d.store_id).maybeSingle(),
+    one<any>(sql`SELECT * FROM public.donation_campaigns WHERE id = ${d.campaign_id}::uuid AND store_id = ${d.store_id}::uuid`, true),
   ]);
   const campaign = must(campR, "Campaign read").data;
   const gaps = [...collectionBindingGaps(d, integration), ...collectionGaps({ store, integration, settings }), ...collectionCampaignGaps(campaign)];
@@ -284,7 +297,7 @@ export async function currentAcceptanceGaps(d: any): Promise<string[]> {
 }
 
 async function flagCheckoutManualReview(id: string) {
-  must(await db.from("donations").update({ checkout_manual_review: true }).eq("id", id), "Checkout review flag");
+  must(await exec(sql`UPDATE public.donations SET checkout_manual_review = true WHERE id = ${id}::uuid`), "Checkout review flag");
 }
 
 async function resumeExisting(d: any, fingerprint: string, origin: string) {
@@ -316,26 +329,20 @@ async function ensureSession(d: any, origin: string, provider: DonationProvider)
   // Immutable start of this Session key's retry window, recorded BEFORE the remote call.
   if (!d.checkout_first_attempt_at) {
     must(
-      await db.from("donations").update({ checkout_first_attempt_at: new Date().toISOString() }).eq("id", d.id).is("checkout_first_attempt_at", null),
+      await exec(sql`UPDATE public.donations SET checkout_first_attempt_at = ${new Date().toISOString()}::timestamptz WHERE id = ${d.id}::uuid AND checkout_first_attempt_at IS NULL`),
       "Checkout attempt save",
     );
   }
   const session = await provider.checkout.sessions.create(d.session_request, { idempotencyKey: `donation-checkout:${d.id}` });
   const bad = sessionResponseGaps(session, d);
   if (bad.length) throw new Error(`Stripe session response rejected: ${bad.join(", ")}`);
-  const upd = await db
-    .from("donations")
-    .update({
-      checkout_session_id: session.id,
-      checkout_url: session.url,
-      checkout_expires_at: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
-    })
-    .eq("id", d.id)
-    .select("*")
-    .single();
+  const upd = await one<any>(sql`UPDATE public.donations SET
+    checkout_session_id = ${session.id}, checkout_url = ${session.url},
+    checkout_expires_at = ${session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null}::timestamptz
+    WHERE id = ${d.id}::uuid RETURNING *`);
   if (upd.error) {
     // A concurrent call may already have stored the same session (idempotent replay).
-    const cur = must(await db.from("donations").select("*").eq("id", d.id).maybeSingle(), "Donation read").data;
+    const cur = must(await one<any>(sql`SELECT * FROM public.donations WHERE id = ${d.id}::uuid`, true), "Donation read").data;
     if (cur?.checkout_session_id === session.id) return publicView(cur, origin);
     throw new Error(`Donation session save failed: ${upd.error.message}`);
   }
@@ -345,12 +352,12 @@ async function ensureSession(d: any, origin: string, provider: DonationProvider)
 // ---------------- Status / pay ----------------
 
 export async function getDonationStatus(store: StoreRow, token: string, origin: string) {
-  const r = must(await db.from("donations").select("*").eq("store_id", store.id).eq("public_token", token).maybeSingle(), "Donation read");
+  const r = must(await one<any>(sql`SELECT * FROM public.donations WHERE store_id = ${store.id}::uuid AND public_token = ${token}`, true), "Donation read");
   const d = r.data;
   if (!d) throw new PaymentError("NOT_FOUND", "Donation not found.");
   const [campaignR, relR] = await Promise.all([
-    db.from("donation_campaigns").select("slug").eq("id", d.campaign_id).maybeSingle(),
-    db.from("donation_releases").select("status").eq("donation_id", d.id).maybeSingle(),
+    one<any>(sql`SELECT slug FROM public.donation_campaigns WHERE id = ${d.campaign_id}::uuid`, true),
+    one<any>(sql`SELECT status FROM public.donation_releases WHERE donation_id = ${d.id}::uuid`, true),
   ]);
   // Normalized contract: donation fields only — never ebook items or downloads.
   return {
@@ -384,7 +391,7 @@ export async function receiptView(d: any, origin: string) {
   if (!snap) {
     // Legacy rows without a snapshot fall back to current config.
     const [c, s] = await Promise.all([
-      db.from("donation_campaigns").select("slug, title").eq("id", d.campaign_id).maybeSingle(),
+      one<any>(sql`SELECT slug, title FROM public.donation_campaigns WHERE id = ${d.campaign_id}::uuid`, true),
       loadSettings(d.store_id),
     ]);
     const st = s ?? DEFAULT_SETTINGS;
@@ -412,7 +419,7 @@ export async function receiptView(d: any, origin: string) {
 
 export async function donationByToken(token: string) {
   if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) return null;
-  const r = must(await db.from("donations").select("*").eq("public_token", token).maybeSingle(), "Donation read");
+  const r = must(await one<any>(sql`SELECT * FROM public.donations WHERE public_token = ${token}`, true), "Donation read");
   return r.data;
 }
 
@@ -428,10 +435,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function apply(d: any, signal: DonationSignal, eventId: string | null, objectId: string | null, facts: Record<string, unknown>) {
   const r = must(
-    await db.rpc("donation_apply_event", { _donation_id: d.id, _signal: signal, _event_id: eventId, _object_id: objectId, _facts: facts }),
+    await one<any>(sql`SELECT public.donation_apply_event(
+      _donation_id => ${d.id}::uuid, _signal => ${signal}::text, _event_id => ${eventId}::text,
+      _object_id => ${objectId}::text, _facts => ${sql.json(facts as Parameters<typeof sql.json>[0])}::jsonb) AS result`),
     "Donation event apply",
   );
-  const out = r.data ?? {};
+  const out = r.data?.result ?? {};
   if (out.duplicate) return `Donation ${signal} already applied.`;
   if (out.mismatch) return `Donation ${signal} payment link mismatch (ignored).`;
   return `Donation ${signal}: ${out.from} -> ${out.status}.`;
@@ -457,11 +466,11 @@ export async function handleDonationEvent(
   if (SESSION_EVENTS.has(event.type)) {
     if (md["purpose"] !== "donation") return null; // ebooks never use Checkout Sessions
     if (!ctx) return "Donation event without integration context (ignored).";
-    const found = must(await db.from("donations").select("*").eq("checkout_session_id", String(o["id"])).maybeSingle(), "Donation read").data;
+    const found = must(await one<any>(sql`SELECT * FROM public.donations WHERE checkout_session_id = ${String(o["id"])}`, true), "Donation read").data;
     if (!found) {
       const candId = md["donation_id"];
       if (candId && UUID.test(candId)) {
-        const cand = must(await db.from("donations").select("*").eq("id", candId).maybeSingle(), "Donation read").data;
+        const cand = must(await one<any>(sql`SELECT * FROM public.donations WHERE id = ${candId}::uuid`, true), "Donation read").data;
         if (cand && !cand.checkout_session_id && cand.integration_id === ctx.integrationId && cand.livemode === ctx.livemode) {
           throw new RetryableDonationError("Donation session link not saved yet; retry later.");
         }
@@ -497,10 +506,10 @@ export async function handleDonationEvent(
   const chargeId = event.type === "charge.refunded" ? String(o["id"]) : event.type.startsWith("charge.dispute.") ? str(o["charge"]) : null;
   if (!piId) return null;
 
-  let d = must(await db.from("donations").select("*").eq("payment_intent_id", piId).maybeSingle(), "Donation read").data;
+  let d = must(await one<any>(sql`SELECT * FROM public.donations WHERE payment_intent_id = ${piId}`, true), "Donation read").data;
   if (!d && isPi && md["purpose"] === "donation" && md["donation_id"] && UUID.test(md["donation_id"]) && ctx) {
     // PI created by our Checkout Session: link only when everything we set matches.
-    const cand = must(await db.from("donations").select("*").eq("id", md["donation_id"]).maybeSingle(), "Donation read").data;
+    const cand = must(await one<any>(sql`SELECT * FROM public.donations WHERE id = ${md["donation_id"]}::uuid`, true), "Donation read").data;
     if (
       cand && !cand.payment_intent_id && cand.store_id === md["store_id"] && cand.integration_id === ctx.integrationId &&
       md["integration_id"] === ctx.integrationId && cand.livemode === ctx.livemode && Boolean(o["livemode"]) === cand.livemode &&
@@ -508,13 +517,14 @@ export async function handleDonationEvent(
     ) d = cand;
   }
   if (!d) {
-    const ebook = must(await db.from("payments").select("id").eq("provider_payment_id", piId).maybeSingle(), "Payment read").data;
+    const ebook = must(await one<any>(sql`SELECT id FROM public.payments WHERE provider_payment_id = ${piId}`, true), "Payment read").data;
     if (ebook) return null;
     if (md["purpose"] === "donation") throw new RetryableDonationError("Donation payment link not saved yet; retry later.");
     if (isCharge && ctx) {
       // Refund/dispute may belong to a donation whose payment link is still being saved: keep it for retry.
-      const open = await db.from("donations").select("id", { count: "exact", head: true })
-        .eq("integration_id", ctx.integrationId).eq("livemode", ctx.livemode).is("payment_intent_id", null).in("status", ["PENDING", "PROCESSING"]);
+      const open = must(await count(sql`SELECT count(*) AS count FROM public.donations
+        WHERE integration_id = ${ctx.integrationId}::uuid AND livemode = ${ctx.livemode}::boolean
+          AND payment_intent_id IS NULL AND status IN ('PENDING', 'PROCESSING')`), "Pending donation read");
       if ((open.count ?? 0) > 0) throw new RetryableDonationError("Unlinked refund/dispute while donations are pending; retry later.");
     }
     return null;
@@ -551,11 +561,11 @@ async function boundProvider(d: any): Promise<{ provider: DonationProvider; gaps
 /** Shared scope = Stripe platform account + mode + USD, across stores AND integration rows. */
 async function scopeTotals(d: any, excludeReleaseId?: string) {
   const held = must(
-    await db.from("donations").select("*").eq("platform_account_id", d.platform_account_id).eq("livemode", d.livemode).eq("currency", "USD"),
+    await rows<any>(sql`SELECT * FROM public.donations WHERE platform_account_id = ${d.platform_account_id} AND livemode = ${d.livemode}::boolean AND currency = 'USD'`),
     "Held read",
   ).data ?? [];
   const rels = must(
-    await db.from("donation_releases").select("*").eq("platform_account_id", d.platform_account_id).eq("livemode", d.livemode).eq("currency", "USD"),
+    await rows<any>(sql`SELECT * FROM public.donation_releases WHERE platform_account_id = ${d.platform_account_id} AND livemode = ${d.livemode}::boolean AND currency = 'USD'`),
     "Release read",
   ).data ?? [];
   const inflight = new Set(rels.filter((r: any) => ["RESERVED", "SUBMITTED", "UNKNOWN"].includes(r.status)).map((r: any) => r.donation_id));
@@ -580,11 +590,11 @@ function releaseStateOf(status: string | null | undefined): ReleaseState {
  * (its own reservation is not counted against itself).
  */
 export async function buildReleasePreview(donationId: string, resumeOf?: any): Promise<ReleasePreview & { availableUsdCents: number }> {
-  const d = must(await db.from("donations").select("*").eq("id", donationId).maybeSingle(), "Donation read").data;
+  const d = must(await one<any>(sql`SELECT * FROM public.donations WHERE id = ${donationId}::uuid`, true), "Donation read").data;
   if (!d) throw new PaymentError("NOT_FOUND", "Donation not found.");
   const settings = await loadSettings(d.store_id);
   const beneficiary = await loadBeneficiary(d.store_id, d.beneficiary_id);
-  const rel = must(await db.from("donation_releases").select("status").eq("donation_id", d.id).maybeSingle(), "Release read").data;
+  const rel = must(await one<any>(sql`SELECT status FROM public.donation_releases WHERE donation_id = ${d.id}::uuid`, true), "Release read").data;
 
   let charge: Parameters<typeof computeReleasePreview>[0]["charge"] = null;
   let availableUsd = 0;
@@ -611,7 +621,7 @@ export async function buildReleasePreview(donationId: string, resumeOf?: any): P
           fundsAvailable: bt.status === "available",
         };
         if (!d.charge_id) {
-          must(await db.from("donations").update({ charge_id: ch.id }).eq("id", d.id).is("charge_id", null), "Charge link save");
+          must(await exec(sql`UPDATE public.donations SET charge_id = ${ch.id} WHERE id = ${d.id}::uuid AND charge_id IS NULL`), "Charge link save");
           d.charge_id = ch.id;
         }
       }
@@ -622,7 +632,7 @@ export async function buildReleasePreview(donationId: string, resumeOf?: any): P
     iGaps = (e as { details?: { gaps?: string[] } }).details?.gaps ?? [(e as Error).message];
   }
   const { other, feeUsed } = await scopeTotals(d, resumeOf?.id);
-  const camp = must(await db.from("donation_campaigns").select("*").eq("id", d.campaign_id).eq("store_id", d.store_id).maybeSingle(), "Campaign read").data;
+  const camp = must(await one<any>(sql`SELECT * FROM public.donation_campaigns WHERE id = ${d.campaign_id}::uuid AND store_id = ${d.store_id}::uuid`, true), "Campaign read").data;
   const campaignBlockers: string[] = [];
   if (!camp) campaignBlockers.push("Campaign not found");
   else {
@@ -660,17 +670,20 @@ function isDefinitiveFailure(e: any): boolean {
 
 async function mark(releaseId: string, outcome: string, transferId: string | null, error: string | null) {
   return must(
-    await db.rpc("donation_release_mark", { _release_id: releaseId, _outcome: outcome, _transfer_id: transferId, _error: error }),
+    await one<any>(sql`SELECT public.donation_release_mark(
+      _release_id => ${releaseId}::uuid, _outcome => ${outcome}::text,
+      _transfer_id => ${transferId}::text, _error => ${error}::text) AS result`),
     `Release ${outcome} save`,
-  ).data;
+  ).data?.result;
 }
 
 async function submitTransfer(rel: any, donationId: string, provider: DonationProvider) {
   // Final locked guard (donation state, adverse facts, switch, binding, window) right before create.
   const guard = must(
-    await db.rpc("donation_release_submit_guard", { _release_id: rel.id, _window_seconds: IDEMPOTENCY_WINDOW_SECONDS }),
+    await one<any>(sql`SELECT public.donation_release_submit_guard(
+      _release_id => ${rel.id}::uuid, _window_seconds => ${IDEMPOTENCY_WINDOW_SECONDS}::integer) AS result`),
     "Release guard",
-  ).data;
+  ).data?.result;
   if (!guard?.allowed) {
     throw new PaymentError("INVALID_STATE", `Release held for reconciliation: ${guard?.reason ?? "guard refused"}. No transfer was created.`);
   }
@@ -720,25 +733,20 @@ export async function executeRelease(input: { donationId: string; previewHash: s
     throw new PaymentError("INVALID_STATE", "Preview changed. Review it again before confirming.");
   }
   if (preview.transferAmountCents > input.maxAmountCents) throw new PaymentError("INVALID_STATE", "Transfer exceeds the confirmed maximum.");
-  const d = must(await db.from("donations").select("*").eq("id", input.donationId).maybeSingle(), "Donation read").data;
+  const d = must(await one<any>(sql`SELECT * FROM public.donations WHERE id = ${input.donationId}::uuid`, true), "Donation read").data;
   const settings = (await loadSettings(d.store_id)) ?? DEFAULT_SETTINGS;
   const { provider } = await boundProvider(d);
-  const res = await db.rpc("donation_release_reserve", {
-    _donation_id: d.id,
-    _preview_hash: input.previewHash,
-    _confirmed_by: input.confirmedBy,
-    _amount: preview.transferAmountCents,
-    _fee: preview.ngoCoverageRequiredCents,
-    _dest: preview.recipientAccountId,
-    _source: preview.sourceChargeId,
-    _available_usd: preview.availableUsdCents,
-    _fee_budget: settings.ngo_fee_funding_cents,
-  });
+  const res = await one<any>(sql`SELECT public.donation_release_reserve(
+    _donation_id => ${d.id}::uuid, _preview_hash => ${input.previewHash}::text,
+    _confirmed_by => ${input.confirmedBy}::text, _amount => ${preview.transferAmountCents}::integer,
+    _fee => ${preview.ngoCoverageRequiredCents}::integer, _dest => ${preview.recipientAccountId}::text,
+    _source => ${preview.sourceChargeId}::text, _available_usd => ${preview.availableUsdCents}::bigint,
+    _fee_budget => ${settings.ngo_fee_funding_cents}::integer) AS result`);
   if (res.error) throw new PaymentError("INVALID_STATE", `Release blocked: ${res.error.message}`);
-  const r = res.data;
+  const r = res.data?.result;
   if (r.action === "done") return { transferId: r.transfer_id as string, amountCents: preview.transferAmountCents, donationStatus: d.status };
   if (r.action === "resume") throw new PaymentError("INVALID_STATE", "A release is already in progress — use Resume.");
-  const rel = must(await db.from("donation_releases").select("*").eq("id", r.release_id).single(), "Release read").data;
+  const rel = must(await one<any>(sql`SELECT * FROM public.donation_releases WHERE id = ${r.release_id}::uuid`), "Release read").data;
   return submitTransfer(rel, d.id, provider);
 }
 
@@ -747,11 +755,11 @@ export async function executeRelease(input: { donationId: string; previewHash: s
  * idempotency key. First looks for an already-created transfer; never creates a second one.
  */
 export async function resumeRelease(donationId: string) {
-  const rel = must(await db.from("donation_releases").select("*").eq("donation_id", donationId).maybeSingle(), "Release read").data;
+  const rel = must(await one<any>(sql`SELECT * FROM public.donation_releases WHERE donation_id = ${donationId}::uuid`, true), "Release read").data;
   if (!rel) throw new PaymentError("NOT_FOUND", "No release operation for this donation.");
   if (rel.status === "SUCCEEDED") return { transferId: rel.transfer_id as string, amountCents: rel.amount_cents as number, donationStatus: null };
   if (!["RESERVED", "SUBMITTED", "UNKNOWN"].includes(rel.status)) throw new PaymentError("INVALID_STATE", `Release is ${rel.status}; start a new preview.`);
-  const d = must(await db.from("donations").select("*").eq("id", donationId).maybeSingle(), "Donation read").data;
+  const d = must(await one<any>(sql`SELECT * FROM public.donations WHERE id = ${donationId}::uuid`, true), "Donation read").data;
   const { provider } = await boundProvider(d);
   const list = await provider.transfers.list({ transfer_group: `donation_${donationId}`, limit: 10 });
   const existing = (list?.data ?? []).find(
@@ -767,7 +775,8 @@ export async function resumeRelease(donationId: string) {
   }
   // Window starts at the FIRST submission of this key (immutable), never updated_at.
   if (rel.submitted_at && Date.now() - Date.parse(rel.submitted_at) > IDEMPOTENCY_WINDOW_SECONDS * 1000) {
-    must(await db.rpc("donation_release_flag_manual", { _release_id: rel.id, _reason: "Idempotency window passed; transfer not found by list" }), "Manual flag");
+    must(await exec(sql`SELECT public.donation_release_flag_manual(
+      _release_id => ${rel.id}::uuid, _reason => ${"Idempotency window passed; transfer not found by list"}::text)`), "Manual flag");
     throw new PaymentError("INVALID_STATE", "Release needs manual reconciliation in Stripe (idempotency window passed). No transfer was created.");
   }
   // Any potentially new/repeated create must pass every CURRENT guard; otherwise the op stays held.
@@ -785,17 +794,16 @@ export async function resumeRelease(donationId: string) {
 export async function verifyBeneficiary(storeId: string, beneficiaryId: string) {
   const b = await loadBeneficiary(storeId, beneficiaryId);
   if (!b?.stripe_account_id) throw new PaymentError("INVALID_STATE", "Beneficiary has no connected account.");
-  const store = must(await db.from("stores").select("*").eq("id", storeId).maybeSingle(), "Store read").data;
+  const store = must(await one<any>(sql`SELECT * FROM public.stores WHERE id = ${storeId}::uuid`, true), "Store read").data;
   const integration = await loadIntegrationById(store?.stripe_integration_id ?? null);
   const gaps = integrationGaps(integration);
   if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Stripe integration not ready.", { gaps });
   const v = await verifyRecipient(await providerFactory(integration!), b.stripe_account_id);
   must(
-    await db.from("donation_beneficiaries").update({
-      provider_verified_at: new Date().toISOString(),
-      provider_country: v.country,
-      provider_transfers_status: v.error ? "error" : v.transfersStatus,
-    }).eq("id", b.id).eq("store_id", storeId),
+    await exec(sql`UPDATE public.donation_beneficiaries SET
+      provider_verified_at = ${new Date().toISOString()}::timestamptz, provider_country = ${v.country},
+      provider_transfers_status = ${v.error ? "error" : v.transfersStatus}
+      WHERE id = ${b.id}::uuid AND store_id = ${storeId}::uuid`),
     "Verification save",
   );
   const settings = await loadSettings(storeId);
@@ -805,7 +813,7 @@ export async function verifyBeneficiary(storeId: string, beneficiaryId: string) 
 export async function createOnboardingLink(storeId: string, beneficiaryId: string, origin: string, gapsFn: (s: DonationSettings | null, b: BeneficiaryLike | null) => string[]) {
   const [settings, b] = await Promise.all([loadSettings(storeId), loadBeneficiary(storeId, beneficiaryId)]);
   const gaps = gapsFn(settings, b);
-  const store = must(await db.from("stores").select("*").eq("id", storeId).maybeSingle(), "Store read").data;
+  const store = must(await one<any>(sql`SELECT * FROM public.stores WHERE id = ${storeId}::uuid`, true), "Store read").data;
   const integration = await loadIntegrationById(store?.stripe_integration_id ?? null);
   gaps.push(...integrationGaps(integration));
   if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Onboarding not available.", { gaps });
