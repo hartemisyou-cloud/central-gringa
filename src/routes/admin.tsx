@@ -30,6 +30,7 @@ import {
 import { MetaTrackingSection } from "@/components/admin/meta-tracking-section";
 import { UtmifySection } from "@/components/admin/utmify-section";
 import { StripeSection } from "@/components/admin/stripe-section";
+import { DonationsSection } from "@/components/admin/donations-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -344,6 +345,8 @@ function AdminDashboard() {
         </Card>
 
         <StripeSection />
+
+        <DonationsSection />
 
         <MetaTrackingSection />
 
