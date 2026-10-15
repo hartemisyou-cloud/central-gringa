@@ -5,20 +5,26 @@ import type { StoreRow } from "@/lib/payments/store-auth.server";
 import {
   DEFAULT_SETTINGS,
   DONATION_AMOUNTS_CENTS,
+  buildSessionRequest,
   campaignGaps,
   computeReleasePreview,
   fingerprintPayload,
-  formatDonationName,
-  nextDonationStatus,
+  integrationGaps,
+  lettersFromHex,
   previewHashInput,
   sessionMatchesDonation,
+  sessionResponseGaps,
   settingsGaps,
+  verificationGaps,
   type BeneficiaryLike,
   type CreateDonationInput,
   type DonationSettings,
   type DonationSignal,
   type DonationStatus,
+  type IntegrationLike,
+  type RecipientVerification,
   type ReleasePreview,
+  type ReleaseState,
 } from "./rules";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,64 +35,103 @@ function must<T extends { error: { message: string } | null }>(r: T, what: strin
   return r;
 }
 
+/** Thrown when a webhook cannot be safely resolved yet; the event stays FAILED and is retried. */
+export class RetryableDonationError extends Error {}
+
+// ---------------- Provider (separate dahlia SDK instance; injectable for tests) ----------------
+
+export interface DonationProvider {
+  checkout: { sessions: { create(params: any, opts: { idempotencyKey: string }): Promise<any> } };
+  v2: {
+    core: {
+      accounts: { retrieve(id: string, p?: any): Promise<any> };
+      accountLinks: { create(p: any): Promise<any> };
+    };
+  };
+  paymentIntents: { retrieve(id: string, p: any): Promise<any> };
+  balance: { retrieve(): Promise<any> };
+  transfers: { create(p: any, o: { idempotencyKey: string }): Promise<any>; list(p: any): Promise<any> };
+}
+
+type ProviderFactory = (integration: IntegrationLike) => Promise<DonationProvider>;
+let providerFactory: ProviderFactory = async (i) =>
+  (await import("./stripe-sdk.server")).donationStripeFromIntegration(i) as unknown as Promise<DonationProvider>;
+/** Test hook: replace the Stripe provider with a fake. */
+export function __setDonationProviderFactory(f: ProviderFactory) {
+  providerFactory = f;
+}
+
+// ---------------- Loaders ----------------
+
 export async function loadSettings(storeId: string): Promise<DonationSettings | null> {
-  const { data } = await db.from("donation_settings").select("*").eq("store_id", storeId).maybeSingle();
-  return (data as DonationSettings | null) ?? null;
+  const r = must(await db.from("donation_settings").select("*").eq("store_id", storeId).maybeSingle(), "Settings read");
+  return (r.data as DonationSettings | null) ?? null;
 }
 
-async function loadIntegration(store: StoreRow) {
-  if (!store.stripe_integration_id) return null;
-  const { data } = await db
-    .from("stripe_integrations")
-    .select("id, status, environment, secret_key_ciphertext")
-    .eq("id", store.stripe_integration_id)
-    .maybeSingle();
-  return data as { id: string; status: string; environment: string; secret_key_ciphertext: string | null } | null;
-}
-
-async function loadBeneficiary(id: string | null): Promise<BeneficiaryLike | null> {
+const INTEGRATION_COLS = "id, status, environment, secret_key_ciphertext, webhook_secret_ciphertext, stripe_account_id";
+async function loadIntegrationById(id: string | null): Promise<IntegrationLike | null> {
   if (!id) return null;
-  const { data } = await db.from("donation_beneficiaries").select("*").eq("id", id).maybeSingle();
-  return data ?? null;
+  const r = must(await db.from("stripe_integrations").select(INTEGRATION_COLS).eq("id", id).maybeSingle(), "Integration read");
+  return r.data ?? null;
+}
+
+async function loadBeneficiary(storeId: string, id: string | null): Promise<BeneficiaryLike | null> {
+  if (!id) return null;
+  const r = must(
+    await db.from("donation_beneficiaries").select("*").eq("id", id).eq("store_id", storeId).maybeSingle(),
+    "Beneficiary read",
+  );
+  return r.data ?? null;
+}
+
+/** Live read of the connected account through Accounts v2 (ownership = readable with this platform key). */
+export async function verifyRecipient(provider: DonationProvider, accountId: string): Promise<RecipientVerification> {
+  try {
+    const a = await provider.v2.core.accounts.retrieve(accountId, { include: ["configuration.recipient", "identity"] });
+    return {
+      accountId: a?.id ?? "",
+      country: a?.identity?.country ? String(a.identity.country).toUpperCase() : null,
+      transfersStatus: a?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status ?? null,
+      recipientConfigured: Array.isArray(a?.applied_configurations) && a.applied_configurations.includes("recipient"),
+    };
+  } catch (e) {
+    return { accountId, country: null, transfersStatus: null, recipientConfigured: false, error: (e as Error).message.slice(0, 160) };
+  }
 }
 
 // ---------------- Catalog ----------------
 
 export async function getDonationCatalog(store: StoreRow) {
-  const [settings, integration, { data: campaigns }] = await Promise.all([
+  const [settings, integration, campaignsR] = await Promise.all([
     loadSettings(store.id),
-    loadIntegration(store),
+    loadIntegrationById(store.stripe_integration_id ?? null),
     db.from("donation_campaigns").select("*").eq("store_id", store.id).order("slug"),
   ]);
+  const campaigns = must(campaignsR, "Campaign read").data ?? [];
   const s = settings ?? DEFAULT_SETTINGS;
-  const globalReady = settingsGaps(settings, integration?.status === "ACTIVE").length === 0;
-  const beneficiaryIds = [...new Set((campaigns ?? []).map((c: any) => c.beneficiary_id).filter(Boolean))];
-  const { data: bens } = beneficiaryIds.length
-    ? await db.from("donation_beneficiaries").select("*").in("id", beneficiaryIds)
-    : { data: [] };
-  const byId = new Map((bens ?? []).map((b: any) => [b.id, b]));
+  const globalReady = settingsGaps(settings, integrationGaps(integration)).length === 0;
+  const ids = [...new Set(campaigns.map((c: any) => c.beneficiary_id).filter(Boolean))];
+  const bens = ids.length
+    ? must(await db.from("donation_beneficiaries").select("*").eq("store_id", store.id).in("id", ids), "Beneficiary read").data ?? []
+    : [];
+  const byId = new Map(bens.map((b: any) => [b.id, b]));
   return {
     purpose: "donation" as const,
     ready: globalReady,
     currency: "USD" as const,
     amountsCents: [...DONATION_AMOUNTS_CENTS],
     recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds },
-    campaigns: (campaigns ?? []).map((c: any) => ({
+    campaigns: campaigns.map((c: any) => ({
       slug: c.slug,
       title: c.title,
       active: Boolean(c.active),
-      ready:
-        globalReady &&
-        campaignGaps(c, (byId.get(c.beneficiary_id) as BeneficiaryLike) ?? null, settings).length === 0,
+      // Live provider verification happens at creation time; catalog never claims more than local gates.
+      ready: globalReady && campaignGaps(c, (byId.get(c.beneficiary_id) as BeneficiaryLike) ?? null, settings).length === 0,
     })),
   };
 }
 
 // ---------------- Create ----------------
-
-export interface CheckoutClient {
-  checkout: { sessions: { create(params: any, opts: { idempotencyKey: string }): Promise<any> } };
-}
 
 function publicView(d: any, origin: string) {
   return {
@@ -102,42 +147,58 @@ function publicView(d: any, origin: string) {
   };
 }
 
-function letters(n: number): string {
-  const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const bytes = crypto.getRandomValues(new Uint8Array(n));
-  return Array.from(bytes, (b) => a[b % 26]).join("");
-}
-
-export async function createDonation(input: {
-  store: StoreRow;
-  body: CreateDonationInput;
-  origin: string;
-  stripeFactory?: (integration: { secret_key_ciphertext: string | null }) => Promise<CheckoutClient>;
-}) {
+export async function createDonation(input: { store: StoreRow; body: CreateDonationInput; origin: string }) {
   const { store, body, origin } = input;
   const fingerprint = await sha256Hex(fingerprintPayload(body));
 
   // Idempotency first: a repeat must return the same donation even if config changed since.
   const existing = await findByKey(store.id, body.idempotencyKey);
-  if (existing) return resumeExisting(existing, fingerprint, input);
+  if (existing) return resumeExisting(existing, fingerprint, origin);
 
-  const [settings, integration, { data: campaign }] = await Promise.all([
+  const [settings, integration, campaignR] = await Promise.all([
     loadSettings(store.id),
-    loadIntegration(store),
+    loadIntegrationById(store.stripe_integration_id ?? null),
     db.from("donation_campaigns").select("*").eq("store_id", store.id).eq("slug", body.campaignSlug).maybeSingle(),
   ]);
+  const campaign = must(campaignR, "Campaign read").data;
   if (!campaign) throw new PaymentError("NOT_FOUND", "Unknown campaign.");
-  const gaps = settingsGaps(settings, integration?.status === "ACTIVE");
+  const gaps = settingsGaps(settings, integrationGaps(integration));
   if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.", { gaps });
-  const beneficiary = await loadBeneficiary(campaign.beneficiary_id);
+  const beneficiary = await loadBeneficiary(store.id, campaign.beneficiary_id);
   const cGaps = campaignGaps(campaign, beneficiary, settings);
   if (cGaps.length) throw new PaymentError("INVALID_STATE", "Campaign is not accepting donations.", { gaps: cGaps });
 
+  // Actual Stripe readiness of the recipient, before accepting any payment.
+  const provider = await providerFactory(integration!);
+  const verification = await verifyRecipient(provider, beneficiary!.stripe_account_id!);
+  const vGaps = verificationGaps(beneficiary, verification);
+  if (vGaps.length) throw new PaymentError("INVALID_STATE", "Campaign is not accepting donations.", { gaps: vGaps });
+
+  const id = crypto.randomUUID();
+  const publicToken = randomToken(40);
+  const donationNumber = `HHF-${Date.now().toString(36).toUpperCase()}-${lettersFromHex(await sha256Hex(`num:${id}`), 4)}`;
+  const integrationIdentifier = `hhf_donations_${lettersFromHex(await sha256Hex(`iid:${id}`))}`;
+  const s = settings!;
+  const sessionRequest = buildSessionRequest({
+    donationId: id,
+    donationNumber,
+    storeId: store.id,
+    integrationId: integration!.id,
+    publicToken,
+    amountCents: body.amountCents,
+    donorEmail: body.donor?.email ?? null,
+    origin,
+    campaign: { slug: campaign.slug, title: String(campaign.title) },
+    recipientName: s.recipient_name,
+    adaptivePricing: s.adaptive_pricing_eligible && s.adaptive_pricing_enabled,
+    integrationIdentifier,
+  });
   const row = {
+    id,
     store_id: store.id,
     campaign_id: campaign.id,
-    donation_number: `HHF-${Date.now().toString(36).toUpperCase()}-${letters(4)}`,
-    public_token: randomToken(40),
+    donation_number: donationNumber,
+    public_token: publicToken,
     status: "PENDING",
     amount_cents: body.amountCents,
     currency: "USD",
@@ -149,8 +210,8 @@ export async function createDonation(input: {
     request_fingerprint: fingerprint,
     integration_id: integration!.id,
     livemode: integration!.environment === "live",
+    platform_account_id: integration!.stripe_account_id,
     beneficiary_id: beneficiary!.id,
-    // Immutable snapshot (DB trigger refuses later changes).
     beneficiary_snapshot: {
       beneficiary_id: beneficiary!.id,
       display_name: beneficiary!.display_name,
@@ -158,129 +219,74 @@ export async function createDonation(input: {
       account_id: beneficiary!.stripe_account_id,
       captured_at: new Date().toISOString(),
     },
+    receipt_snapshot: {
+      recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds },
+      campaign: { slug: campaign.slug, title: campaign.title },
+      beneficiaryName: beneficiary!.display_name,
+    },
+    integration_identifier: integrationIdentifier,
+    session_request: sessionRequest,
   };
   const ins = await db.from("donations").insert(row).select("*").single();
   if (ins.error) {
     // Concurrent request with the same key won the race.
     const raced = await findByKey(store.id, body.idempotencyKey);
-    if (raced) return resumeExisting(raced, fingerprint, input);
+    if (raced) return resumeExisting(raced, fingerprint, origin);
     throw new Error(`Donation insert failed: ${ins.error.message}`);
   }
-  await ledger(ins.data.id, "CREATED", body.amountCents, null, {});
-  return ensureSession(ins.data, { campaign, settings: settings!, integration: integration!, ...input });
+  must(await db.from("donation_ledger").insert({ donation_id: id, entry_type: "CREATED", amount_cents: body.amountCents, metadata: {} }), "Ledger write");
+  return ensureSession(ins.data, origin, provider);
 }
 
 async function findByKey(storeId: string, key: string) {
-  const { data } = await db.from("donations").select("*").eq("store_id", storeId).eq("idempotency_key", key).maybeSingle();
-  return data;
+  const r = must(await db.from("donations").select("*").eq("store_id", storeId).eq("idempotency_key", key).maybeSingle(), "Donation read");
+  return r.data;
 }
 
-async function resumeExisting(d: any, fingerprint: string, input: Parameters<typeof createDonation>[0]) {
+async function resumeExisting(d: any, fingerprint: string, origin: string) {
   if (d.request_fingerprint !== fingerprint) {
     throw new PaymentError("INVALID_STATE", "Idempotency key reused with a different payload.");
   }
-  if (d.checkout_url || d.status !== "PENDING") return publicView(d, input.origin);
-  // Previous attempt stored the row but not the session: retry with the same Stripe idempotency key.
-  const [settings, integration, { data: campaign }] = await Promise.all([
-    loadSettings(input.store.id),
-    loadIntegration(input.store),
-    db.from("donation_campaigns").select("*").eq("id", d.campaign_id).maybeSingle(),
-  ]);
-  if (!integration || integration.id !== d.integration_id || settingsGaps(settings, integration.status === "ACTIVE").length) {
+  if (d.checkout_url || d.status !== "PENDING") return publicView(d, origin);
+  if (!d.session_request) throw new PaymentError("CONFIG_ERROR", "Donation has no stored session request.");
+  // Retry the exact stored request under the same idempotency key, bound to the ORIGINAL integration.
+  const integration = await loadIntegrationById(d.integration_id);
+  if (!integration || integrationGaps(integration).length || (integration.environment === "live") !== d.livemode || integration.stripe_account_id !== d.platform_account_id) {
     throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.");
   }
-  return ensureSession(d, { campaign, settings: settings!, integration, ...input });
+  return ensureSession(d, origin, await providerFactory(integration));
 }
 
-async function ensureSession(
-  d: any,
-  ctx: Parameters<typeof createDonation>[0] & {
-    campaign: any;
-    settings: DonationSettings;
-    integration: { id: string; secret_key_ciphertext: string | null };
-  },
-) {
-  const factory =
-    ctx.stripeFactory ??
-    (async (i: { secret_key_ciphertext: string | null }) =>
-      (await import("./stripe-sdk.server")).donationStripeFromIntegration(i) as unknown as Promise<CheckoutClient>);
-  const stripe = await factory(ctx.integration);
-  const metadata = {
-    purpose: "donation",
-    donation_id: d.id,
-    donation_number: d.donation_number,
-    store_id: d.store_id,
-    integration_id: ctx.integration.id,
-    campaign_slug: ctx.campaign.slug,
-    campaign_title: String(ctx.campaign.title).slice(0, 450),
-    recipient: ctx.settings.recipient_name,
-    base_amount_cents: String(d.amount_cents),
-    base_currency: "USD",
-  };
-  const receipt = `${ctx.origin}/donations/receipt/${d.public_token}`;
-  const adaptive = ctx.settings.adaptive_pricing_eligible && ctx.settings.adaptive_pricing_enabled;
-  const params: Record<string, unknown> = {
-    mode: "payment",
-    submit_type: "donate",
-    client_reference_id: d.id,
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: "usd",
-          unit_amount: d.amount_cents,
-          product_data: {
-            name: formatDonationName(d.amount_cents),
-            description: `Donation to ${ctx.settings.recipient_name} — ${ctx.campaign.title}`.slice(0, 500),
-          },
-        },
-      },
-    ],
-    success_url: receipt,
-    cancel_url: receipt,
-    metadata,
-    payment_intent_data: {
-      description: `Donation ${d.donation_number} to ${ctx.settings.recipient_name}`,
-      metadata,
-    },
-    adaptive_pricing: { enabled: adaptive },
-    integration_identifier: `hhf_donations_${letters(8)}`,
-    ...(d.donor_email ? { customer_email: d.donor_email } : {}),
-  };
-  const session = await stripe.checkout.sessions.create(params, { idempotencyKey: `donation-checkout:${d.id}` });
-  const upd = must(
-    await db
-      .from("donations")
-      .update({
-        checkout_session_id: session.id,
-        checkout_url: session.url,
-        checkout_expires_at: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
-      })
-      .eq("id", d.id)
-      .select("*")
-      .single(),
-    "Donation session save",
-  );
-  return publicView(upd.data, ctx.origin);
-}
-
-async function ledger(donationId: string, type: string, amount: number, objectId: string | null, metadata: object) {
-  await db.from("donation_ledger").insert({
-    donation_id: donationId,
-    entry_type: type,
-    amount_cents: amount,
-    currency: "USD",
-    stripe_object_id: objectId,
-    metadata,
-  });
+async function ensureSession(d: any, origin: string, provider: DonationProvider) {
+  const session = await provider.checkout.sessions.create(d.session_request, { idempotencyKey: `donation-checkout:${d.id}` });
+  const bad = sessionResponseGaps(session, d);
+  if (bad.length) throw new Error(`Stripe session response rejected: ${bad.join(", ")}`);
+  const upd = await db
+    .from("donations")
+    .update({
+      checkout_session_id: session.id,
+      checkout_url: session.url,
+      checkout_expires_at: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+    })
+    .eq("id", d.id)
+    .select("*")
+    .single();
+  if (upd.error) {
+    // A concurrent call may already have stored the same session (idempotent replay).
+    const cur = must(await db.from("donations").select("*").eq("id", d.id).maybeSingle(), "Donation read").data;
+    if (cur?.checkout_session_id === session.id) return publicView(cur, origin);
+    throw new Error(`Donation session save failed: ${upd.error.message}`);
+  }
+  return publicView(upd.data, origin);
 }
 
 // ---------------- Status / pay ----------------
 
 export async function getDonationStatus(store: StoreRow, token: string, origin: string) {
-  const { data: d } = await db.from("donations").select("*").eq("store_id", store.id).eq("public_token", token).maybeSingle();
+  const r = must(await db.from("donations").select("*").eq("store_id", store.id).eq("public_token", token).maybeSingle(), "Donation read");
+  const d = r.data;
   if (!d) throw new PaymentError("NOT_FOUND", "Donation not found.");
-  const [{ data: campaign }, { data: rel }] = await Promise.all([
+  const [campaignR, relR] = await Promise.all([
     db.from("donation_campaigns").select("slug").eq("id", d.campaign_id).maybeSingle(),
     db.from("donation_releases").select("status").eq("donation_id", d.id).maybeSingle(),
   ]);
@@ -294,8 +300,8 @@ export async function getDonationStatus(store: StoreRow, token: string, origin: 
     amountCents: d.amount_cents,
     currency: "USD" as const,
     receiptUrl: `${origin}/donations/receipt/${d.public_token}`,
-    campaignSlug: campaign?.slug ?? null,
-    payoutStatus: payoutStatus(d.status, rel?.status ?? null),
+    campaignSlug: d.receipt_snapshot?.campaign?.slug ?? campaignR.data?.slug ?? null,
+    payoutStatus: payoutStatus(d.status, relR.data?.status ?? null),
   };
 }
 
@@ -303,26 +309,35 @@ export async function getDonationStatus(store: StoreRow, token: string, origin: 
 export function payoutStatus(status: string, releaseStatus: string | null) {
   if (status === "REVERSAL_REQUIRED") return "REVERSAL_REQUIRED" as const;
   if (releaseStatus === "SUCCEEDED" || status === "RELEASED") return "RELEASED" as const;
-  if (releaseStatus === "PENDING") return "RELEASE_IN_PROGRESS" as const;
-  if (releaseStatus === "FAILED") return "RELEASE_FAILED" as const;
+  if (releaseStatus === "RESERVED" || releaseStatus === "SUBMITTED" || releaseStatus === "UNKNOWN") return "RELEASE_IN_PROGRESS" as const;
+  if (releaseStatus === "FAILED" && status === "PAID") return "RELEASE_FAILED" as const;
   if (status === "PAID") return "HELD" as const;
   return "NOT_APPLICABLE" as const;
 }
 
 export async function receiptView(d: any, origin: string) {
-  const [{ data: campaign }, settings] = await Promise.all([
-    db.from("donation_campaigns").select("slug, title").eq("id", d.campaign_id).maybeSingle(),
-    loadSettings(d.store_id),
-  ]);
-  const s = settings ?? DEFAULT_SETTINGS;
+  const snap = d.receipt_snapshot;
+  let campaign = snap?.campaign ?? null;
+  let recipient = snap?.recipient ?? null;
+  if (!snap) {
+    // Legacy rows without a snapshot fall back to current config.
+    const [c, s] = await Promise.all([
+      db.from("donation_campaigns").select("slug, title").eq("id", d.campaign_id).maybeSingle(),
+      loadSettings(d.store_id),
+    ]);
+    const st = s ?? DEFAULT_SETTINGS;
+    campaign = c.data ? { slug: c.data.slug, title: c.data.title } : null;
+    recipient = { name: st.recipient_name, country: st.recipient_country, useOfFunds: st.use_of_funds };
+  }
   return {
     ...publicView(d, origin),
     baseAmountCents: d.amount_cents,
     refundedCents: d.refunded_cents,
+    disputed: Boolean(d.disputed),
     paidAt: d.paid_at,
     createdAt: d.created_at,
-    campaign: campaign ? { slug: campaign.slug, title: campaign.title } : null,
-    recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds },
+    campaign,
+    recipient,
     presentment:
       d.presentment_amount && d.presentment_currency
         ? { amount: d.presentment_amount, currency: String(d.presentment_currency).toUpperCase() }
@@ -332,233 +347,384 @@ export async function receiptView(d: any, origin: string) {
 
 export async function donationByToken(token: string) {
   if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) return null;
-  const { data } = await db.from("donations").select("*").eq("public_token", token).maybeSingle();
-  return data;
+  const r = must(await db.from("donations").select("*").eq("public_token", token).maybeSingle(), "Donation read");
+  return r.data;
 }
 
 // ---------------- Webhook dispatch ----------------
 
-const DONATION_EVENT_TYPES = new Set([
+const SESSION_EVENTS = new Set([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "checkout.session.async_payment_failed",
   "checkout.session.expired",
 ]);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function applySignal(d: any, signal: DonationSignal, patch: Record<string, unknown>, objectId: string | null) {
-  const next = nextDonationStatus(d.status, signal);
-  if (!next) {
-    await ledger(d.id, `IGNORED_${signal}`, 0, objectId, { from: d.status });
-    return `Donation ${signal} ignored in ${d.status}.`;
-  }
-  // Optimistic guard on the current status: concurrent events cannot double-apply.
-  must(
-    await db.from("donations").update({ status: next, ...patch }).eq("id", d.id).eq("status", d.status),
-    "Donation update",
+async function apply(d: any, signal: DonationSignal, eventId: string | null, objectId: string | null, facts: Record<string, unknown>) {
+  const r = must(
+    await db.rpc("donation_apply_event", { _donation_id: d.id, _signal: signal, _event_id: eventId, _object_id: objectId, _facts: facts }),
+    "Donation event apply",
   );
-  await ledger(d.id, signal, d.amount_cents, objectId, { from: d.status, to: next });
-  return `Donation ${d.status} -> ${next}.`;
+  const out = r.data ?? {};
+  if (out.duplicate) return `Donation ${signal} already applied.`;
+  if (out.mismatch) return `Donation ${signal} payment link mismatch (ignored).`;
+  return `Donation ${signal}: ${out.from} -> ${out.status}.`;
+}
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v ? v : v && typeof v === "object" && typeof (v as any).id === "string" ? (v as any).id : null;
 }
 
 /**
  * Returns a message when the event belongs to the donation subsystem,
  * or null so the legacy ebook pipeline handles it unchanged.
+ * Throws RetryableDonationError when a donation event cannot be safely resolved yet.
  */
 export async function handleDonationEvent(
-  event: { type: string; livemode: boolean; data: { object: Record<string, unknown> } },
+  event: { id?: string; type: string; livemode: boolean; data: { object: Record<string, unknown> } },
   ctx: { integrationId: string; livemode: boolean } | undefined,
 ): Promise<string | null> {
   const o = event.data.object;
   const md = (o["metadata"] ?? {}) as Record<string, string>;
+  const eventId = event.id ?? null;
 
-  if (DONATION_EVENT_TYPES.has(event.type)) {
-    if (md["purpose"] !== "donation") return null; // not ours (ebooks never use Checkout Sessions)
+  if (SESSION_EVENTS.has(event.type)) {
+    if (md["purpose"] !== "donation") return null; // ebooks never use Checkout Sessions
     if (!ctx) return "Donation event without integration context (ignored).";
-    const { data: d } = await db.from("donations").select("*").eq("checkout_session_id", String(o["id"])).maybeSingle();
-    if (!d) return "Donation session not found locally (ignored).";
-    const mismatch = sessionMatchesDonation(o, d, ctx);
-    if (mismatch) {
-      await ledger(d.id, "WEBHOOK_MISMATCH", 0, String(o["id"]), { field: mismatch, type: event.type });
-      return `Donation event mismatch on ${mismatch} (ignored).`;
+    const found = must(await db.from("donations").select("*").eq("checkout_session_id", String(o["id"])).maybeSingle(), "Donation read").data;
+    if (!found) {
+      const candId = md["donation_id"];
+      if (candId && UUID.test(candId)) {
+        const cand = must(await db.from("donations").select("*").eq("id", candId).maybeSingle(), "Donation read").data;
+        if (cand && !cand.checkout_session_id && cand.integration_id === ctx.integrationId && cand.livemode === ctx.livemode) {
+          throw new RetryableDonationError("Donation session link not saved yet; retry later.");
+        }
+      }
+      return "Donation session not found locally (ignored).";
     }
+    const mismatch = sessionMatchesDonation(o, found, ctx);
+    if (mismatch) return `Donation event mismatch on ${mismatch} (ignored).`;
     const pd = o["presentment_details"] as { presentment_amount?: number; presentment_currency?: string } | undefined;
-    const base = {
-      payment_intent_id: typeof o["payment_intent"] === "string" ? o["payment_intent"] : d.payment_intent_id,
-      presentment_amount: pd?.presentment_amount ?? d.presentment_amount,
-      presentment_currency: pd?.presentment_currency ?? d.presentment_currency,
+    const facts = {
+      payment_intent_id: str(o["payment_intent"]),
+      presentment_amount: pd?.presentment_amount ?? null,
+      presentment_currency: pd?.presentment_currency ?? null,
     };
+    const sid = String(o["id"]);
     switch (event.type) {
       case "checkout.session.completed":
+        return apply(found, o["payment_status"] === "paid" ? "SESSION_PAID" : "SESSION_UNPAID", eventId, sid, facts);
       case "checkout.session.async_payment_succeeded":
-        if (o["payment_status"] === "paid") {
-          return applySignal(d, "SESSION_PAID", { ...base, paid_at: new Date().toISOString() }, String(o["id"]));
-        }
-        return event.type === "checkout.session.completed"
-          ? applySignal(d, "SESSION_UNPAID", base, String(o["id"]))
-          : "Async success without paid status (ignored).";
+        if (o["payment_status"] !== "paid") return "Async success without paid status (ignored).";
+        return apply(found, "SESSION_PAID", eventId, sid, facts);
       case "checkout.session.async_payment_failed":
-        return applySignal(d, "ASYNC_FAILED", base, String(o["id"]));
-      case "checkout.session.expired":
-        return applySignal(d, "EXPIRED", {}, String(o["id"]));
+        return apply(found, "ASYNC_FAILED", eventId, sid, facts);
+      default:
+        return apply(found, "EXPIRED", eventId, sid, {});
     }
   }
 
-  const piId =
-    event.type.startsWith("payment_intent.") ? String(o["id"]) : typeof o["payment_intent"] === "string" ? (o["payment_intent"] as string) : null;
+  const isPi = event.type.startsWith("payment_intent.");
+  const isCharge = event.type === "charge.refunded" || event.type.startsWith("charge.dispute.");
+  if (!isPi && !isCharge) return null;
+  const piId = isPi ? String(o["id"]) : str(o["payment_intent"]);
+  const chargeId = event.type === "charge.refunded" ? String(o["id"]) : event.type.startsWith("charge.dispute.") ? str(o["charge"]) : null;
   if (!piId) return null;
-  const { data: d } = await db.from("donations").select("*").eq("payment_intent_id", piId).maybeSingle();
-  if (!d) return md["purpose"] === "donation" ? "Donation payment not linked yet (ignored)." : null;
-  if (ctx && (d.integration_id !== ctx.integrationId || d.livemode !== ctx.livemode)) {
+
+  let d = must(await db.from("donations").select("*").eq("payment_intent_id", piId).maybeSingle(), "Donation read").data;
+  if (!d && isPi && md["purpose"] === "donation" && md["donation_id"] && UUID.test(md["donation_id"]) && ctx) {
+    // PI created by our Checkout Session: link only when everything we set matches.
+    const cand = must(await db.from("donations").select("*").eq("id", md["donation_id"]).maybeSingle(), "Donation read").data;
+    if (
+      cand && !cand.payment_intent_id && cand.store_id === md["store_id"] && cand.integration_id === ctx.integrationId &&
+      md["integration_id"] === ctx.integrationId && cand.livemode === ctx.livemode && Boolean(o["livemode"]) === cand.livemode &&
+      o["amount"] === cand.amount_cents && String(o["currency"]).toLowerCase() === "usd"
+    ) d = cand;
+  }
+  if (!d) {
+    const ebook = must(await db.from("payments").select("id").eq("provider_payment_id", piId).maybeSingle(), "Payment read").data;
+    if (ebook) return null;
+    if (md["purpose"] === "donation") throw new RetryableDonationError("Donation payment link not saved yet; retry later.");
+    if (isCharge && ctx) {
+      // Refund/dispute may belong to a donation whose payment link is still being saved: keep it for retry.
+      const open = await db.from("donations").select("id", { count: "exact", head: true })
+        .eq("integration_id", ctx.integrationId).eq("livemode", ctx.livemode).is("payment_intent_id", null).in("status", ["PENDING", "PROCESSING"]);
+      if ((open.count ?? 0) > 0) throw new RetryableDonationError("Unlinked refund/dispute while donations are pending; retry later.");
+    }
+    return null;
+  }
+  if (!ctx || d.integration_id !== ctx.integrationId || d.livemode !== ctx.livemode || Boolean(event.livemode) !== d.livemode) {
     return "Donation event from a different integration (ignored).";
   }
+  const base = { payment_intent_id: piId, charge_id: chargeId };
   switch (event.type) {
     case "payment_intent.succeeded":
       return "Donation confirmation comes from checkout.session events.";
     case "payment_intent.payment_failed":
-      return applySignal(d, "PI_FAILED", {}, piId);
+      return apply(d, "PI_FAILED", eventId, piId, { ...base, error: (o["last_payment_error"] as any)?.code ?? "payment_failed" });
     case "payment_intent.canceled":
-      return applySignal(d, "PI_CANCELED", {}, piId);
-    case "charge.refunded": {
-      const refunded = Math.max(Number(o["amount_refunded"] ?? 0), d.refunded_cents ?? 0);
-      const full = refunded >= d.amount_cents;
-      return applySignal(d, full ? "REFUND_FULL" : "REFUND_PARTIAL", { refunded_cents: refunded, charge_id: String(o["id"]) }, String(o["id"]));
-    }
-    case "charge.dispute.created":
-      return applySignal(d, "DISPUTE", { disputed: true }, String(o["id"]));
+      return apply(d, "PI_CANCELED", eventId, piId, base);
+    case "charge.refunded":
+      return apply(d, "REFUND", eventId, chargeId, { ...base, amount_refunded: Number(o["amount_refunded"] ?? 0) });
     default:
+      if (event.type.startsWith("charge.dispute.")) return apply(d, "DISPUTE", eventId, String(o["id"]), base);
       return "Unhandled donation event.";
   }
 }
 
 // ---------------- Release (admin, human-confirmed) ----------------
 
-export interface ReleaseStripe {
-  paymentIntents: { retrieve(id: string, p: any): Promise<any> };
-  balance: { retrieve(): Promise<any> };
-  transfers: { create(p: any, o: { idempotencyKey: string }): Promise<any> };
+/** Provider bound to the donation's ORIGINAL integration, environment and platform account. */
+async function boundProvider(d: any): Promise<{ provider: DonationProvider; gaps: string[] }> {
+  const integration = await loadIntegrationById(d.integration_id);
+  const gaps = integrationGaps(integration);
+  if (integration && (integration.environment === "live") !== d.livemode) gaps.push("Integration environment differs from the donation");
+  if (integration && integration.stripe_account_id !== d.platform_account_id) gaps.push("Platform Stripe account differs from the donation");
+  if (!integration || gaps.length) throw new PaymentError("CONFIG_ERROR", "Original donation integration is not usable.", { gaps });
+  return { provider: await providerFactory(integration), gaps };
 }
 
-async function releaseStripe(storeId: string): Promise<ReleaseStripe> {
-  const { data: store } = await db.from("stores").select("*").eq("id", storeId).maybeSingle();
-  const integration = store ? await loadIntegration(store) : null;
-  if (!integration || integration.status !== "ACTIVE") throw new PaymentError("CONFIG_ERROR", "Stripe integration not active.");
-  const { donationStripeFromIntegration } = await import("./stripe-sdk.server");
-  return (await donationStripeFromIntegration(integration)) as unknown as ReleaseStripe;
+async function scopeTotals(d: any) {
+  const held = must(
+    await db.from("donations").select("*").eq("integration_id", d.integration_id).eq("livemode", d.livemode).eq("platform_account_id", d.platform_account_id),
+    "Held read",
+  ).data ?? [];
+  const rels = must(
+    await db.from("donation_releases").select("*").eq("platform_account_id", d.platform_account_id).eq("livemode", d.livemode),
+    "Release read",
+  ).data ?? [];
+  const inflight = new Set(rels.filter((r: any) => ["RESERVED", "SUBMITTED", "UNKNOWN"].includes(r.status)).map((r: any) => r.donation_id));
+  const other = held
+    .filter((h: any) => h.id !== d.id && (["PAID", "PARTIALLY_REFUNDED", "DISPUTED"].includes(h.status) || inflight.has(h.id)))
+    .reduce((s: number, h: any) => s + h.amount_cents - h.refunded_cents, 0);
+  const feeUsed = rels
+    .filter((r: any) => ["RESERVED", "SUBMITTED", "UNKNOWN", "SUCCEEDED"].includes(r.status))
+    .reduce((s: number, r: any) => s + (r.fee_coverage_cents ?? 0), 0);
+  return { other, feeUsed };
 }
 
-export async function buildReleasePreview(donationId: string, stripeOverride?: ReleaseStripe): Promise<ReleasePreview> {
-  const { data: d } = await db.from("donations").select("*").eq("id", donationId).maybeSingle();
+function releaseStateOf(status: string | null | undefined): ReleaseState {
+  if (!status) return "NONE";
+  if (status === "SUCCEEDED") return "SUCCEEDED";
+  if (status === "FAILED") return "FAILED";
+  return "IN_FLIGHT";
+}
+
+export async function buildReleasePreview(donationId: string): Promise<ReleasePreview & { availableUsdCents: number }> {
+  const d = must(await db.from("donations").select("*").eq("id", donationId).maybeSingle(), "Donation read").data;
   if (!d) throw new PaymentError("NOT_FOUND", "Donation not found.");
   const settings = await loadSettings(d.store_id);
-  const beneficiary = await loadBeneficiary(d.beneficiary_id);
-  const { data: rel } = await db.from("donation_releases").select("id").eq("donation_id", d.id).maybeSingle();
+  const beneficiary = await loadBeneficiary(d.store_id, d.beneficiary_id);
+  const rel = must(await db.from("donation_releases").select("status").eq("donation_id", d.id).maybeSingle(), "Release read").data;
 
-  let charge: ReleaseInputsCharge = null;
+  let charge: Parameters<typeof computeReleasePreview>[0]["charge"] = null;
   let availableUsd = 0;
-  if (d.payment_intent_id && d.status === "PAID") {
-    const stripe = stripeOverride ?? (await releaseStripe(d.store_id));
-    const pi = await stripe.paymentIntents.retrieve(d.payment_intent_id, { expand: ["latest_charge.balance_transaction"] });
-    const ch = pi.latest_charge;
-    const bt = ch?.balance_transaction;
-    if (ch && bt) {
-      charge = {
-        id: ch.id,
-        amount: ch.amount,
-        paid: ch.paid,
-        refunded: ch.refunded,
-        amount_refunded: ch.amount_refunded,
-        disputed: ch.disputed,
-        balanceTransactionCurrency: bt.currency,
-        feeCents: bt.fee,
-        feeDetails: (bt.fee_details ?? []).map((f: any) => ({ type: f.type, amount: f.amount, description: f.description })),
-        fundsAvailable: bt.status === "available",
-      };
-      if (!d.charge_id) await db.from("donations").update({ charge_id: ch.id }).eq("id", d.id);
-      d.charge_id ??= ch.id;
+  let verification: RecipientVerification | null = null;
+  let iGaps: string[] = [];
+  try {
+    const { provider } = await boundProvider(d);
+    if (beneficiary?.stripe_account_id) verification = await verifyRecipient(provider, beneficiary.stripe_account_id);
+    if (d.payment_intent_id && d.status === "PAID") {
+      const pi = await provider.paymentIntents.retrieve(d.payment_intent_id, { expand: ["latest_charge.balance_transaction"] });
+      const ch = pi.latest_charge;
+      const bt = ch?.balance_transaction;
+      if (ch && bt) {
+        charge = {
+          id: ch.id,
+          amount: ch.amount,
+          paid: ch.paid,
+          refunded: ch.refunded,
+          amount_refunded: ch.amount_refunded,
+          disputed: ch.disputed,
+          balanceTransactionCurrency: bt.currency,
+          feeCents: bt.fee,
+          feeDetails: (bt.fee_details ?? []).map((f: any) => ({ type: f.type, amount: f.amount, description: f.description })),
+          fundsAvailable: bt.status === "available",
+        };
+        if (!d.charge_id) {
+          must(await db.from("donations").update({ charge_id: ch.id }).eq("id", d.id).is("charge_id", null), "Charge link save");
+          d.charge_id = ch.id;
+        }
+      }
+      const bal = await provider.balance.retrieve();
+      availableUsd = (bal.available ?? []).filter((b: any) => b.currency === "usd").reduce((s: number, b: any) => s + b.amount, 0);
     }
-    const bal = await stripe.balance.retrieve();
-    availableUsd = (bal.available ?? []).filter((b: any) => b.currency === "usd").reduce((s: number, b: any) => s + b.amount, 0);
+  } catch (e) {
+    iGaps = (e as { details?: { gaps?: string[] } }).details?.gaps ?? [(e as Error).message];
   }
-  const { data: held } = await db.from("donations").select("id, amount_cents").eq("store_id", d.store_id).eq("status", "PAID");
-  const other = (held ?? []).filter((h: any) => h.id !== d.id).reduce((s: number, h: any) => s + h.amount_cents, 0);
-  const { data: used } = await db.from("donation_releases").select("fee_coverage_cents, status");
-  const usedCoverage = (used ?? [])
-    .filter((u: any) => u.status !== "FAILED")
-    .reduce((s: number, u: any) => s + (u.fee_coverage_cents ?? 0), 0);
-
-  return computeReleasePreview({
+  const { other, feeUsed } = await scopeTotals(d);
+  const preview = computeReleasePreview({
     donation: d,
     beneficiary,
     settings,
+    verification,
+    integrationGaps: iGaps,
     charge,
     availableUsdCents: availableUsd,
     otherHeldObligationsCents: other,
-    feeCoverageUsedCents: usedCoverage,
-    existingRelease: Boolean(rel),
+    feeCoverageUsedCents: feeUsed,
+    releaseState: releaseStateOf(rel?.status),
   });
+  return { ...preview, availableUsdCents: availableUsd };
 }
-type ReleaseInputsCharge = Parameters<typeof computeReleasePreview>[0]["charge"];
 
 export async function previewHash(p: ReleasePreview) {
   return sha256Hex(previewHashInput(p));
 }
 
-export async function executeRelease(input: {
-  donationId: string;
-  previewHash: string;
-  confirmedBy: string;
-  maxAmountCents: number;
-  stripeOverride?: ReleaseStripe;
-}) {
-  const stripe = input.stripeOverride ?? (await (async () => {
-    const { data: d } = await db.from("donations").select("store_id").eq("id", input.donationId).maybeSingle();
-    if (!d) throw new PaymentError("NOT_FOUND", "Donation not found.");
-    return releaseStripe(d.store_id);
-  })());
-  const preview = await buildReleasePreview(input.donationId, stripe);
+/** Classifies a transfer error: only clear 4xx validation failures are definitive. */
+function isDefinitiveFailure(e: any): boolean {
+  const code = Number(e?.statusCode ?? 0);
+  if (e?.code === "idempotency_key_in_use" || e?.type === "StripeIdempotencyError") return false;
+  return code >= 400 && code < 500 && code !== 409 && code !== 429 && (e?.type === "StripeInvalidRequestError" || e?.type === "StripePermissionError");
+}
+
+async function mark(releaseId: string, outcome: string, transferId: string | null, error: string | null) {
+  return must(
+    await db.rpc("donation_release_mark", { _release_id: releaseId, _outcome: outcome, _transfer_id: transferId, _error: error }),
+    `Release ${outcome} save`,
+  ).data;
+}
+
+async function submitTransfer(rel: any, donationId: string, provider: DonationProvider) {
+  await mark(rel.id, "SUBMITTED", null, null);
+  let transfer: any;
+  try {
+    transfer = await provider.transfers.create(
+      {
+        amount: rel.amount_cents, // FULL gross — never net of fees
+        currency: "usd",
+        destination: rel.destination_account_id,
+        source_transaction: rel.source_charge_id,
+        transfer_group: `donation_${donationId}`,
+        description: "Donation release (full original amount)",
+        metadata: { purpose: "donation_release", donation_id: donationId, release_id: rel.id },
+      },
+      { idempotencyKey: rel.idempotency_key },
+    );
+  } catch (e) {
+    const msg = (e as Error).message ?? "transfer error";
+    if (isDefinitiveFailure(e)) {
+      await mark(rel.id, "FAILED", null, msg);
+      throw new PaymentError("INVALID_STATE", `Stripe rejected the transfer: ${msg}`);
+    }
+    await mark(rel.id, "UNKNOWN", null, msg);
+    throw new PaymentError("INVALID_STATE", "Transfer outcome unknown. Use Resume to reconcile — no second transfer will be created.");
+  }
+  if (!transfer?.id || transfer.amount !== rel.amount_cents || transfer.destination !== rel.destination_account_id || String(transfer.currency).toLowerCase() !== "usd") {
+    await mark(rel.id, "UNKNOWN", null, "Transfer response did not match the approved operation");
+    throw new PaymentError("INVALID_STATE", "Transfer response did not match the approved operation; reconcile in Stripe.");
+  }
+  let out: any;
+  try {
+    out = await mark(rel.id, "SUCCEEDED", transfer.id, null);
+  } catch (e) {
+    throw new PaymentError(
+      "INVALID_STATE",
+      `Transfer ${transfer.id} exists at Stripe but was not saved locally. Use Resume — it records it without creating another transfer.`,
+    );
+  }
+  return { transferId: transfer.id as string, amountCents: rel.amount_cents as number, donationStatus: out?.donation_status as string };
+}
+
+export async function executeRelease(input: { donationId: string; previewHash: string; confirmedBy: string; maxAmountCents: number }) {
+  const preview = await buildReleasePreview(input.donationId);
   if (!preview.allowed) throw new PaymentError("INVALID_STATE", "Release blocked.", { blockers: preview.blockers });
   if ((await previewHash(preview)) !== input.previewHash) {
     throw new PaymentError("INVALID_STATE", "Preview changed. Review it again before confirming.");
   }
-  if (preview.transferAmountCents > input.maxAmountCents) {
-    throw new PaymentError("INVALID_STATE", "Transfer exceeds the confirmed maximum.");
-  }
-  const key = `donation-release:${preview.donationId}`;
-  // UNIQUE(donation_id) is the lock: a second release can never be reserved.
-  const lock = await db.from("donation_releases").insert({
-    donation_id: preview.donationId,
-    idempotency_key: key,
-    amount_cents: preview.transferAmountCents,
-    fee_coverage_cents: preview.ngoCoverageRequiredCents,
-    destination_account_id: preview.recipientAccountId,
-    source_charge_id: preview.sourceChargeId,
-    preview_hash: input.previewHash,
-    confirmed_by: input.confirmedBy,
+  if (preview.transferAmountCents > input.maxAmountCents) throw new PaymentError("INVALID_STATE", "Transfer exceeds the confirmed maximum.");
+  const d = must(await db.from("donations").select("*").eq("id", input.donationId).maybeSingle(), "Donation read").data;
+  const settings = (await loadSettings(d.store_id)) ?? DEFAULT_SETTINGS;
+  const { provider } = await boundProvider(d);
+  const res = await db.rpc("donation_release_reserve", {
+    _donation_id: d.id,
+    _preview_hash: input.previewHash,
+    _confirmed_by: input.confirmedBy,
+    _amount: preview.transferAmountCents,
+    _fee: preview.ngoCoverageRequiredCents,
+    _dest: preview.recipientAccountId,
+    _source: preview.sourceChargeId,
+    _available_usd: preview.availableUsdCents,
+    _fee_budget: settings.ngo_fee_funding_cents,
   });
-  if (lock.error) throw new PaymentError("INVALID_STATE", "A release already exists for this donation.");
-  try {
-    const transfer = await stripe.transfers.create(
-      {
-        amount: preview.transferAmountCents, // FULL gross — never net of fees
-        currency: "usd",
-        destination: preview.recipientAccountId,
-        source_transaction: preview.sourceChargeId,
-        transfer_group: `donation_${preview.donationId}`,
-        description: "Donation release (full original amount)",
-        metadata: { purpose: "donation_release", donation_id: preview.donationId },
-      },
-      { idempotencyKey: key },
-    );
-    await db.from("donation_releases").update({ status: "SUCCEEDED", transfer_id: transfer.id }).eq("donation_id", preview.donationId);
-    const { data: d } = await db.from("donations").select("*").eq("id", preview.donationId).maybeSingle();
-    await applySignal(d, "RELEASED", { released_at: new Date().toISOString() }, transfer.id);
-    await ledger(preview.donationId, "FEE_COVERED_BY_NGO", preview.ngoCoverageRequiredCents, transfer.id, {});
-    return { transferId: transfer.id, amountCents: preview.transferAmountCents };
-  } catch (error) {
-    await db
-      .from("donation_releases")
-      .update({ status: "FAILED", error: (error as Error).message.slice(0, 300) })
-      .eq("donation_id", preview.donationId);
-    throw error;
+  if (res.error) throw new PaymentError("INVALID_STATE", `Release blocked: ${res.error.message}`);
+  const r = res.data;
+  if (r.action === "done") return { transferId: r.transfer_id as string, amountCents: preview.transferAmountCents, donationStatus: d.status };
+  if (r.action === "resume") throw new PaymentError("INVALID_STATE", "A release is already in progress — use Resume.");
+  const rel = must(await db.from("donation_releases").select("*").eq("id", r.release_id).single(), "Release read").data;
+  return submitTransfer(rel, d.id, provider);
+}
+
+/**
+ * Resumes an approved in-flight release with its ORIGINAL immutable parameters and
+ * idempotency key. First looks for an already-created transfer; never creates a second one.
+ */
+export async function resumeRelease(donationId: string) {
+  const rel = must(await db.from("donation_releases").select("*").eq("donation_id", donationId).maybeSingle(), "Release read").data;
+  if (!rel) throw new PaymentError("NOT_FOUND", "No release operation for this donation.");
+  if (rel.status === "SUCCEEDED") return { transferId: rel.transfer_id as string, amountCents: rel.amount_cents as number, donationStatus: null };
+  if (!["RESERVED", "SUBMITTED", "UNKNOWN"].includes(rel.status)) throw new PaymentError("INVALID_STATE", `Release is ${rel.status}; start a new preview.`);
+  const d = must(await db.from("donations").select("*").eq("id", donationId).maybeSingle(), "Donation read").data;
+  const { provider } = await boundProvider(d);
+  const list = await provider.transfers.list({ transfer_group: `donation_${donationId}`, limit: 10 });
+  const existing = (list?.data ?? []).find(
+    (t: any) => t.metadata?.release_id === rel.id && t.amount === rel.amount_cents && t.destination === rel.destination_account_id,
+  );
+  if (existing) {
+    const out = await mark(rel.id, "SUCCEEDED", existing.id, null);
+    return { transferId: existing.id as string, amountCents: rel.amount_cents as number, donationStatus: out?.donation_status ?? null };
   }
+  const ageMs = Date.now() - Date.parse(rel.updated_at ?? rel.created_at);
+  if (ageMs > 23 * 3600 * 1000) {
+    // Outside Stripe's idempotency window a retry could duplicate the transfer: human reconciliation only.
+    await mark(rel.id, "UNKNOWN", null, "Idempotency window passed; reconcile manually in Stripe");
+    throw new PaymentError("INVALID_STATE", "Release needs manual reconciliation in Stripe (idempotency window passed).");
+  }
+  return submitTransfer(rel, donationId, provider);
+}
+
+// ---------------- Recipient onboarding (existing accounts only) ----------------
+
+export async function verifyBeneficiary(storeId: string, beneficiaryId: string) {
+  const b = await loadBeneficiary(storeId, beneficiaryId);
+  if (!b?.stripe_account_id) throw new PaymentError("INVALID_STATE", "Beneficiary has no connected account.");
+  const store = must(await db.from("stores").select("*").eq("id", storeId).maybeSingle(), "Store read").data;
+  const integration = await loadIntegrationById(store?.stripe_integration_id ?? null);
+  const gaps = integrationGaps(integration);
+  if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Stripe integration not ready.", { gaps });
+  const v = await verifyRecipient(await providerFactory(integration!), b.stripe_account_id);
+  must(
+    await db.from("donation_beneficiaries").update({
+      provider_verified_at: new Date().toISOString(),
+      provider_country: v.country,
+      provider_transfers_status: v.error ? "error" : v.transfersStatus,
+    }).eq("id", b.id).eq("store_id", storeId),
+    "Verification save",
+  );
+  return { verification: v, gaps: verificationGaps(b, v) };
+}
+
+export async function createOnboardingLink(storeId: string, beneficiaryId: string, origin: string, gapsFn: (s: DonationSettings | null, b: BeneficiaryLike | null) => string[]) {
+  const [settings, b] = await Promise.all([loadSettings(storeId), loadBeneficiary(storeId, beneficiaryId)]);
+  const gaps = gapsFn(settings, b);
+  const store = must(await db.from("stores").select("*").eq("id", storeId).maybeSingle(), "Store read").data;
+  const integration = await loadIntegrationById(store?.stripe_integration_id ?? null);
+  gaps.push(...integrationGaps(integration));
+  if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Onboarding not available.", { gaps });
+  const provider = await providerFactory(integration!);
+  const link = await provider.v2.core.accountLinks.create({
+    account: b!.stripe_account_id,
+    use_case: {
+      type: "account_onboarding",
+      account_onboarding: {
+        configurations: ["recipient"],
+        refresh_url: `${origin}/admin?onboarding=refresh`,
+        return_url: `${origin}/admin?onboarding=return`,
+      },
+    },
+  });
+  if (typeof link?.url !== "string" || !link.url.startsWith("https://")) throw new Error("Stripe returned no onboarding URL.");
+  return { url: link.url as string };
 }
