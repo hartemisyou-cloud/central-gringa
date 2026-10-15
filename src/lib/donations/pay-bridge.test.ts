@@ -9,7 +9,35 @@ describe("donation privacy: Central-only technical URLs", () => {
     expect(DONATION_BRANDING.display_name).toBe("Hope Human Foundation");
     expect(JSON.stringify(DONATION_BRANDING)).not.toMatch(/hopehumanfoundations?\.org/);
   });
-  it("buildSessionRequest is exported", () => expect(typeof buildSessionRequest).toBe("function"));
+  it("real buildSessionRequest payload: Books-only technical URLs, identity/campaign/amount intact", () => {
+    const B = "https://hopehumanbooks.com";
+    const p = buildSessionRequest({
+      donationId: "11111111-1111-4111-8111-111111111111",
+      donationNumber: "DN-000123",
+      storeId: "22222222-2222-4222-8222-222222222222",
+      integrationId: "33333333-3333-4333-8333-333333333333",
+      publicToken: "tok_abc123",
+      amountCents: 2000,
+      donorEmail: null,
+      origin: B,
+      campaign: { slug: "mateo", title: "Help Mateo" },
+      recipientName: "Hope Human Foundation",
+      adaptivePricing: true,
+      integrationIdentifier: "hhf_donations_ABCDEFGH",
+    }) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(JSON.stringify(p)).not.toMatch(/hopehumanfoundations?\.org/i);
+    const logo = `${B}/brand/hope-human-logo.png`;
+    expect(p.line_items[0].price_data.product_data.images).toEqual([logo]);
+    expect(p.branding_settings.logo).toEqual({ type: "url", url: logo });
+    expect(p.success_url).toBe(`${B}/donations/receipt/tok_abc123`);
+    expect(p.cancel_url).toBe(`${B}/donations/receipt/tok_abc123`);
+    expect(p.submit_type).toBe("donate");
+    expect(p.mode).toBe("payment");
+    expect(p.metadata).toMatchObject({ purpose: "donation", recipient: "Hope Human Foundation", campaign_slug: "mateo", campaign_title: "Help Mateo", base_amount_cents: "2000", base_currency: "USD" });
+    expect(p.payment_intent_data.metadata.purpose).toBe("donation");
+    expect(p.line_items[0].price_data).toMatchObject({ currency: "usd", unit_amount: 2000 });
+    expect(p.branding_settings.display_name).toBe("Hope Human Foundation");
+  });
 });
 
 describe("pay bridge", () => {
