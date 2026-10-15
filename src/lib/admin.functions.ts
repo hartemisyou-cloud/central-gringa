@@ -12,7 +12,7 @@ export const adminLogin = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { passwordMatches, getAdminSession } = await import("./admin/session.server");
-    if (!(await passwordMatches(data.password))) {
+    if (!(await passwordMatches(data.password.trim()))) {
       return { ok: false as const };
     }
     const session = await getAdminSession();
