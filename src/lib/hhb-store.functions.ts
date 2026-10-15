@@ -22,13 +22,11 @@ export interface CatalogProduct {
 }
 
 async function loadStore() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { sql, one } = await import("@/lib/db/client.server");
   const { HHB_STORE_SLUG } = await import("@/lib/catalog/hhb");
-  const { data: store } = await supabaseAdmin
-    .from("stores")
-    .select("*")
-    .eq("slug", HHB_STORE_SLUG)
-    .maybeSingle();
+  const { data: store } = await one<import("@/lib/payments/store-auth.server").StoreRow>(sql`
+    select * from public.stores where slug = ${HHB_STORE_SLUG}
+  `, true);
   if (!store) throw new Error("The store is not set up yet.");
   return store;
 }
@@ -105,12 +103,16 @@ export const getReceipt = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ token: z.string().min(10).max(120) }).parse(input))
   .handler(async ({ data }): Promise<{ ok: true; receipt: Receipt } | { ok: false; message: string }> => {
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: order } = await supabaseAdmin
-        .from("orders")
-        .select("order_number, status, currency, total_cents, created_at, order_items(product_name, quantity, total_cents)")
-        .eq("public_token", data.token)
-        .maybeSingle();
+      const { sql, one } = await import("@/lib/db/client.server");
+      const { data: order } = await one<{
+        order_number: string; status: string; currency: string; total_cents: number; created_at: string;
+        order_items: Array<{ product_name: string; quantity: number; total_cents: number }>;
+      }>(sql`
+        select o.order_number, o.status, o.currency, o.total_cents, o.created_at,
+          coalesce((select jsonb_agg(jsonb_build_object('product_name', i.product_name, 'quantity', i.quantity,
+            'total_cents', i.total_cents)) from public.order_items i where i.order_id = o.id), '[]'::jsonb) as order_items
+        from public.orders o where o.public_token = ${data.token}
+      `, true);
       if (!order) return { ok: false, message: "Order not found." };
       const { getOrderDeliverables } = await import("@/lib/payments/fulfillment.server");
       const deliverables = await getOrderDeliverables(data.token);

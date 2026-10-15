@@ -8,13 +8,12 @@ import { createServerFn } from "@tanstack/react-start";
 export const getStorefrontTracking = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ pixelId: string | null }> => {
     const { HHB_STORE_SLUG: slug } = await import("@/lib/catalog/hhb");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { sql, one } = await import("@/lib/db/client.server");
 
-    const { data: store } = await supabaseAdmin
-      .from("stores")
-      .select("id")
-      .eq("slug", slug)
-      .maybeSingle();
+    const { data: store } = await one<{ id: string }>(
+      sql`SELECT id FROM stores WHERE slug = ${slug}`,
+      true,
+    );
     if (!store) return { pixelId: null };
 
     const { getPublicMetaConfig } = await import("@/lib/meta/config.server");

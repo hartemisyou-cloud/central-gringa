@@ -41,12 +41,8 @@ export const captureHostedAttribution = createServerFn({ method: "POST" })
         headers.get("cf-connecting-ip") ?? forwarded ?? headers.get("x-real-ip") ?? null;
       const clientUserAgent = headers.get("user-agent");
 
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: order } = await supabaseAdmin
-        .from("orders")
-        .select("id")
-        .eq("public_token", data.token)
-        .maybeSingle();
+      const { sql, one } = await import("@/lib/db/client.server");
+      const { data: order } = await one<{ id: string }>(sql`select id from public.orders where public_token = ${data.token}`, true);
       if (!order) return { ok: false as const };
 
       const { enrichOrderAttribution } = await import("@/lib/payments/attribution.server");
