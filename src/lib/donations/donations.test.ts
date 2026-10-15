@@ -79,7 +79,7 @@ const BEN = { id: BEN_ID, store_id: STORE_ID, display_name: "Recipient", country
 /** Strict Stripe fake: same idempotency key MUST carry identical params (like Stripe). */
 function fakeStripe(over: any = {}) {
   const keys = new Map<string, { params: string; result: any }>();
-  const calls = { sessions: [] as any[], transfers: [] as any[], accounts: 0 };
+  const calls = { sessions: [] as any[], transfers: [] as any[], accounts: 0, links: 0, includes: [] as any[] };
   const idem = (scope: string, key: string, params: any, make: () => any) => {
     const k = `${scope}:${key}`;
     const p = stable(params);
@@ -96,7 +96,7 @@ function fakeStripe(over: any = {}) {
     keys.set(k, { params: p, result });
     return result;
   };
-  const state = { balance: 1_000_000, transfersCreated: [] as any[], fee: 88, account: { transfers: "active", country: "US", applied: ["recipient"] } };
+  const state = { balance: 1_000_000, transfersCreated: [] as any[], fee: 88, account: { transfers: "active", country: "US", applied: ["recipient"], fees: "application" as any, losses: "application" as any, dashboard: "express" as any, livemode: false as any, id: undefined as any } };
   const provider = {
     calls,
     state,
@@ -113,14 +113,16 @@ function fakeStripe(over: any = {}) {
     v2: {
       core: {
         accounts: {
-          retrieve: async (id: string) => {
-            calls.accounts++;
+          retrieve: async (id: string, p?: any) => {
+            calls.accounts++; calls.includes.push(p?.include);
             if (over.accountThrow) throw new Error("No such account");
-            return { id, applied_configurations: state.account.applied, identity: { country: state.account.country },
+            const a = state.account;
+            return { id: a.id ?? id, applied_configurations: a.applied, identity: { country: a.country }, livemode: a.livemode, dashboard: a.dashboard,
+              defaults: { responsibilities: { fees_collector: a.fees, losses_collector: a.losses } },
               configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { status: state.account.transfers } } } } } };
           },
         },
-        accountLinks: { create: async (p: any) => ({ url: `https://connect.stripe.com/setup/${p.account}` }) },
+        accountLinks: { create: async (p: any) => (calls.links++, { url: `https://connect.stripe.com/setup/${p.account}` }) },
       },
     },
     paymentIntents: {
@@ -216,7 +218,7 @@ describe("validation and fail-closed configuration", () => {
   it("live recipient check fails closed (inactive transfers, unknown account, country mismatch)", async () => {
     stripe.state.account.transfers = "pending";
     await expect(create()).rejects.toThrow(/not accepting/);
-    stripe.state.account = { transfers: "active", country: "GB", applied: ["recipient"] };
+    stripe.state.account.country = "GB";
     await expect(create()).rejects.toThrow(/not accepting/);
     stripe = fakeStripe({ accountThrow: true });
     await expect(create()).rejects.toThrow(/not accepting/);
@@ -386,8 +388,8 @@ describe("webhook (atomic RPC)", () => {
 });
 
 const chargeFix = (o = {}) => ({ id: "ch_1", amount: 2000, paid: true, refunded: false, amount_refunded: 0, disputed: false, balanceTransactionCurrency: "usd", feeCents: 88, feeDetails: [], fundsAvailable: true, ...o });
-const don = (o = {}) => ({ id: "d1", status: "PAID", amount_cents: 2000, currency: "USD", refunded_cents: 0, disputed: false, charge_id: "ch_1", beneficiary_snapshot: { account_id: "acct_123", display_name: "Recipient", country: "US" }, ...o });
-const ver = { accountId: "acct_123", country: "US", transfersStatus: "active", recipientConfigured: true };
+const don = (o = {}) => ({ id: "d1", livemode: false, status: "PAID", amount_cents: 2000, currency: "USD", refunded_cents: 0, disputed: false, charge_id: "ch_1", beneficiary_snapshot: { account_id: "acct_123", display_name: "Recipient", country: "US" }, ...o });
+const ver = { accountId: "acct_123", country: "US", transfersStatus: "active", recipientConfigured: true, feesCollector: "application", lossesCollector: "application", dashboard: "express", livemode: false };
 const base = (o = {}) => ({ donation: don(), beneficiary: BEN, settings: READY, verification: ver, integrationGaps: [], charge: chargeFix(), availableUsdCents: 1_000_000, otherHeldObligationsCents: 0, feeCoverageUsedCents: 0, releaseState: "NONE", ...o });
 
 describe("release preview math", () => {
@@ -700,5 +702,73 @@ describe("P1-4 acceptance kill switch on retry and /pay", () => {
       const [r] = await rows(`SELECT has_function_privilege('anon','public.${fn}','EXECUTE') a, has_function_privilege('authenticated','public.${fn}','EXECUTE') b, has_function_privilege('service_role','public.${fn}','EXECUTE') s`);
       expect([r.a, r.b, r.s]).toEqual([false, false, true]);
     }
+  });
+});
+
+describe("actual provider responsibilities / dashboard / mode guard", () => {
+  const bad: [string, (a: any) => void][] = [
+    ["missing fee collector", (a) => { a.fees = undefined; }],
+    ["stripe fee collector", (a) => { a.fees = "stripe"; }],
+    ["legacy application_express", (a) => { a.fees = "application_express"; }],
+    ["legacy application_custom", (a) => { a.fees = "application_custom"; }],
+    ["stripe loss collector", (a) => { a.losses = "stripe"; }],
+    ["missing loss collector", (a) => { a.losses = undefined; }],
+    ["full dashboard", (a) => { a.dashboard = "full"; }],
+    ["none dashboard while EXPRESS approved", (a) => { a.dashboard = "none"; }],
+    ["missing dashboard", (a) => { a.dashboard = undefined; }],
+    ["livemode mismatch", (a) => { a.livemode = true; }],
+    ["unknown mode", (a) => { a.livemode = undefined; }],
+    ["different account returned", (a) => { a.id = "acct_other"; }],
+  ];
+  for (const [name, mut] of bad) {
+    it(`blocks new Session, transfer and onboarding link: ${name}`, async () => {
+      const d = await paidDonation();
+      mut(stripe.state.account);
+      await expect(create({ idempotencyKey: "key-incompat-1" })).rejects.toThrow(/not accepting/);
+      await expect(release(d.id)).rejects.toThrow();
+      await expect(svc.createOnboardingLink(STORE_ID, BEN_ID, "https://central", () => [])).rejects.toThrow(/Onboarding not available/);
+      expect(stripe.calls.transfers).toHaveLength(0);
+      expect(stripe.calls.links).toBe(0);
+      expect(stripe.calls.sessions).toHaveLength(1); // only the paidDonation fixture
+    });
+  }
+  it("reads defaults with the Accounts v2 include list", async () => {
+    await create();
+    expect(stripe.calls.includes[0]).toEqual(["configuration.recipient", "identity", "defaults"]);
+  });
+  it("compatible model: EXPRESS + express and NONE + none both pass", async () => {
+    await expect(create()).resolves.toBeTruthy();
+    await H.pg.exec(`UPDATE donation_settings SET dashboard_responsibility = 'NONE'`);
+    stripe.state.account.dashboard = "none";
+    await expect(create({ idempotencyKey: "key-none-0001" })).resolves.toBeTruthy();
+  });
+  it("retry after a fee-collector change creates no new Session", async () => {
+    stripe = fakeStripe({ sessionThrowOnce: true });
+    await expect(create()).rejects.toThrow(/socket hang up/);
+    stripe.state.account.fees = "stripe";
+    await expect(create()).rejects.toThrow();
+    expect(stripe.calls.sessions).toHaveLength(1);
+  });
+  it("resume after reserve with changed loss collector -> zero transfers", async () => {
+    const d = await paidDonation();
+    await reserveOnly(d.id);
+    stripe.state.account.losses = "stripe";
+    await expect(svc.resumeRelease(d.id)).rejects.toThrow(/held for reconciliation/);
+    expect(stripe.calls.transfers).toHaveLength(0);
+  });
+  it("onboarding: pending transfers capability does not block a compatible existing account", async () => {
+    stripe.state.account.transfers = "pending";
+    const r = await svc.createOnboardingLink(STORE_ID, BEN_ID, "https://central", () => []);
+    expect(r.url).toMatch(/^https:/);
+    expect(stripe.calls.links).toBe(1);
+  });
+  it("onboarding: country mismatch still blocks", async () => {
+    stripe.state.account.country = "GB";
+    await expect(svc.createOnboardingLink(STORE_ID, BEN_ID, "https://central", () => [])).rejects.toThrow(/Onboarding not available/);
+    expect(stripe.calls.links).toBe(0);
+  });
+  it("pure: no local approval means pending even when provider values look right", () => {
+    expect(providerModelGaps(ver as any, { settings: { ...READY, dashboard_responsibility: null }, livemode: false })).toContain("Dashboard model not approved locally");
+    expect(providerModelGaps(ver as any, { settings: READY, livemode: undefined })).toContain("Recipient account mode differs from the expected integration mode");
   });
 });
