@@ -10,7 +10,7 @@ hopehumanfoundation.org (user picks campaign + amount, clicks Donate)
 No extra page and no second click. `/donations/pay/<token>` stays the owner of the Session and keeps every readiness gate.
 
 ## Request
-- `POST /donations/start`, `Content-Type: application/x-www-form-urlencoded`, exactly one field `payload` (JSON), body ≤ 8 KiB.
+- `POST /donations/start`, `Content-Type: application/x-www-form-urlencoded`, exactly one field `payload` (JSON), body ≤ 8 KiB, enforced while streaming (reading is cancelled once the limit is exceeded); a malformed or oversize `Content-Length` is rejected with 400 before any store lookup, rate limit or creation.
 - Payload (strict, no other fields): `{ campaignSlug: string, amountCents: number, idempotencyKey: string, attribution?: Record<string,string> }`.
   - `amountCents` ∈ 2000, 3000, 5000, 10000, 25000, 50000 (USD 20 → 2000). Currency is always USD.
   - No donor fields: Stripe collects contact details.
@@ -21,11 +21,12 @@ No extra page and no second click. `/donations/pay/<token>` stays the owner of t
 ## Responses
 | Case | Response |
 | --- | --- |
-| Success | `303`, empty body, `cache-control: no-store`, `Location: <central origin>/donations/pay/<publicToken>` |
+| Success | `303`, empty body, `cache-control: no-store`, `referrer-policy: no-referrer`, `x-content-type-options: nosniff`, `Location: <central origin>/donations/pay/<publicToken>` |
 | Valid selection but gate/campaign/config/rate-limit/provider unavailable | `303` → `https://www.hopehumanfoundation.org/donate?slug=<slug>&amount=<USD>&checkout_error=unavailable` |
 | Bad origin | `403` |
 | Bad content type, oversize, invalid JSON, extra/unknown fields, unsupported amount | `400` |
-| GET/HEAD/OPTIONS/PUT/PATCH/DELETE | `405` (no record, no Session) |
+| GET/HEAD/PUT/PATCH/DELETE | `405` (no record, no Session) |
+| OPTIONS | Answered by the framework before the handler (observed `204`, no body); the handler's `405` is not guaranteed on the network. No record or Session is ever created. |
 
 Uses the same server-only `createDonation` (schema, fingerprint idempotency, collection gates, kill switch, TEST/LIVE rules) as `POST /api/public/v1/donations`. Never creates ebook orders.
 
