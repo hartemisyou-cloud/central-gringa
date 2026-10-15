@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CookiePolicyRouteImport } from './routes/cookie-policy'
 import { Route as DeliveryPolicyRouteImport } from './routes/delivery-policy'
+import { Route as DonationPolicyRouteImport } from './routes/donation-policy'
 import { Route as PrivacyPolicyRouteImport } from './routes/privacy-policy'
 import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -21,6 +22,7 @@ import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
 import { Route as OrderTokenRouteImport } from './routes/order.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as DonationsPayTokenRouteImport } from './routes/donations.pay.$token'
+import { Route as DonationsReceiptTokenRouteImport } from './routes/donations.receipt.$token'
 import { Route as ApiPublicV1DonationsRouteImport } from './routes/api/public/v1/donations'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
@@ -64,6 +66,11 @@ const DeliveryPolicyRoute = DeliveryPolicyRouteImport.update({
   path: '/delivery-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DonationPolicyRoute = DonationPolicyRouteImport.update({
+  id: '/donation-policy',
+  path: '/donation-policy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyPolicyRoute = PrivacyPolicyRouteImport.update({
   id: '/privacy-policy',
   path: '/privacy-policy',
@@ -97,6 +104,11 @@ const PayTokenRoute = PayTokenRouteImport.update({
 const DonationsPayTokenRoute = DonationsPayTokenRouteImport.update({
   id: '/donations/pay/$token',
   path: '/donations/pay/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DonationsReceiptTokenRoute = DonationsReceiptTokenRouteImport.update({
+  id: '/donations/receipt/$token',
+  path: '/donations/receipt/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicV1DonationsRoute = ApiPublicV1DonationsRouteImport.update({
@@ -204,6 +216,7 @@ export interface FileRoutesByFullPath {
   '/checkout': typeof CheckoutRoute
   '/cookie-policy': typeof CookiePolicyRoute
   '/delivery-policy': typeof DeliveryPolicyRoute
+  '/donation-policy': typeof DonationPolicyRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
@@ -211,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
+  '/donations/receipt/$token': typeof DonationsReceiptTokenRoute
   '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -235,6 +249,7 @@ export interface FileRoutesByTo {
   '/checkout': typeof CheckoutRoute
   '/cookie-policy': typeof CookiePolicyRoute
   '/delivery-policy': typeof DeliveryPolicyRoute
+  '/donation-policy': typeof DonationPolicyRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
@@ -242,6 +257,7 @@ export interface FileRoutesByTo {
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
+  '/donations/receipt/$token': typeof DonationsReceiptTokenRoute
   '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -267,6 +283,7 @@ export interface FileRoutesById {
   '/checkout': typeof CheckoutRoute
   '/cookie-policy': typeof CookiePolicyRoute
   '/delivery-policy': typeof DeliveryPolicyRoute
+  '/donation-policy': typeof DonationPolicyRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
@@ -274,6 +291,7 @@ export interface FileRoutesById {
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
+  '/donations/receipt/$token': typeof DonationsReceiptTokenRoute
   '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -300,6 +318,7 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/cookie-policy'
     | '/delivery-policy'
+    | '/donation-policy'
     | '/privacy-policy'
     | '/refund-policy'
     | '/terms'
@@ -307,6 +326,7 @@ export interface FileRouteTypes {
     | '/order/$token'
     | '/pay/$token'
     | '/donations/pay/$token'
+    | '/donations/receipt/$token'
     | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -331,6 +351,7 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/cookie-policy'
     | '/delivery-policy'
+    | '/donation-policy'
     | '/privacy-policy'
     | '/refund-policy'
     | '/terms'
@@ -338,6 +359,7 @@ export interface FileRouteTypes {
     | '/order/$token'
     | '/pay/$token'
     | '/donations/pay/$token'
+    | '/donations/receipt/$token'
     | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -362,6 +384,7 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/cookie-policy'
     | '/delivery-policy'
+    | '/donation-policy'
     | '/privacy-policy'
     | '/refund-policy'
     | '/terms'
@@ -369,6 +392,7 @@ export interface FileRouteTypes {
     | '/order/$token'
     | '/pay/$token'
     | '/donations/pay/$token'
+    | '/donations/receipt/$token'
     | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -394,6 +418,7 @@ export interface RootRouteChildren {
   CheckoutRoute: typeof CheckoutRoute
   CookiePolicyRoute: typeof CookiePolicyRoute
   DeliveryPolicyRoute: typeof DeliveryPolicyRoute
+  DonationPolicyRoute: typeof DonationPolicyRoute
   PrivacyPolicyRoute: typeof PrivacyPolicyRoute
   RefundPolicyRoute: typeof RefundPolicyRoute
   TermsRoute: typeof TermsRoute
@@ -401,6 +426,7 @@ export interface RootRouteChildren {
   OrderTokenRoute: typeof OrderTokenRoute
   PayTokenRoute: typeof PayTokenRoute
   DonationsPayTokenRoute: typeof DonationsPayTokenRoute
+  DonationsReceiptTokenRoute: typeof DonationsReceiptTokenRoute
   ApiPublicV1DonationsRoute: typeof ApiPublicV1DonationsRouteWithChildren
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
@@ -452,6 +478,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeliveryPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/donation-policy': {
+      id: '/donation-policy'
+      path: '/donation-policy'
+      fullPath: '/donation-policy'
+      preLoaderRoute: typeof DonationPolicyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/privacy-policy': {
       id: '/privacy-policy'
       path: '/privacy-policy'
@@ -499,6 +532,13 @@ declare module '@tanstack/react-router' {
       path: '/donations/pay/$token'
       fullPath: '/donations/pay/$token'
       preLoaderRoute: typeof DonationsPayTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/donations/receipt/$token': {
+      id: '/donations/receipt/$token'
+      path: '/donations/receipt/$token'
+      fullPath: '/donations/receipt/$token'
+      preLoaderRoute: typeof DonationsReceiptTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/donations': {
@@ -660,6 +700,7 @@ const rootRouteChildren: RootRouteChildren = {
   CheckoutRoute: CheckoutRoute,
   CookiePolicyRoute: CookiePolicyRoute,
   DeliveryPolicyRoute: DeliveryPolicyRoute,
+  DonationPolicyRoute: DonationPolicyRoute,
   PrivacyPolicyRoute: PrivacyPolicyRoute,
   RefundPolicyRoute: RefundPolicyRoute,
   TermsRoute: TermsRoute,
@@ -667,6 +708,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrderTokenRoute: OrderTokenRoute,
   PayTokenRoute: PayTokenRoute,
   DonationsPayTokenRoute: DonationsPayTokenRoute,
+  DonationsReceiptTokenRoute: DonationsReceiptTokenRoute,
   ApiPublicV1DonationsRoute: ApiPublicV1DonationsRouteWithChildren,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,
