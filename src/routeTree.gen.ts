@@ -18,6 +18,9 @@ import { Route as PrivacyPolicyRouteImport } from './routes/privacy-policy'
 import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
+import { Route as DonationsPrivacyRouteImport } from './routes/donations.privacy'
+import { Route as DonationsRefundsRouteImport } from './routes/donations.refunds'
+import { Route as DonationsTermsRouteImport } from './routes/donations.terms'
 import { Route as OrderTokenRouteImport } from './routes/order.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as DonationsPayTokenRouteImport } from './routes/donations.pay.$token'
@@ -83,6 +86,21 @@ const TermsRoute = TermsRouteImport.update({
 const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
   id: '/admin_/analytics',
   path: '/admin/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DonationsPrivacyRoute = DonationsPrivacyRouteImport.update({
+  id: '/donations/privacy',
+  path: '/donations/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DonationsRefundsRoute = DonationsRefundsRouteImport.update({
+  id: '/donations/refunds',
+  path: '/donations/refunds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DonationsTermsRoute = DonationsTermsRouteImport.update({
+  id: '/donations/terms',
+  path: '/donations/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrderTokenRoute = OrderTokenRouteImport.update({
@@ -214,6 +232,9 @@ export interface FileRoutesByFullPath {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/donations/privacy': typeof DonationsPrivacyRoute
+  '/donations/refunds': typeof DonationsRefundsRoute
+  '/donations/terms': typeof DonationsTermsRoute
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
@@ -246,6 +267,9 @@ export interface FileRoutesByTo {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/donations/privacy': typeof DonationsPrivacyRoute
+  '/donations/refunds': typeof DonationsRefundsRoute
+  '/donations/terms': typeof DonationsTermsRoute
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
@@ -279,6 +303,9 @@ export interface FileRoutesById {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin_/analytics': typeof AdminAnalyticsRoute
+  '/donations/privacy': typeof DonationsPrivacyRoute
+  '/donations/refunds': typeof DonationsRefundsRoute
+  '/donations/terms': typeof DonationsTermsRoute
   '/order/$token': typeof OrderTokenRoute
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
@@ -313,6 +340,9 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin/analytics'
+    | '/donations/privacy'
+    | '/donations/refunds'
+    | '/donations/terms'
     | '/order/$token'
     | '/pay/$token'
     | '/donations/pay/$token'
@@ -345,6 +375,9 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin/analytics'
+    | '/donations/privacy'
+    | '/donations/refunds'
+    | '/donations/terms'
     | '/order/$token'
     | '/pay/$token'
     | '/donations/pay/$token'
@@ -377,6 +410,9 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin_/analytics'
+    | '/donations/privacy'
+    | '/donations/refunds'
+    | '/donations/terms'
     | '/order/$token'
     | '/pay/$token'
     | '/donations/pay/$token'
@@ -410,6 +446,9 @@ export interface RootRouteChildren {
   RefundPolicyRoute: typeof RefundPolicyRoute
   TermsRoute: typeof TermsRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  DonationsPrivacyRoute: typeof DonationsPrivacyRoute
+  DonationsRefundsRoute: typeof DonationsRefundsRoute
+  DonationsTermsRoute: typeof DonationsTermsRoute
   OrderTokenRoute: typeof OrderTokenRoute
   PayTokenRoute: typeof PayTokenRoute
   DonationsPayTokenRoute: typeof DonationsPayTokenRoute
@@ -491,6 +530,27 @@ declare module '@tanstack/react-router' {
       path: '/admin/analytics'
       fullPath: '/admin/analytics'
       preLoaderRoute: typeof AdminAnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/donations/privacy': {
+      id: '/donations/privacy'
+      path: '/donations/privacy'
+      fullPath: '/donations/privacy'
+      preLoaderRoute: typeof DonationsPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/donations/refunds': {
+      id: '/donations/refunds'
+      path: '/donations/refunds'
+      fullPath: '/donations/refunds'
+      preLoaderRoute: typeof DonationsRefundsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/donations/terms': {
+      id: '/donations/terms'
+      path: '/donations/terms'
+      fullPath: '/donations/terms'
+      preLoaderRoute: typeof DonationsTermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/order/$token': {
@@ -684,6 +744,9 @@ const rootRouteChildren: RootRouteChildren = {
   RefundPolicyRoute: RefundPolicyRoute,
   TermsRoute: TermsRoute,
   AdminAnalyticsRoute: AdminAnalyticsRoute,
+  DonationsPrivacyRoute: DonationsPrivacyRoute,
+  DonationsRefundsRoute: DonationsRefundsRoute,
+  DonationsTermsRoute: DonationsTermsRoute,
   OrderTokenRoute: OrderTokenRoute,
   PayTokenRoute: PayTokenRoute,
   DonationsPayTokenRoute: DonationsPayTokenRoute,
