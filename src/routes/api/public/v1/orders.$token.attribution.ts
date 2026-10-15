@@ -44,13 +44,10 @@ export const Route = createFileRoute("/api/public/v1/orders/$token/attribution")
               context.eventSourceUrl ?? attribution.landing_page ?? headers.get("referer");
 
             const { PaymentError } = await import("@/lib/payments/errors");
-            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-            const { data: order } = await supabaseAdmin
-              .from("orders")
-              .select("id, order_number")
-              .eq("public_token", token)
-              .eq("store_id", store.id)
-              .maybeSingle();
+            const { sql, one } = await import("@/lib/db/client.server");
+            const { data: order } = await one<{ id: string; order_number: string }>(sql`
+              select id, order_number from public.orders where public_token = ${token} and store_id = ${store.id}
+            `, true);
             if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
 
             const { enrichOrderAttribution, getOrderAttributionRecord } = await import(
