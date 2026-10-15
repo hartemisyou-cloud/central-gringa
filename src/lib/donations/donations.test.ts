@@ -831,3 +831,35 @@ describe("direct NGO collection (no beneficiary, no recipient read)", () => {
     expect(await rows("SELECT provider_payment_id FROM payments")).toEqual([{ provider_payment_id: "pi_ebook" }]);
   });
 });
+
+describe("native Adaptive Pricing flag", () => {
+  it("new TEST Session enables AP while local flags stay false", async () => {
+    await H.pg.exec(`UPDATE donation_settings SET adaptive_pricing_eligible=false, adaptive_pricing_enabled=false`);
+    await create();
+    expect(stripe.calls.sessions[0].p.adaptive_pricing).toEqual({ enabled: true });
+    const [st] = await rows("SELECT adaptive_pricing_eligible e, adaptive_pricing_enabled n FROM donation_settings");
+    expect([st.e, st.n]).toEqual([false, false]);
+  });
+  it("LIVE is true only when both flags are true", async () => {
+    await H.pg.exec(`UPDATE stripe_integrations SET environment='live' WHERE id='${INT_ID}'; UPDATE donation_settings SET stripe_fundraising_approved=true, legal_account_name_confirmed=true, use_of_funds='x', confirmed_by='H', confirmed_at=now()`);
+    const live = { ...STORE, environment: "live" };
+    const mk = (k: string) => svc.createDonation({ store: live, body: body({ idempotencyKey: k }), origin: "https://c" });
+    for (const [e, n, want, k] of [[false, false, false, "key-live-ap-00"], [true, false, false, "key-live-ap-01"], [false, true, false, "key-live-ap-10"], [true, true, true, "key-live-ap-11"]] as const) {
+      await H.pg.exec(`UPDATE donation_settings SET adaptive_pricing_eligible=${e}, adaptive_pricing_enabled=${n}`);
+      stripe.calls.sessions.length = 0;
+      await mk(k);
+      expect(stripe.calls.sessions[0].p.adaptive_pricing).toEqual({ enabled: want });
+    }
+  });
+  it("stored TEST request with AP=false is replayed unchanged on retry", async () => {
+    stripe = fakeStripe({ sessionThrowOnce: true });
+    await expect(create()).rejects.toThrow(/socket hang up/);
+    const [d] = await rows("SELECT id, session_request FROM donations");
+    const old = { ...d.session_request, adaptive_pricing: { enabled: false } };
+    await H.pg.query(`UPDATE donations SET session_request=$1 WHERE id=$2`, [JSON.stringify(old), d.id]).catch(() => null);
+    const [cur] = await rows("SELECT session_request FROM donations");
+    await create();
+    expect(stable(stripe.calls.sessions[1].p)).toBe(stable(cur.session_request));
+    expect(stripe.calls.sessions[1].o.idempotencyKey).toBe(stripe.calls.sessions[0].o.idempotencyKey);
+  });
+});

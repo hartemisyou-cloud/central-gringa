@@ -192,7 +192,8 @@ export async function createDonation(input: { store: StoreRow; body: CreateDonat
     origin,
     campaign: { slug: campaign.slug, title: String(campaign.title) },
     recipientName: s.recipient_name,
-    adaptivePricing: s.adaptive_pricing_eligible && s.adaptive_pricing_enabled,
+    // TEST: let Stripe offer native Adaptive Pricing when eligible (Stripe decides). LIVE keeps both human flags.
+    adaptivePricing: integration!.environment === "test" || (s.adaptive_pricing_eligible && s.adaptive_pricing_enabled),
     integrationIdentifier,
   });
   const row = {
