@@ -30,7 +30,7 @@ async function digest(value: string): Promise<Uint8Array> {
 
 /** Comparação em tempo constante sobre digests de tamanho fixo. */
 export async function passwordMatches(input: string): Promise<boolean> {
-  const expected = process.env["ADMIN_PANEL_PASSWORD"];
+  const expected = process.env["ADMIN_PANEL_PASSWORD"]?.trim();
   if (!expected) {
     throw new PaymentError("CONFIG_ERROR", "Admin password not configured on the server.");
   }
