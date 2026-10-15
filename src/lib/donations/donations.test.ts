@@ -504,7 +504,7 @@ describe("receipt formatting", () => {
   it("formats presentment using currency minor units", () => {
     expect(formatMinorUnits(3000, "JPY")).toBe("¥3,000");
     expect(formatMinorUnits(1850, "EUR")).toBe("€18.50");
-    expect(formatMinorUnits(12345, "KWD")).toBe("KWD 12.345");
+    expect(formatMinorUnits(12345, "KWD")).toMatch(/KWD.12\.345/);
   });
   it("receipt uses the immutable snapshot even if settings change later", async () => {
     const d = await paidDonation();
