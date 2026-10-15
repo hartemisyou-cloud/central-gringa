@@ -58,7 +58,7 @@ Accept a create response only when `paymentUrl` is exactly `<central origin>/don
 `amountCents`/`currency` match the request, and the campaign was `ready` in the catalog.
 
 ## Payment flow
-Checkout (Vercel) → POST /donations → redirect donor to `paymentUrl`. The central redirects (303)
+Checkout (Vercel) → POST /donations → redirect donor to `paymentUrl`. The central serves a minimal Books document (meta no-referrer, immediate navigation) that forwards
 only to the persisted official `https://checkout.stripe.com/…` URL of that donation; otherwise to
 the receipt. Success/cancel both return to the fixed receipt path; the URL never marks anything
 paid. Only verified webhooks (`checkout.session.completed` / `async_payment_succeeded` with
