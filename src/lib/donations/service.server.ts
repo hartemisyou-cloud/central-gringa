@@ -117,7 +117,6 @@ export async function getDonationCatalog(store: StoreRow) {
     db.from("donation_campaigns").select("*").eq("store_id", store.id).order("slug"),
   ]);
   const campaigns = must(campaignsR, "Campaign read").data ?? [];
-  const s = settings ?? DEFAULT_SETTINGS;
   // ready = NGO COLLECTION capability (independent of any future recipient payout readiness).
   const cctx = { store, integration, settings };
   const globalReady = collectionGaps(cctx).length === 0;
