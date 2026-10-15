@@ -519,3 +519,186 @@ describe("receipt formatting", () => {
     expect(s.payoutStatus).toBe("HELD");
   });
 });
+
+// ---------- Review batch: windows, current guards, shared scope, acceptance kill switch ----------
+const backdate = async (sql: string) => {
+  await H.pg.exec(`ALTER TABLE donation_releases DISABLE TRIGGER USER; ALTER TABLE donations DISABLE TRIGGER USER; ${sql}; ALTER TABLE donation_releases ENABLE TRIGGER USER; ALTER TABLE donations ENABLE TRIGGER USER;`);
+};
+const relRow = async (id) => (await rows(`SELECT * FROM donation_releases WHERE donation_id='${id}'`))[0];
+async function reserveOnly(id) {
+  // Crash after reservation, before the first create.
+  H.failNext.add("rpc:donation_release_submit_guard:");
+  await expect(release(id)).rejects.toThrow(/Release guard failed/);
+  expect((await relRow(id)).status).toBe("RESERVED");
+}
+
+describe("P1-1 immutable idempotency window + sticky manual reconciliation", () => {
+  it("first and second Resume after >24h never call transfers.create; flag cannot be reset", async () => {
+    const d = await paidDonation();
+    stripe = fakeStripe({ transferError: Object.assign(new Error("socket timeout"), { type: "StripeConnectionError" }) });
+    await expect(release(d.id)).rejects.toThrow(/outcome unknown/);
+    const creates = stripe.calls.transfers.length;
+    await backdate(`UPDATE donation_releases SET submitted_at = now() - interval '25 hours' WHERE donation_id='${d.id}'`);
+    await expect(svc.resumeRelease(d.id)).rejects.toThrow(/manual reconciliation/);
+    await expect(svc.resumeRelease(d.id)).rejects.toThrow(/manual reconciliation/);
+    expect(stripe.calls.transfers.length).toBe(creates);
+    const r = await relRow(d.id);
+    expect([r.manual_reconciliation_required, r.status]).toEqual([true, "UNKNOWN"]);
+    await expect(H.pg.query(`UPDATE donation_releases SET manual_reconciliation_required=false WHERE id='${r.id}'`)).rejects.toThrow(/sticky/);
+    await expect(H.pg.query(`UPDATE donation_releases SET submitted_at=now() WHERE id='${r.id}'`)).rejects.toThrow(/immutable/);
+    // A new preview cannot start a fresh attempt either.
+    await expect(release(d.id)).rejects.toThrow();
+    expect(stripe.calls.transfers.length).toBe(creates);
+  });
+  it("an existing matching transfer is still recorded after the window", async () => {
+    const d = await paidDonation();
+    stripe = fakeStripe({ transferTimeoutAfterCreate: true });
+    await expect(release(d.id)).rejects.toThrow(/outcome unknown/);
+    await backdate(`UPDATE donation_releases SET submitted_at = now() - interval '30 hours' WHERE donation_id='${d.id}'`);
+    const r = await svc.resumeRelease(d.id);
+    expect(r.transferId).toBe("tr_1");
+    expect(stripe.state.transfersCreated).toHaveLength(1);
+  });
+});
+
+describe("P1-2 Resume and final submit honor CURRENT guards", () => {
+  it("refund after reserve, before first create -> zero transfers, op held", async () => {
+    const d = await paidDonation();
+    await reserveOnly(d.id);
+    await svc.handleDonationEvent({ ...refundEvent(2000), data: { object: { id: "ch_1", payment_intent: "pi_key-12345678", amount_refunded: 2000 } } }, ctx);
+    await expect(svc.resumeRelease(d.id)).rejects.toThrow(/held for reconciliation/);
+    expect(stripe.calls.transfers).toHaveLength(0);
+    expect((await relRow(d.id)).status).toBe("RESERVED");
+  });
+  it("releases_enabled=false after reserve -> zero transfers; existing transfer still reconciled with switch off", async () => {
+    const d = await paidDonation();
+    await reserveOnly(d.id);
+    await H.pg.exec(`UPDATE donation_settings SET releases_enabled = false`);
+    await expect(svc.resumeRelease(d.id)).rejects.toThrow(/held for reconciliation/);
+    expect(stripe.calls.transfers).toHaveLength(0);
+
+    const d2 = await paidDonation("key-second-22");
+    await H.pg.exec(`UPDATE donation_settings SET releases_enabled = true`);
+    stripe.state.transfersCreated.length = 0;
+    const s2 = fakeStripe({ transferTimeoutAfterCreate: true });
+    stripe = s2;
+    await expect(release(d2.id)).rejects.toThrow(/outcome unknown/);
+    await H.pg.exec(`UPDATE donation_settings SET releases_enabled = false`);
+    const r = await svc.resumeRelease(d2.id);
+    expect(r.transferId).toBe("tr_1");
+    expect(s2.state.transfersCreated).toHaveLength(1);
+  });
+  it("fresh recipient capability revocation -> zero transfers", async () => {
+    const d = await paidDonation();
+    await reserveOnly(d.id);
+    stripe.state.account.transfers = "inactive";
+    await expect(svc.resumeRelease(d.id)).rejects.toThrow(/held for reconciliation/);
+    expect(stripe.calls.transfers).toHaveLength(0);
+  });
+  it("campaign suspension after reserve -> zero transfers", async () => {
+    const d = await paidDonation();
+    await reserveOnly(d.id);
+    await H.pg.exec(`UPDATE donation_campaigns SET active = false WHERE id='${CAMP_OK}'`);
+    await expect(svc.resumeRelease(d.id)).rejects.toThrow(/held for reconciliation/);
+    expect(stripe.calls.transfers).toHaveLength(0);
+  });
+  it("SQL submit guard refuses adverse state even if called directly", async () => {
+    const d = await paidDonation();
+    await reserveOnly(d.id);
+    await H.pg.exec(`UPDATE donations SET disputed = true WHERE id='${d.id}'`);
+    const r = await H.client.rpc("donation_release_submit_guard", { _release_id: (await relRow(d.id)).id, _window_seconds: 82800 });
+    expect(r.data.allowed).toBe(false);
+  });
+});
+
+describe("P1-3 shared Stripe account scope across integration rows", () => {
+  async function directPaid(n, integ) {
+    const id = `00000000-0000-4000-8000-00000000d00${n}`;
+    await H.pg.exec(`INSERT INTO donations (id, store_id, campaign_id, donation_number, public_token, status, amount_cents, idempotency_key, request_fingerprint,
+      integration_id, livemode, platform_account_id, payment_confirmed, charge_id, beneficiary_id, beneficiary_snapshot)
+      VALUES ('${id}', '${STORE_ID}', '${CAMP_OK}', 'D-${n}', 'tok_direct_${n}_00000000000000000', 'PAID', 2000, 'k-d-${n}', 'f',
+      '${integ}', false, 'acct_platform', true, 'ch_${n}', '${BEN_ID}', '{"account_id":"acct_123"}'::jsonb)`);
+    return id;
+  }
+  beforeEach(async () => {
+    await H.pg.exec(`UPDATE stripe_integrations SET stripe_account_id = 'acct_platform' WHERE id='${INT2_ID}'`);
+  });
+  const reserve = (id, available, budget = 10000) => H.client.rpc("donation_release_reserve", { _donation_id: id, _preview_hash: "h", _confirmed_by: "Human",
+    _amount: 2000, _fee: 88, _dest: "acct_123", _source: `ch_${id.slice(-1)}`, _available_usd: available, _fee_budget: budget });
+  it("held principal under a different integration row on the same account is protected", async () => {
+    const a = await directPaid(1, INT_ID);
+    await directPaid(2, INT2_ID);
+    expect((await reserve(a, 3000)).error?.message).toMatch(/insufficient available USD/);
+    expect((await reserve(a, 4000)).error).toBeNull();
+  });
+  it("concurrent reservations from different integration rows share one fee budget and one balance", async () => {
+    const a = await directPaid(1, INT_ID);
+    const b = await directPaid(2, INT2_ID);
+    const [ra, rb] = await Promise.all([reserve(a, 4000, 100), reserve(b, 4000, 100)]);
+    expect([ra.error, rb.error].filter(Boolean)).toHaveLength(1);
+    expect((await rows(`SELECT * FROM donation_releases`))).toHaveLength(1);
+  });
+});
+
+describe("P1-4 acceptance kill switch on retry and /pay", () => {
+  async function failedFirstAttempt() {
+    stripe = fakeStripe({ sessionThrowOnce: true });
+    await expect(create()).rejects.toThrow(/socket hang up/);
+    expect(stripe.calls.sessions).toHaveLength(1);
+  }
+  it("retry after donations_enabled=false creates no new Session", async () => {
+    await failedFirstAttempt();
+    await H.pg.exec(`UPDATE donation_settings SET donations_enabled = false`);
+    await expect(create()).rejects.toThrow(/configuration pending/);
+    expect(stripe.calls.sessions).toHaveLength(1);
+  });
+  it("retry after campaign suspension creates no new Session", async () => {
+    await failedFirstAttempt();
+    await H.pg.exec(`UPDATE donation_campaigns SET active = false WHERE id='${CAMP_OK}'`);
+    await expect(create()).rejects.toThrow(/configuration pending/);
+    expect(stripe.calls.sessions).toHaveLength(1);
+  });
+  it("retry after recipient revocation creates no new Session", async () => {
+    await failedFirstAttempt();
+    stripe.state.account.transfers = "restricted";
+    await expect(create()).rejects.toThrow(/configuration pending/);
+    expect(stripe.calls.sessions).toHaveLength(1);
+  });
+  it("ambiguity beyond key retention -> sticky manual review, never another create", async () => {
+    await failedFirstAttempt();
+    await backdate(`UPDATE donations SET checkout_first_attempt_at = now() - interval '25 hours'`);
+    await expect(create()).rejects.toThrow(/manual review/);
+    await expect(create()).rejects.toThrow(/manual review/);
+    expect(stripe.calls.sessions).toHaveLength(1);
+    const [d] = await rows("SELECT * FROM donations");
+    expect(d.checkout_manual_review).toBe(true);
+    await expect(H.pg.query(`UPDATE donations SET checkout_manual_review=false WHERE id='${d.id}'`)).rejects.toThrow(/sticky/);
+  });
+  it("an already-saved Session is still returned idempotently (no new create)", async () => {
+    const a = await create();
+    await H.pg.exec(`UPDATE donation_settings SET donations_enabled = false`);
+    const b = await create();
+    expect(b.donationId).toBe(a.donationId);
+    expect(stripe.calls.sessions).toHaveLength(1);
+  });
+  it("/pay redirect gate rejects when acceptance is off, campaign suspended or recipient unready", async () => {
+    const r = await create();
+    const d = await donation(r.donationId);
+    expect(await svc.paymentRedirectGaps(d)).toEqual([]);
+    await H.pg.exec(`UPDATE donation_settings SET donations_enabled = false`);
+    expect((await svc.paymentRedirectGaps(d)).length).toBeGreaterThan(0);
+    await H.pg.exec(`UPDATE donation_settings SET donations_enabled = true; UPDATE donation_campaigns SET active = false WHERE id='${CAMP_OK}'`);
+    expect((await svc.paymentRedirectGaps(d)).length).toBeGreaterThan(0);
+    await H.pg.exec(`UPDATE donation_campaigns SET active = true`);
+    stripe.state.account.transfers = "inactive";
+    expect((await svc.paymentRedirectGaps(d)).length).toBeGreaterThan(0);
+    const v = await svc.receiptView(d, "https://c");
+    expect(v.status).toBe("PENDING");
+  });
+  it("new RPCs are service_role only", async () => {
+    for (const fn of ["donation_release_submit_guard(uuid,integer)", "donation_release_flag_manual(uuid,text)", "donation_release_reserve(uuid,text,text,integer,integer,text,text,bigint,integer)"]) {
+      const [r] = await rows(`SELECT has_function_privilege('anon','public.${fn}','EXECUTE') a, has_function_privilege('authenticated','public.${fn}','EXECUTE') b, has_function_privilege('service_role','public.${fn}','EXECUTE') s`);
+      expect([r.a, r.b, r.s]).toEqual([false, false, true]);
+    }
+  });
+});
