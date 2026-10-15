@@ -109,3 +109,13 @@ stays UNREVIEWED), reviewed beneficiaries with Stripe-hosted onboarding complete
 - **Releases.** Handled by `donation_release_reserve` / `donation_release_mark`, which add a lock per platform account and store a durable operation: RESERVED → SUBMITTED → SUCCEEDED | UNKNOWN | FAILED. FAILED is used only for a clear Stripe rejection.
 - **Status contract** is unchanged. `payoutStatus` now reports `RELEASE_IN_PROGRESS` for RESERVED/SUBMITTED/UNKNOWN.
 - Configuration plan: `docs/deploy/hope-human-donations-connect-plan.md`.
+
+## Provider-verified account model (compatibility guard)
+Every fresh recipient read (new/retried Session, new/resumed transfer, admin verify, hosted onboarding link) calls Accounts v2 retrieve with `include: ["configuration.recipient","identity","defaults"]` and compares ACTUAL provider values with the locally human-approved model:
+- `defaults.responsibilities.fees_collector` must be `application` and `losses_collector` must be `application`; the local approval must be negative balance liability `PLATFORM`.
+- Top-level `dashboard` must equal the human-selected model (`EXPRESS` → `express`, `NONE` → `none`).
+- Returned `livemode` must match the expected integration mode (original integration for retries/releases), and the returned account id must equal the registry/snapshot account.
+- Missing, unknown, `stripe`, `full`, and legacy `application_express`/`application_custom` values all fail closed as pending (no approved compatibility path yet). The code never selects or changes these provider settings.
+- Onboarding: responsibilities, dashboard, mode, country and account ownership are required before a link is created; a pending transfers capability does NOT block beginning onboarding (onboarding completes it). Sessions and transfers still require it `active`.
+
+This is compatibility validation only, not a forecast of future fees. With separate charges the platform already pays processing fees regardless of `fees_collector`. The full original USD principal is transferred to the recipient's Stripe balance; it is not a guarantee of bank net proceeds after payout/FX fees. Actual configured fee/payout/FX coverage remains an external activation check for a human.

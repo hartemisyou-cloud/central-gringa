@@ -87,15 +87,20 @@ async function loadBeneficiary(storeId: string, id: string | null): Promise<Bene
 /** Live read of the connected account through Accounts v2 (ownership = readable with this platform key). */
 export async function verifyRecipient(provider: DonationProvider, accountId: string): Promise<RecipientVerification> {
   try {
-    const a = await provider.v2.core.accounts.retrieve(accountId, { include: ["configuration.recipient", "identity"] });
+    const a = await provider.v2.core.accounts.retrieve(accountId, { include: ["configuration.recipient", "identity", "defaults"] });
+    const r = a?.defaults?.responsibilities;
     return {
       accountId: a?.id ?? "",
       country: a?.identity?.country ? String(a.identity.country).toUpperCase() : null,
       transfersStatus: a?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status ?? null,
       recipientConfigured: Array.isArray(a?.applied_configurations) && a.applied_configurations.includes("recipient"),
+      feesCollector: typeof r?.fees_collector === "string" ? r.fees_collector : null,
+      lossesCollector: typeof r?.losses_collector === "string" ? r.losses_collector : null,
+      dashboard: typeof a?.dashboard === "string" ? a.dashboard : null,
+      livemode: typeof a?.livemode === "boolean" ? a.livemode : null,
     };
   } catch (e) {
-    return { accountId, country: null, transfersStatus: null, recipientConfigured: false, error: (e as Error).message.slice(0, 160) };
+    return { accountId, country: null, transfersStatus: null, recipientConfigured: false, feesCollector: null, lossesCollector: null, dashboard: null, livemode: null, error: (e as Error).message.slice(0, 160) };
   }
 }
 
@@ -171,7 +176,7 @@ export async function createDonation(input: { store: StoreRow; body: CreateDonat
   // Actual Stripe readiness of the recipient, before accepting any payment.
   const provider = await providerFactory(integration!);
   const verification = await verifyRecipient(provider, beneficiary!.stripe_account_id!);
-  const vGaps = verificationGaps(beneficiary, verification);
+  const vGaps = verificationGaps(beneficiary, verification, { settings, livemode: integration!.environment === "live" });
   if (vGaps.length) throw new PaymentError("INVALID_STATE", "Campaign is not accepting donations.", { gaps: vGaps });
 
   const id = crypto.randomUUID();
@@ -273,7 +278,7 @@ export async function currentAcceptanceGaps(d: any, provider?: DonationProvider 
   gaps.push(...campaignGaps(campaign, beneficiary, settings));
   if (provider !== undefined) {
     if (!provider || !beneficiary?.stripe_account_id) gaps.push("Recipient account not verified with Stripe");
-    else gaps.push(...verificationGaps(beneficiary, await verifyRecipient(provider, beneficiary.stripe_account_id)));
+    else gaps.push(...verificationGaps(beneficiary, await verifyRecipient(provider, beneficiary.stripe_account_id), { settings, livemode: d.livemode }));
   }
   return [...new Set(gaps)];
 }
@@ -803,7 +808,8 @@ export async function verifyBeneficiary(storeId: string, beneficiaryId: string) 
     }).eq("id", b.id).eq("store_id", storeId),
     "Verification save",
   );
-  return { verification: v, gaps: verificationGaps(b, v) };
+  const settings = await loadSettings(storeId);
+  return { verification: v, gaps: verificationGaps(b, v, { settings, livemode: integration!.environment === "live" }) };
 }
 
 export async function createOnboardingLink(storeId: string, beneficiaryId: string, origin: string, gapsFn: (s: DonationSettings | null, b: BeneficiaryLike | null) => string[]) {
@@ -814,6 +820,11 @@ export async function createOnboardingLink(storeId: string, beneficiaryId: strin
   gaps.push(...integrationGaps(integration));
   if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Onboarding not available.", { gaps });
   const provider = await providerFactory(integration!);
+  // Fresh actual-account read: ownership, country, responsibilities, dashboard and mode must match
+  // before any hosted link. Transfers capability may still be pending — onboarding completes it.
+  const v = await verifyRecipient(provider, b!.stripe_account_id!);
+  const vGaps = verificationGaps(b, v, { settings, livemode: integration!.environment === "live", requireTransfers: false });
+  if (vGaps.length) throw new PaymentError("CONFIG_ERROR", "Onboarding not available.", { gaps: vGaps });
   const link = await provider.v2.core.accountLinks.create({
     account: b!.stripe_account_id,
     use_case: {

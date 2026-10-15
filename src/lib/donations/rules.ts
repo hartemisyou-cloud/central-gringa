@@ -169,7 +169,42 @@ export interface RecipientVerification {
   country: string | null;
   transfersStatus: string | null;
   recipientConfigured: boolean;
+  /** Actual provider values (Accounts v2 defaults.responsibilities / dashboard / livemode); null = not returned. */
+  feesCollector: string | null;
+  lossesCollector: string | null;
+  dashboard: string | null;
+  livemode: boolean | null;
   error?: string;
+}
+
+/** Context the actual account must match: the human-approved local model and the expected integration mode. */
+export interface VerificationContext {
+  settings: DonationSettings | null;
+  /** Expected mode of the original/current integration; undefined = unknown → fail closed. */
+  livemode: boolean | undefined;
+  /** false only when BEGINNING hosted onboarding of an existing account (capability may still be pending). */
+  requireTransfers?: boolean;
+}
+
+/**
+ * Strict compatibility of ACTUAL provider responsibilities with the approved platform model.
+ * Only fees_collector=application + losses_collector=application qualify; legacy
+ * application_express/application_custom have no approved compatibility path and stay pending.
+ */
+export function providerModelGaps(v: RecipientVerification, ctx: VerificationContext): string[] {
+  const c = ctx.settings ?? DEFAULT_SETTINGS;
+  const g: string[] = [];
+  if (v.feesCollector !== "application")
+    g.push(`Actual fees collector is ${v.feesCollector ?? "unknown"}; approved model requires application (pending)`);
+  if (v.lossesCollector !== "application")
+    g.push(`Actual losses collector is ${v.lossesCollector ?? "unknown"}; approved model requires application (pending)`);
+  if (c.negative_balance_liability !== "PLATFORM") g.push("Platform negative balance liability not approved locally");
+  const want = c.dashboard_responsibility === "EXPRESS" ? "express" : c.dashboard_responsibility === "NONE" ? "none" : null;
+  if (!want) g.push("Dashboard model not approved locally");
+  else if (v.dashboard !== want) g.push(`Actual dashboard is ${v.dashboard ?? "unknown"}; approved model is ${want} (pending)`);
+  if (ctx.livemode === undefined || v.livemode === null || v.livemode !== ctx.livemode)
+    g.push("Recipient account mode differs from the expected integration mode");
+  return g;
 }
 
 export function recipientCountryAllowed(country: string, c: DonationSettings): string | null {
@@ -199,15 +234,17 @@ export function beneficiaryGaps(b: BeneficiaryLike | null, s: DonationSettings |
   return gaps;
 }
 
-export function verificationGaps(b: BeneficiaryLike | null, v: RecipientVerification | null): string[] {
+export function verificationGaps(b: BeneficiaryLike | null, v: RecipientVerification | null, ctx: VerificationContext): string[] {
   if (!b?.stripe_account_id) return [];
   if (!v) return ["Recipient account not verified with Stripe"];
   if (v.error) return [`Recipient account could not be verified: ${v.error}`];
   const g: string[] = [];
   if (v.accountId !== b.stripe_account_id) g.push("Stripe returned a different account");
   if (!v.recipientConfigured) g.push("Account has no recipient configuration on this platform");
-  if (v.transfersStatus !== "active") g.push(`Stripe transfers capability is ${v.transfersStatus ?? "unknown"}`);
+  if (ctx.requireTransfers !== false && v.transfersStatus !== "active")
+    g.push(`Stripe transfers capability is ${v.transfersStatus ?? "unknown"}`);
   if (!v.country || v.country !== b.country) g.push("Stripe account country differs from the registry");
+  g.push(...providerModelGaps(v, ctx));
   return g;
 }
 
@@ -448,6 +485,7 @@ export interface ReleaseInputs {
     charge_id: string | null;
     paid_at?: string | null;
     payment_confirmed?: boolean;
+    livemode?: boolean;
     beneficiary_snapshot: { account_id?: string; display_name?: string; country?: string } | null;
   };
   beneficiary: BeneficiaryLike | null;
@@ -524,7 +562,7 @@ export function computeReleasePreview(i: ReleaseInputs): ReleasePreview {
     blockers.push("Beneficiary account does not match the donation snapshot");
   }
   blockers.push(...beneficiaryGaps(i.beneficiary, i.settings));
-  blockers.push(...verificationGaps(i.beneficiary, i.verification));
+  blockers.push(...verificationGaps(i.beneficiary, i.verification, { settings: i.settings, livemode: d.livemode }));
 
   const c = i.charge;
   if (!c) blockers.push("Charge not confirmed");
