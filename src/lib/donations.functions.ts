@@ -22,7 +22,7 @@ async function admin() {
 
 export const adminDonationOverview = createServerFn({ method: "GET" }).handler(async () => {
   const db = await admin();
-  const { settingsGaps, campaignGaps, integrationGaps, onboardingGaps, beneficiaryGaps } = await import("./donations/rules");
+  const { collectionGaps, effectiveCollectionSettings, settingsGaps, campaignGaps, integrationGaps, onboardingGaps, beneficiaryGaps } = await import("./donations/rules");
   const { data: store } = await db.from("stores").select("*").eq("slug", "hope-human-books").maybeSingle();
   if (!store) return null;
   const [{ data: settings }, { data: integration }, { data: campaigns }, { data: beneficiaries }, { data: donations }] =
@@ -41,6 +41,10 @@ export const adminDonationOverview = createServerFn({ method: "GET" }).handler(a
   return {
     storeId: store.id as string,
     settings,
+    /** NGO collection (the only active flow). */
+    collectionGaps: collectionGaps({ store, integration, settings }),
+    testFallback: effectiveCollectionSettings({ store, integration, settings }).testFallback,
+    /** Deferred transfer/payout readiness (stays OFF). */
     gaps: settingsGaps(settings, integrationGaps(integration ? { ...integration } : null)),
     campaigns: (campaigns ?? []).map((c: Record<string, unknown>) => ({
       ...c,

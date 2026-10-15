@@ -126,7 +126,7 @@ export async function getDonationCatalog(store: StoreRow) {
     ready: globalReady,
     currency: "USD" as const,
     amountsCents: [...DONATION_AMOUNTS_CENTS],
-    recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds },
+    recipient: { name: s.recipient_name, country: s.recipient_country, useOfFunds: s.use_of_funds.trim() || (globalReady ? COLLECTION_DEFAULT_USE_OF_FUNDS : "") },
     campaigns: campaigns.map((c: any) => ({
       slug: c.slug,
       title: c.title,
