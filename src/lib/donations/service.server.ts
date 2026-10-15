@@ -243,21 +243,86 @@ async function findByKey(storeId: string, key: string) {
   return r.data;
 }
 
+/** Stripe may prune idempotency keys after 24h; we stop retrying well before that. */
+export const IDEMPOTENCY_WINDOW_SECONDS = 23 * 3600;
+
+/** Original integration bound to this donation's account and mode, or the reasons it is unusable. */
+function originalBindingGaps(d: any, integration: IntegrationLike | null): string[] {
+  const g = integrationGaps(integration);
+  if (integration && (integration.environment === "live") !== d.livemode) g.push("Integration environment differs from the donation");
+  if (integration && integration.stripe_account_id !== d.platform_account_id) g.push("Platform Stripe account differs from the donation");
+  return g;
+}
+
+/**
+ * CURRENT acceptance gates for an existing donation: human config, original integration,
+ * campaign + immutable beneficiary mapping, and (when a provider is given) live recipient readiness.
+ */
+export async function currentAcceptanceGaps(d: any, provider?: DonationProvider | null): Promise<string[]> {
+  const [settings, integration, campR] = await Promise.all([
+    loadSettings(d.store_id),
+    loadIntegrationById(d.integration_id),
+    db.from("donation_campaigns").select("*").eq("id", d.campaign_id).eq("store_id", d.store_id).maybeSingle(),
+  ]);
+  const campaign = must(campR, "Campaign read").data;
+  const gaps = settingsGaps(settings, originalBindingGaps(d, integration));
+  if (!campaign) return [...gaps, "Campaign not found"];
+  const beneficiary = await loadBeneficiary(d.store_id, d.beneficiary_id);
+  if (campaign.beneficiary_id !== d.beneficiary_id) gaps.push("Campaign recipient mapping changed since this donation was created");
+  if (beneficiary && beneficiary.stripe_account_id !== d.beneficiary_snapshot?.account_id) gaps.push("Recipient account differs from the donation snapshot");
+  gaps.push(...campaignGaps(campaign, beneficiary, settings));
+  if (provider !== undefined) {
+    if (!provider || !beneficiary?.stripe_account_id) gaps.push("Recipient account not verified with Stripe");
+    else gaps.push(...verificationGaps(beneficiary, await verifyRecipient(provider, beneficiary.stripe_account_id)));
+  }
+  return [...new Set(gaps)];
+}
+
+async function flagCheckoutManualReview(id: string) {
+  must(await db.from("donations").update({ checkout_manual_review: true }).eq("id", id), "Checkout review flag");
+}
+
 async function resumeExisting(d: any, fingerprint: string, origin: string) {
   if (d.request_fingerprint !== fingerprint) {
     throw new PaymentError("INVALID_STATE", "Idempotency key reused with a different payload.");
   }
   if (d.checkout_url || d.status !== "PENDING") return publicView(d, origin);
   if (!d.session_request) throw new PaymentError("CONFIG_ERROR", "Donation has no stored session request.");
-  // Retry the exact stored request under the same idempotency key, bound to the ORIGINAL integration.
-  const integration = await loadIntegrationById(d.integration_id);
-  if (!integration || integrationGaps(integration).length || (integration.environment === "live") !== d.livemode || integration.stripe_account_id !== d.platform_account_id) {
-    throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.");
+  if (d.checkout_manual_review) throw new PaymentError("INVALID_STATE", "This donation checkout needs manual review.");
+  if (d.checkout_first_attempt_at && Date.now() - Date.parse(d.checkout_first_attempt_at) > IDEMPOTENCY_WINDOW_SECONDS * 1000) {
+    // A Session may exist at Stripe that we never saved; a new create could duplicate it.
+    await flagCheckoutManualReview(d.id);
+    throw new PaymentError("INVALID_STATE", "This donation checkout needs manual review.");
   }
-  return ensureSession(d, origin, await providerFactory(integration));
+  // Retry the exact stored request under the same key, bound to the ORIGINAL integration,
+  // and only if every CURRENT acceptance gate still passes.
+  const integration = await loadIntegrationById(d.integration_id);
+  if (originalBindingGaps(d, integration).length) throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.");
+  const provider = await providerFactory(integration!);
+  const gaps = await currentAcceptanceGaps(d, provider);
+  if (gaps.length) throw new PaymentError("CONFIG_ERROR", "Donation configuration pending.", { gaps });
+  return ensureSession(d, origin, provider);
+}
+
+/** Pay-page gate: NEW local redirects only while acceptance is open. Does not expire Sessions already open at Stripe. */
+export async function paymentRedirectGaps(d: any): Promise<string[]> {
+  const integration = await loadIntegrationById(d.integration_id);
+  if (originalBindingGaps(d, integration).length) return ["Donation configuration pending"];
+  let provider: DonationProvider | null = null;
+  try {
+    provider = await providerFactory(integration!);
+  } catch {
+    provider = null;
+  }
+  return currentAcceptanceGaps(d, provider);
 }
 
 async function ensureSession(d: any, origin: string, provider: DonationProvider) {
+  // Immutable start of this Session key's retry window, recorded BEFORE the remote call.
+  must(
+    await db.from("donations").update({ checkout_first_attempt_at: new Date().toISOString() }).eq("id", d.id).is("checkout_first_attempt_at", null),
+    "Checkout attempt save",
+  );
   const session = await provider.checkout.sessions.create(d.session_request, { idempotencyKey: `donation-checkout:${d.id}` });
   const bad = sessionResponseGaps(session, d);
   if (bad.length) throw new Error(`Stripe session response rejected: ${bad.join(", ")}`);
@@ -478,20 +543,19 @@ export async function handleDonationEvent(
 /** Provider bound to the donation's ORIGINAL integration, environment and platform account. */
 async function boundProvider(d: any): Promise<{ provider: DonationProvider; gaps: string[] }> {
   const integration = await loadIntegrationById(d.integration_id);
-  const gaps = integrationGaps(integration);
-  if (integration && (integration.environment === "live") !== d.livemode) gaps.push("Integration environment differs from the donation");
-  if (integration && integration.stripe_account_id !== d.platform_account_id) gaps.push("Platform Stripe account differs from the donation");
+  const gaps = originalBindingGaps(d, integration);
   if (!integration || gaps.length) throw new PaymentError("CONFIG_ERROR", "Original donation integration is not usable.", { gaps });
   return { provider: await providerFactory(integration), gaps };
 }
 
-async function scopeTotals(d: any) {
+/** Shared scope = Stripe platform account + mode + USD, across stores AND integration rows. */
+async function scopeTotals(d: any, excludeReleaseId?: string) {
   const held = must(
-    await db.from("donations").select("*").eq("integration_id", d.integration_id).eq("livemode", d.livemode).eq("platform_account_id", d.platform_account_id),
+    await db.from("donations").select("*").eq("platform_account_id", d.platform_account_id).eq("livemode", d.livemode).eq("currency", "USD"),
     "Held read",
   ).data ?? [];
   const rels = must(
-    await db.from("donation_releases").select("*").eq("platform_account_id", d.platform_account_id).eq("livemode", d.livemode),
+    await db.from("donation_releases").select("*").eq("platform_account_id", d.platform_account_id).eq("livemode", d.livemode).eq("currency", "USD"),
     "Release read",
   ).data ?? [];
   const inflight = new Set(rels.filter((r: any) => ["RESERVED", "SUBMITTED", "UNKNOWN"].includes(r.status)).map((r: any) => r.donation_id));
@@ -499,7 +563,7 @@ async function scopeTotals(d: any) {
     .filter((h: any) => h.id !== d.id && (["PAID", "PARTIALLY_REFUNDED", "DISPUTED"].includes(h.status) || inflight.has(h.id)))
     .reduce((s: number, h: any) => s + h.amount_cents - h.refunded_cents, 0);
   const feeUsed = rels
-    .filter((r: any) => ["RESERVED", "SUBMITTED", "UNKNOWN", "SUCCEEDED"].includes(r.status))
+    .filter((r: any) => r.id !== excludeReleaseId && ["RESERVED", "SUBMITTED", "UNKNOWN", "SUCCEEDED"].includes(r.status))
     .reduce((s: number, r: any) => s + (r.fee_coverage_cents ?? 0), 0);
   return { other, feeUsed };
 }
@@ -511,7 +575,11 @@ function releaseStateOf(status: string | null | undefined): ReleaseState {
   return "IN_FLIGHT";
 }
 
-export async function buildReleasePreview(donationId: string): Promise<ReleasePreview & { availableUsdCents: number }> {
+/**
+ * With `resumeOf`, evaluates CURRENT guards for re-submitting that approved operation
+ * (its own reservation is not counted against itself).
+ */
+export async function buildReleasePreview(donationId: string, resumeOf?: any): Promise<ReleasePreview & { availableUsdCents: number }> {
   const d = must(await db.from("donations").select("*").eq("id", donationId).maybeSingle(), "Donation read").data;
   if (!d) throw new PaymentError("NOT_FOUND", "Donation not found.");
   const settings = await loadSettings(d.store_id);
@@ -553,8 +621,16 @@ export async function buildReleasePreview(donationId: string): Promise<ReleasePr
   } catch (e) {
     iGaps = (e as { details?: { gaps?: string[] } }).details?.gaps ?? [(e as Error).message];
   }
-  const { other, feeUsed } = await scopeTotals(d);
-  const preview = computeReleasePreview({
+  const { other, feeUsed } = await scopeTotals(d, resumeOf?.id);
+  const camp = must(await db.from("donation_campaigns").select("*").eq("id", d.campaign_id).eq("store_id", d.store_id).maybeSingle(), "Campaign read").data;
+  const campaignBlockers: string[] = [];
+  if (!camp) campaignBlockers.push("Campaign not found");
+  else {
+    if (camp.review_status !== "APPROVED") campaignBlockers.push("Campaign not reviewed");
+    if (camp.beneficiary_id !== d.beneficiary_id) campaignBlockers.push("Campaign recipient mapping changed since this donation was created");
+    if (!camp.active && camp.release_mode !== "CAMPAIGN_END") campaignBlockers.push("Campaign suspended");
+  }
+  const computed = computeReleasePreview({
     donation: d,
     beneficiary,
     settings,
@@ -564,8 +640,10 @@ export async function buildReleasePreview(donationId: string): Promise<ReleasePr
     availableUsdCents: availableUsd,
     otherHeldObligationsCents: other,
     feeCoverageUsedCents: feeUsed,
-    releaseState: releaseStateOf(rel?.status),
+    releaseState: resumeOf ? "NONE" : releaseStateOf(rel?.status),
   });
+  const blockers = [...new Set([...computed.blockers, ...campaignBlockers])];
+  const preview = { ...computed, blockers, allowed: blockers.length === 0 };
   return { ...preview, availableUsdCents: availableUsd };
 }
 
@@ -588,7 +666,14 @@ async function mark(releaseId: string, outcome: string, transferId: string | nul
 }
 
 async function submitTransfer(rel: any, donationId: string, provider: DonationProvider) {
-  await mark(rel.id, "SUBMITTED", null, null);
+  // Final locked guard (donation state, adverse facts, switch, binding, window) right before create.
+  const guard = must(
+    await db.rpc("donation_release_submit_guard", { _release_id: rel.id, _window_seconds: IDEMPOTENCY_WINDOW_SECONDS }),
+    "Release guard",
+  ).data;
+  if (!guard?.allowed) {
+    throw new PaymentError("INVALID_STATE", `Release held for reconciliation: ${guard?.reason ?? "guard refused"}. No transfer was created.`);
+  }
   let transfer: any;
   try {
     transfer = await provider.transfers.create(
@@ -673,14 +758,24 @@ export async function resumeRelease(donationId: string) {
     (t: any) => t.metadata?.release_id === rel.id && t.amount === rel.amount_cents && t.destination === rel.destination_account_id,
   );
   if (existing) {
+    // Recording a verified existing transfer is always allowed (even with releases switched off).
     const out = await mark(rel.id, "SUCCEEDED", existing.id, null);
     return { transferId: existing.id as string, amountCents: rel.amount_cents as number, donationStatus: out?.donation_status ?? null };
   }
-  const ageMs = Date.now() - Date.parse(rel.updated_at ?? rel.created_at);
-  if (ageMs > 23 * 3600 * 1000) {
-    // Outside Stripe's idempotency window a retry could duplicate the transfer: human reconciliation only.
-    await mark(rel.id, "UNKNOWN", null, "Idempotency window passed; reconcile manually in Stripe");
-    throw new PaymentError("INVALID_STATE", "Release needs manual reconciliation in Stripe (idempotency window passed).");
+  if (rel.manual_reconciliation_required) {
+    throw new PaymentError("INVALID_STATE", "Release needs manual reconciliation in Stripe. No transfer was created.");
+  }
+  // Window starts at the FIRST submission of this key (immutable), never updated_at.
+  if (rel.submitted_at && Date.now() - Date.parse(rel.submitted_at) > IDEMPOTENCY_WINDOW_SECONDS * 1000) {
+    must(await db.rpc("donation_release_flag_manual", { _release_id: rel.id, _reason: "Idempotency window passed; transfer not found by list" }), "Manual flag");
+    throw new PaymentError("INVALID_STATE", "Release needs manual reconciliation in Stripe (idempotency window passed). No transfer was created.");
+  }
+  // Any potentially new/repeated create must pass every CURRENT guard; otherwise the op stays held.
+  const p = await buildReleasePreview(donationId, rel);
+  const mismatch = p.recipientAccountId !== rel.destination_account_id || p.transferAmountCents !== rel.amount_cents || p.sourceChargeId !== rel.source_charge_id;
+  if (!p.allowed || mismatch) {
+    const reasons = [...p.blockers, ...(mismatch ? ["Approved parameters differ from current donation"] : [])];
+    throw new PaymentError("INVALID_STATE", `Release held for reconciliation: ${reasons.join("; ")}. No transfer was created.`, { blockers: reasons });
   }
   return submitTransfer(rel, donationId, provider);
 }
