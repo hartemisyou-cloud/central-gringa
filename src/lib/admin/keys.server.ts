@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one, rows, exec } from "@/lib/db/client.server";
 import { PaymentError } from "@/lib/payments/errors";
 import { encryptSecret, decryptSecret, generateStoreApiKey, sha256Hex } from "@/lib/payments/crypto.server";
 import { recordAudit } from "@/lib/payments/audit.server";
@@ -28,15 +28,12 @@ export interface AdminApiKey {
 }
 
 export async function listStores(): Promise<AdminStore[]> {
-  const { data: stores, error } = await supabaseAdmin
-    .from("stores")
-    .select("id, name, slug, environment, status")
-    .order("created_at", { ascending: true });
+  const { data: stores, error } = await rows<import("@/lib/db/types").Row<"stores">>(sql`
+    select id, name, slug, environment, status from public.stores order by created_at asc
+  `);
   if (error) throw new PaymentError("CONFIG_ERROR", "Could not load stores.");
 
-  const { data: keys } = await supabaseAdmin
-    .from("store_api_keys")
-    .select("store_id, status");
+  const { data: keys } = await rows<{ store_id: string; status: string }>(sql`select store_id, status from public.store_api_keys`);
 
   return (stores ?? []).map((store) => ({
     id: store.id,
@@ -49,17 +46,18 @@ export async function listStores(): Promise<AdminStore[]> {
 }
 
 export async function listApiKeys(): Promise<AdminApiKey[]> {
-  const { data, error } = await supabaseAdmin
-    .from("store_api_keys")
-    .select(
-      "id, store_id, label, key_id, key_prefix, encrypted_key, status, last_used_at, revoked_at, created_at, stores(name)",
-    )
-    .order("created_at", { ascending: false });
+  const { data, error } = await rows<import("@/lib/db/types").Row<"store_api_keys"> & { stores: { name: string } | null }>(sql`
+    select k.id, k.store_id, k.label, k.key_id, k.key_prefix, k.encrypted_key, k.status,
+      k.last_used_at, k.revoked_at, k.created_at,
+      case when s.id is null then null else jsonb_build_object('name', s.name) end as stores
+    from public.store_api_keys k left join public.stores s on s.id = k.store_id order by k.created_at desc
+  `);
   if (error) throw new PaymentError("CONFIG_ERROR", "Could not load credentials.");
 
-  const { data: scopeRows } = await supabaseAdmin
-    .from("store_api_key_scopes")
-    .select("api_key_id, stores(slug)");
+  const { data: scopeRows } = await rows<{ api_key_id: string; stores: { slug: string } | null }>(sql`
+    select k.api_key_id, case when s.id is null then null else jsonb_build_object('slug', s.slug) end as stores
+    from public.store_api_key_scopes k left join public.stores s on s.id = k.store_id
+  `);
 
   const scopesByKey = new Map<string, string[]>();
   for (const row of scopeRows ?? []) {
@@ -91,11 +89,11 @@ export async function listApiKeys(): Promise<AdminApiKey[]> {
  * label e escopos, e revoga a anterior. O valor completo só existe na resposta.
  */
 export async function rotateApiKey(keyId: string): Promise<{ fullKey: string; keyPrefix: string }> {
-  const { data: current } = await supabaseAdmin
-    .from("store_api_keys")
-    .select("id, store_id, label, status, stores(environment, name)")
-    .eq("id", keyId)
-    .maybeSingle();
+  const { data: current } = await one<import("@/lib/db/types").Row<"store_api_keys"> & { stores: { environment: "test" | "live"; name: string } | null }>(sql`
+    select k.id, k.store_id, k.label, k.status,
+      case when s.id is null then null else jsonb_build_object('environment', s.environment, 'name', s.name) end as stores
+    from public.store_api_keys k left join public.stores s on s.id = k.store_id where k.id = ${keyId}
+  `, true);
   if (!current) throw new PaymentError("NOT_FOUND", "Credential not found.");
 
   const environment =
@@ -104,32 +102,22 @@ export async function rotateApiKey(keyId: string): Promise<{ fullKey: string; ke
   const generated = generateStoreApiKey(environment);
   const keyHash = await sha256Hex(generated.fullKey);
 
-  const { data: inserted, error } = await supabaseAdmin
-    .from("store_api_keys")
-    .insert({
-      store_id: current.store_id,
-      label: current.label,
-      key_id: generated.keyId,
-      key_prefix: generated.prefix,
-      key_hash: keyHash,
-      encrypted_key: await encryptSecret(generated.fullKey),
-      status: "ACTIVE",
-    })
-    .select("id")
-    .single();
+  const encrypted = await encryptSecret(generated.fullKey);
+  const { data: inserted, error } = await one<{ id: string }>(sql`
+    insert into public.store_api_keys (store_id, label, key_id, key_prefix, key_hash, encrypted_key, status)
+    values (${current.store_id}, ${current.label}, ${generated.keyId}, ${generated.prefix}, ${keyHash}, ${encrypted}, 'ACTIVE') returning id
+  `);
   if (error || !inserted) {
     throw new PaymentError("CONFIG_ERROR", "Could not rotate credential.");
   }
 
-  const { data: scopeRows } = await supabaseAdmin
-    .from("store_api_key_scopes")
-    .select("store_id")
-    .eq("api_key_id", current.id);
+  const { data: scopeRows } = await rows<{ store_id: string }>(sql`
+    select store_id from public.store_api_key_scopes where api_key_id = ${current.id}
+  `);
 
   if (scopeRows?.length) {
-    await supabaseAdmin.from("store_api_key_scopes").insert(
-      scopeRows.map((row) => ({ api_key_id: inserted.id, store_id: row.store_id })),
-    );
+    const newScopes = scopeRows.map((row) => ({ api_key_id: inserted.id, store_id: row.store_id }));
+    await exec(sql`insert into public.store_api_key_scopes ${sql(newScopes, "api_key_id", "store_id")}`);
   }
 
   await revokeApiKey(current.id);
@@ -153,25 +141,19 @@ export async function createApiKey(input: { storeId: string; label: string }): P
   fullKey: string;
   keyPrefix: string;
 }> {
-  const { data: store } = await supabaseAdmin
-    .from("stores")
-    .select("id, name, environment")
-    .eq("id", input.storeId)
-    .maybeSingle();
+  const { data: store } = await one<import("@/lib/db/types").Row<"stores">>(sql`
+    select id, name, environment from public.stores where id = ${input.storeId}
+  `, true);
   if (!store) throw new PaymentError("NOT_FOUND", "Store not found.");
 
   const generated = generateStoreApiKey(store.environment);
   const keyHash = await sha256Hex(generated.fullKey);
 
-  const { error } = await supabaseAdmin.from("store_api_keys").insert({
-    store_id: store.id,
-    label: input.label.slice(0, 60) || "default",
-    key_id: generated.keyId,
-    key_prefix: generated.prefix,
-    key_hash: keyHash,
-    encrypted_key: await encryptSecret(generated.fullKey),
-    status: "ACTIVE",
-  });
+  const encrypted = await encryptSecret(generated.fullKey);
+  const { error } = await exec(sql`
+    insert into public.store_api_keys (store_id, label, key_id, key_prefix, key_hash, encrypted_key, status)
+    values (${store.id}, ${input.label.slice(0, 60) || "default"}, ${generated.keyId}, ${generated.prefix}, ${keyHash}, ${encrypted}, 'ACTIVE')
+  `);
   if (error) throw new PaymentError("CONFIG_ERROR", "Could not create credential.");
 
   await recordAudit({
@@ -186,10 +168,9 @@ export async function createApiKey(input: { storeId: string; label: string }): P
 }
 
 export async function revokeApiKey(keyId: string): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("store_api_keys")
-    .update({ status: "REVOKED", revoked_at: new Date().toISOString() })
-    .eq("id", keyId);
+  const { error } = await exec(sql`
+    update public.store_api_keys set status = 'REVOKED', revoked_at = ${new Date().toISOString()} where id = ${keyId}
+  `);
   if (error) throw new PaymentError("CONFIG_ERROR", "Could not revoke credential.");
 
   await recordAudit({
@@ -206,11 +187,9 @@ export async function revokeApiKey(keyId: string): Promise<void> {
  * armazenamento cifrado. Chaves antigas (somente hash) não podem ser reveladas.
  */
 export async function revealApiKey(keyId: string): Promise<{ fullKey: string }> {
-  const { data } = await supabaseAdmin
-    .from("store_api_keys")
-    .select("id, key_id, encrypted_key")
-    .eq("id", keyId)
-    .maybeSingle();
+  const { data } = await one<import("@/lib/db/types").Row<"store_api_keys">>(sql`
+    select id, key_id, encrypted_key from public.store_api_keys where id = ${keyId}
+  `, true);
   if (!data) throw new PaymentError("NOT_FOUND", "Credential not found.");
   const encrypted = (data as { encrypted_key?: string | null }).encrypted_key;
   if (!encrypted) {
