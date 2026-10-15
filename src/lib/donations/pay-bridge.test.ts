@@ -48,18 +48,19 @@ describe("pay bridge", () => {
       expect(isOfficialStripeCheckoutUrl(bad)).toBe(false);
     expect(() => payBridgeResponse("https://evil.com/")).toThrow();
   });
-  it("serves no-referrer document with immediate JS nav, nonce CSP and safe fallback", async () => {
+  it("serves origin-referrer document with immediate JS nav, nonce CSP and safe fallback", async () => {
     const r = payBridgeResponse(ok);
     expect(r.status).toBe(200);
-    expect(r.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(r.headers.get("referrer-policy")).toBe("origin");
     expect(r.headers.get("cache-control")).toBe("no-store");
     expect(r.headers.get("x-content-type-options")).toBe("nosniff");
     const csp = r.headers.get("content-security-policy")!;
     const nonce = /nonce-([a-f0-9]+)/.exec(csp)![1];
     const html = await r.text();
-    expect(html).toContain('<meta name="referrer" content="no-referrer">');
+    expect(html).toContain('<meta name="referrer" content="origin">');
     expect(html).toContain(`<script nonce="${nonce}">location.replace("${ok}");</script>`);
-    expect(html).toMatch(/rel="noreferrer noopener"/);
+    expect(html).toMatch(/rel="noopener" referrerpolicy="origin"/);
+    expect(html).not.toMatch(/noreferrer|no-referrer|unsafe-url/);
     expect(html).not.toMatch(/setTimeout|js\.stripe\.com/);
   });
   it("escapes markup in target (no XSS)", async () => {
