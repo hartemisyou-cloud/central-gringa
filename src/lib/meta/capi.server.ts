@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows, one, exec } from "@/lib/db/client.server";
+import type { Row } from "@/lib/db/types";
 import {
   getOrderAttributionRecord,
   type OrderAttributionRecord,
@@ -61,14 +62,34 @@ export interface OrderContext {
   storeDomain: string | null;
 }
 
-export async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select(
-      "id, store_id, order_number, currency, total_cents, paid_at, status, public_token, customers:customer_id(email, phone, first_name, last_name), addresses:shipping_address_id(city, state, postal_code, country), order_items(product_id, quantity, total_cents), stores:store_id(domain)",
-    )
-    .eq("id", orderId)
-    .maybeSingle();
+type JoinedOrder = Row<"orders"> & {
+  customers: Pick<Row<"customers">, "email" | "phone" | "first_name" | "last_name"> | null;
+  addresses: Pick<Row<"addresses">, "city" | "state" | "postal_code" | "country"> | null;
+  stores: Pick<Row<"stores">, "domain"> | null;
+  order_items: Pick<Row<"order_items">, "product_id" | "quantity" | "total_cents">[];
+};
+
+export async function loadOrderContext(
+  orderId: string,
+  storeId?: string,
+): Promise<OrderContext | null> {
+  const { data: order } = await one<JoinedOrder>(
+    sql`
+    SELECT o.id, o.store_id, o.order_number, o.currency, o.total_cents, o.paid_at,
+      o.status, o.public_token,
+      CASE WHEN c.id IS NULL THEN NULL ELSE jsonb_build_object(
+        'email', c.email, 'phone', c.phone, 'first_name', c.first_name, 'last_name', c.last_name) END AS customers,
+      CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object(
+        'city', a.city, 'state', a.state, 'postal_code', a.postal_code, 'country', a.country) END AS addresses,
+      CASE WHEN s.id IS NULL THEN NULL ELSE jsonb_build_object('domain', s.domain) END AS stores,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('product_id', i.product_id,
+        'quantity', i.quantity, 'total_cents', i.total_cents)) FROM order_items i
+        WHERE i.order_id = o.id), '[]'::jsonb) AS order_items
+    FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+      LEFT JOIN addresses a ON a.id = o.shipping_address_id LEFT JOIN stores s ON s.id = o.store_id
+    WHERE o.id = ${orderId} ${storeId ? sql`AND o.store_id = ${storeId}` : sql``}`,
+    true,
+  );
   if (!order) return null;
   const customer = order.customers as {
     email?: string | null;
@@ -137,7 +158,6 @@ function eventSourceUrl(
   return undefined;
 }
 
-
 export async function buildPayload(
   context: OrderContext,
   extra: {
@@ -153,7 +173,6 @@ export async function buildPayload(
     () => ({}) as OrderAttributionRecord,
   );
   const attribution: Attribution = record;
-
 
   const userData: Record<string, unknown> = {};
   const em = await hashEmail(context.email);
@@ -196,7 +215,13 @@ export async function buildPayload(
     customData["content_ids"] = context.items.map((item) => item.productId);
     customData["num_items"] = context.items.reduce((total, item) => total + item.quantity, 0);
   }
-  for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const) {
+  for (const key of [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_content",
+    "utm_term",
+  ] as const) {
     const value = attribution[key];
     if (value) customData[key] = value;
   }
@@ -271,45 +296,40 @@ export async function sendPurchaseForOrder(input: {
     const settings = await getMetaSettingsWithToken(input.storeId);
     if (!settings) return { ok: true, skipped: "meta_disabled" };
 
-    const context = await loadOrderContext(input.orderId);
+    const context = await loadOrderContext(input.orderId, input.storeId);
     if (!context) return { ok: true, skipped: "order_not_found" };
     // PAID é a única fonte de verdade para Purchase.
     if (context.status !== "PAID") return { ok: true, skipped: "order_not_paid" };
 
     // Idempotência: uma linha por (store_id, order_id, event_name = Purchase).
-    const { data: existing } = await supabaseAdmin
-      .from("meta_conversion_events")
-      .select("id, status, attempt_count")
-      .eq("store_id", input.storeId)
-      .eq("order_id", input.orderId)
-      .eq("event_name", "Purchase")
-      .maybeSingle();
+    const { data: existing } = await one<Row<"meta_conversion_events">>(
+      sql`SELECT id, status, attempt_count FROM meta_conversion_events WHERE store_id = ${input.storeId} AND order_id = ${input.orderId} AND event_name = ${"Purchase"}`,
+      true,
+    );
 
     if (existing?.status === "SENT") return { ok: true, skipped: "already_sent" };
-    if (existing && existing.attempt_count >= MAX_ATTEMPTS && existing.status === "FAILED_PERMANENT") {
+    if (
+      existing &&
+      existing.attempt_count >= MAX_ATTEMPTS &&
+      existing.status === "FAILED_PERMANENT"
+    ) {
       return { ok: true, skipped: "permanent_failure" };
     }
 
     let rowId = existing?.id ?? null;
     if (!rowId) {
-      const { data: inserted, error } = await supabaseAdmin
-        .from("meta_conversion_events")
-        .insert({
-          store_id: input.storeId,
-          order_id: input.orderId,
-          event_name: "Purchase",
-          event_id: purchaseEventId(input.orderId),
-          status: "PENDING",
-        })
-        .select("id")
-        .maybeSingle();
+      const { data: inserted, error } = await one<{ id: string }>(
+        sql`
+        INSERT INTO meta_conversion_events (store_id, order_id, event_name, event_id, status)
+        VALUES (${input.storeId}, ${input.orderId}, ${"Purchase"}, ${purchaseEventId(input.orderId)}, ${"PENDING"}) RETURNING id`,
+        true,
+      );
       if (error || !inserted) {
         // corrida com outro worker: outro processo já está enviando.
         return { ok: true, skipped: "in_flight" };
       }
       rowId = inserted.id;
     }
-
 
     const payload = await buildPayload(context, {
       clientIp: input.clientIp ?? null,
@@ -318,20 +338,14 @@ export async function sendPurchaseForOrder(input: {
     const result = await postToMeta(settings.pixelId!, settings.accessToken, payload);
 
     const attempt = (existing?.attempt_count ?? 0) + 1;
-    await supabaseAdmin
-      .from("meta_conversion_events")
-      .update({
-        status: result.ok
-          ? "SENT"
-          : result.permanent || attempt >= MAX_ATTEMPTS
-            ? "FAILED_PERMANENT"
-            : "FAILED",
-        attempt_count: attempt,
-        http_status: result.httpStatus ?? null,
-        meta_event_id: result.ok ? (result.metaEventId ?? null) : null,
-        last_error: result.ok ? null : result.error,
-      })
-      .eq("id", rowId);
+    const status = result.ok
+      ? "SENT"
+      : result.permanent || attempt >= MAX_ATTEMPTS
+        ? "FAILED_PERMANENT"
+        : "FAILED";
+    await exec(sql`UPDATE meta_conversion_events SET status = ${status}, attempt_count = ${attempt},
+      http_status = ${result.httpStatus ?? null}, meta_event_id = ${result.ok ? (result.metaEventId ?? null) : null},
+      last_error = ${result.ok ? null : result.error} WHERE id = ${rowId}`);
 
     await recordMetaHealth(input.storeId, {
       ok: result.ok,
@@ -402,11 +416,10 @@ export async function sendTestPurchase(storeId: string): Promise<{
   };
 
   // Domínio público da loja — nunca um domínio interno da Central.
-  const { data: testStore } = await supabaseAdmin
-    .from("stores")
-    .select("domain")
-    .eq("id", storeId)
-    .maybeSingle();
+  const { data: testStore } = await one<Row<"stores">>(
+    sql`SELECT domain FROM stores WHERE id = ${storeId}`,
+    true,
+  );
   const testSourceUrl = testStore?.domain
     ? `https://${testStore.domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`
     : undefined;
@@ -496,22 +509,16 @@ export async function sendTestPurchaseFromOrder(input: {
 
   const ref = input.orderRef.trim();
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
-  const { data: found } = await supabaseAdmin
-    .from("orders")
-    .select("id")
-    .eq("store_id", input.storeId)
-    .or(
-      isUuid
-        ? `id.eq.${ref},public_token.eq.${ref}`
-        : `order_number.eq.${ref},public_token.eq.${ref}`,
-    )
-    .limit(1)
-    .maybeSingle();
+  const { data: found } = await one<Row<"orders">>(
+    sql`SELECT id FROM orders WHERE store_id = ${input.storeId}
+    AND (${isUuid ? sql`id = ${ref}` : sql`order_number = ${ref}`} OR public_token = ${ref}) LIMIT 1`,
+    true,
+  );
   if (!found) {
     return { ...empty, message: "Order not found in this store." };
   }
 
-  const context = await loadOrderContext(found.id);
+  const context = await loadOrderContext(found.id, input.storeId);
   if (!context) return { ...empty, message: "Order not found in this store." };
 
   const eventId = `test_${purchaseEventId(context.orderId)}_${Date.now()}`;
@@ -566,23 +573,22 @@ export async function findLatestPaidOrder(storeId: string): Promise<{
   maskedToken: string | null;
   paidAt: string | null;
 }> {
-  const select = "id, order_number, status, public_token, paid_at, created_at";
-
-  const { data: paid } = await supabaseAdmin
-    .from("orders")
-    .select(select)
-    .eq("store_id", storeId)
-    .eq("status", "PAID")
-    .order("paid_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: paid } = await one<Row<"orders">>(
+    sql`SELECT id, order_number, status, public_token, paid_at, created_at FROM orders WHERE store_id = ${storeId} AND status = ${"PAID"} ORDER BY paid_at DESC NULLS LAST, created_at DESC LIMIT 1`,
+    true,
+  );
 
   const data = paid;
 
-
   if (!data) {
-    return { found: false, orderId: null, orderNumber: null, status: null, maskedToken: null, paidAt: null };
+    return {
+      found: false,
+      orderId: null,
+      orderNumber: null,
+      status: null,
+      maskedToken: null,
+      paidAt: null,
+    };
   }
 
   const token = data.public_token ?? "";
@@ -599,16 +605,12 @@ export async function findLatestPaidOrder(storeId: string): Promise<{
 
 /** Reenvio manual dos eventos pendentes/falhos de uma loja (backoff administrativo). */
 export async function retryFailedMetaEvents(storeId: string): Promise<{ retried: number }> {
-  const { data: rows } = await supabaseAdmin
-    .from("meta_conversion_events")
-    .select("order_id, attempt_count")
-    .eq("store_id", storeId)
-    .in("status", ["PENDING", "FAILED"])
-    .order("created_at", { ascending: true })
-    .limit(20);
+  const { data: pendingRows } = await rows<Row<"meta_conversion_events">>(
+    sql`SELECT order_id, attempt_count FROM meta_conversion_events WHERE store_id = ${storeId} AND status IN (${"PENDING"}, ${"FAILED"}) ORDER BY created_at ASC LIMIT 20`,
+  );
 
   let retried = 0;
-  for (const row of rows ?? []) {
+  for (const row of pendingRows ?? []) {
     if (!row.order_id) continue;
     // backoff simples: espera crescente entre tentativas do mesmo lote.
     await new Promise((resolve) => setTimeout(resolve, Math.min(row.attempt_count, 3) * 300));
@@ -689,28 +691,17 @@ export async function findLatestPaidOrderWithAttribution(
     attribution: null,
   };
 
-  const { data: orders } = await supabaseAdmin
-    .from("orders")
-    .select("id, order_number, status, paid_at, created_at")
-    .eq("store_id", storeId)
-    .eq("status", "PAID")
-    .order("paid_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(50);
+  const { data: orders } = await rows<Row<"orders">>(
+    sql`SELECT id, order_number, status, paid_at, created_at FROM orders WHERE store_id = ${storeId} AND status = ${"PAID"} ORDER BY paid_at DESC NULLS LAST, created_at DESC LIMIT 50`,
+  );
   if (!orders || orders.length === 0) return empty;
 
-  const { data: rows } = await supabaseAdmin
-    .from("order_attribution")
-    .select(
-      "order_id, fbc, fbp, client_ip, client_user_agent, event_source_url, utm_source, utm_medium, utm_campaign, utm_content, utm_term",
-    )
-    .in(
-      "order_id",
-      orders.map((order) => order.id),
-    );
-  if (!rows || rows.length === 0) return empty;
+  const { data: attributionRows } = await rows<Row<"order_attribution">>(
+    sql`SELECT order_id, fbc, fbp, client_ip, client_user_agent, event_source_url, utm_source, utm_medium, utm_campaign, utm_content, utm_term FROM order_attribution WHERE order_id IN ${sql(orders.map((order) => order.id))}`,
+  );
+  if (!attributionRows || attributionRows.length === 0) return empty;
 
-  const byOrder = new Map(rows.map((row) => [row.order_id, row]));
+  const byOrder = new Map(attributionRows.map((row) => [row.order_id, row]));
   const match = orders.find((order) => byOrder.has(order.id));
   if (!match) return empty;
   const row = byOrder.get(match.id)!;
@@ -786,7 +777,7 @@ export async function sendTestPurchaseFromAttributedOrder(
     };
   }
 
-  const context = await loadOrderContext(order.orderId);
+  const context = await loadOrderContext(order.orderId, storeId);
   if (!context) {
     return {
       ...base,

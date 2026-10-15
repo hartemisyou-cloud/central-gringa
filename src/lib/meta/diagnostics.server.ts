@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows, one } from "@/lib/db/client.server";
+import type { Row } from "@/lib/db/types";
 import { getMetaSettingsWithToken } from "./config.server";
 import { GRAPH_VERSION, buildPayload, loadOrderContext, sanitizeError } from "./capi.server";
 
@@ -29,22 +30,15 @@ export async function listOrdersForDiagnostics(
   storeId: string,
   limit = 25,
 ): Promise<DiagOrderSummary[]> {
-  const { data: orders } = await supabaseAdmin
-    .from("orders")
-    .select("id, order_number, status, total_cents, currency, created_at, paid_at")
-    .eq("store_id", storeId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  const { data: orders } = await rows<Row<"orders">>(
+    sql`SELECT id, order_number, status, total_cents, currency, created_at, paid_at FROM orders WHERE store_id = ${storeId} ORDER BY created_at DESC LIMIT ${limit}`,
+  );
   if (!orders || orders.length === 0) return [];
 
-  const { data: rows } = await supabaseAdmin
-    .from("order_attribution")
-    .select("order_id")
-    .in(
-      "order_id",
-      orders.map((order) => order.id),
-    );
-  const withAttribution = new Set((rows ?? []).map((row) => row.order_id));
+  const { data: attributionRows } = await rows<Row<"order_attribution">>(
+    sql`SELECT order_id FROM order_attribution WHERE order_id IN ${sql(orders.map((order) => order.id))}`,
+  );
+  const withAttribution = new Set((attributionRows ?? []).map((row) => row.order_id));
 
   return orders.map((order) => ({
     orderId: order.id,
@@ -111,21 +105,16 @@ export async function inspectOrderForDiagnostics(input: {
     attribution: EMPTY_ATTRIBUTION,
   };
 
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select("id, order_number, status, paid_at, total_cents, currency")
-    .eq("id", input.orderId)
-    .eq("store_id", input.storeId)
-    .maybeSingle();
+  const { data: order } = await one<Row<"orders">>(
+    sql`SELECT id, order_number, status, paid_at, total_cents, currency FROM orders WHERE id = ${input.orderId} AND store_id = ${input.storeId}`,
+    true,
+  );
   if (!order) return empty;
 
-  const { data: row } = await supabaseAdmin
-    .from("order_attribution")
-    .select(
-      "fbc, fbp, client_ip, client_user_agent, event_source_url, utm_source, utm_medium, utm_campaign, utm_content, utm_term",
-    )
-    .eq("order_id", order.id)
-    .maybeSingle();
+  const { data: row } = await one<Row<"order_attribution">>(
+    sql`SELECT fbc, fbp, client_ip, client_user_agent, event_source_url, utm_source, utm_medium, utm_campaign, utm_content, utm_term FROM order_attribution WHERE order_id = ${order.id}`,
+    true,
+  );
 
   return {
     found: true,
@@ -197,15 +186,13 @@ export async function sendDiagnosticTestPurchase(input: {
     return { ...base, message: "Meta integration disabled or incomplete for this store." };
   }
 
-  const { data: owned } = await supabaseAdmin
-    .from("orders")
-    .select("id")
-    .eq("id", input.orderId)
-    .eq("store_id", input.storeId)
-    .maybeSingle();
+  const { data: owned } = await one<Row<"orders">>(
+    sql`SELECT id FROM orders WHERE id = ${input.orderId} AND store_id = ${input.storeId}`,
+    true,
+  );
   if (!owned) return { ...base, message: "Order not found in this store." };
 
-  const context = await loadOrderContext(input.orderId);
+  const context = await loadOrderContext(input.orderId, input.storeId);
   if (!context) return { ...base, message: "Order not found in this store." };
 
   const eventId = `diag_test_purchase_${context.orderId}_${Date.now()}`;

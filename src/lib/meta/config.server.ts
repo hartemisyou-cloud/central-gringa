@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows, one, exec } from "@/lib/db/client.server";
+import type { Row } from "@/lib/db/types";
 import { decryptSecret, encryptSecret } from "@/lib/payments/crypto.server";
 
 /**
@@ -33,15 +34,26 @@ export interface MetaSettingsSummary extends MetaSettings {
   lastPurchaseAt: string | null;
 }
 
+const HEALTH_COLUMNS = ["last_success_at", "last_error", "last_error_at"] as const;
+const SETTINGS_COLUMNS = [
+  "store_id",
+  "pixel_id",
+  "test_event_code",
+  "enabled",
+  "access_token_ciphertext",
+  "access_token_last4",
+  "last_error",
+  "last_error_at",
+] as const;
+
 /** Config pública (apenas o Pixel ID) — segura para o navegador. */
 export async function getPublicMetaConfig(
   storeId: string,
 ): Promise<{ pixelId: string | null; enabled: boolean }> {
-  const { data } = await supabaseAdmin
-    .from("meta_tracking_settings")
-    .select("pixel_id, enabled")
-    .eq("store_id", storeId)
-    .maybeSingle();
+  const { data } = await one<Row<"meta_tracking_settings">>(
+    sql`SELECT pixel_id, enabled FROM meta_tracking_settings WHERE store_id = ${storeId}`,
+    true,
+  );
   if (!data || !data.enabled || !data.pixel_id) return { pixelId: null, enabled: false };
   return { pixelId: data.pixel_id, enabled: true };
 }
@@ -50,11 +62,10 @@ export async function getPublicMetaConfig(
 export async function getMetaSettingsWithToken(
   storeId: string,
 ): Promise<MetaSettingsWithToken | null> {
-  const { data } = await supabaseAdmin
-    .from("meta_tracking_settings")
-    .select("store_id, pixel_id, enabled, test_event_code, access_token_ciphertext")
-    .eq("store_id", storeId)
-    .maybeSingle();
+  const { data } = await one<Row<"meta_tracking_settings">>(
+    sql`SELECT store_id, pixel_id, enabled, test_event_code, access_token_ciphertext FROM meta_tracking_settings WHERE store_id = ${storeId}`,
+    true,
+  );
   if (!data?.enabled || !data.pixel_id || !data.access_token_ciphertext) return null;
   let accessToken: string;
   try {
@@ -78,39 +89,45 @@ export async function recordMetaHealth(
 ): Promise<void> {
   const patch = result.ok
     ? { last_success_at: new Date().toISOString(), last_error: null, last_error_at: null }
-    : { last_error: (result.error ?? "erro desconhecido").slice(0, 500), last_error_at: new Date().toISOString() };
-  await supabaseAdmin.from("meta_tracking_settings").update(patch).eq("store_id", storeId);
+    : {
+        last_error: (result.error ?? "erro desconhecido").slice(0, 500),
+        last_error_at: new Date().toISOString(),
+      };
+  const columns = HEALTH_COLUMNS.filter((column) => Object.hasOwn(patch, column));
+  await exec(
+    sql`UPDATE meta_tracking_settings SET ${sql(patch, ...columns)} WHERE store_id = ${storeId}`,
+  );
 }
 
 /** Painel: nunca devolve o token, apenas os 4 últimos caracteres. */
 export async function listMetaSettings(): Promise<MetaSettingsSummary[]> {
-  const { data: stores } = await supabaseAdmin
-    .from("stores")
-    .select("id, name, slug")
-    .order("name");
-  const { data: settings } = await supabaseAdmin.from("meta_tracking_settings").select("*");
-  const { data: events } = await supabaseAdmin
-    .from("meta_conversion_events")
-    .select("store_id, status, created_at")
-    .eq("status", "SENT")
-    .order("created_at", { ascending: false })
-    .limit(1000);
+  const { data: stores } = await rows<Row<"stores">>(
+    sql`SELECT id, name, slug FROM stores ORDER BY name ASC`,
+  );
+  const { data: settings } = await rows<Row<"meta_tracking_settings">>(
+    sql`SELECT * FROM meta_tracking_settings`,
+  );
+  const { data: events } = await rows<Row<"meta_conversion_events">>(
+    sql`SELECT store_id, status, created_at FROM meta_conversion_events WHERE status = ${"SENT"} ORDER BY created_at DESC LIMIT 1000`,
+  );
 
   return (stores ?? []).map((store) => {
     const row = (settings ?? []).find((entry) => entry.store_id === store.id);
     const sent = (events ?? []).filter((entry) => entry.store_id === store.id);
     const configured = Boolean(row?.pixel_id && row?.access_token_ciphertext);
-    const status: MetaSettingsSummary["status"] = !row || !row.enabled
-      ? configured
-        ? "DISABLED"
-        : "NOT_CONFIGURED"
-      : !configured
-        ? "NOT_CONFIGURED"
-        : row.last_error && (!row.last_success_at || (row.last_error_at ?? "") > row.last_success_at)
-          ? "ERROR"
-          : row.last_success_at
-            ? "CONNECTED"
-            : "CONFIGURED";
+    const status: MetaSettingsSummary["status"] =
+      !row || !row.enabled
+        ? configured
+          ? "DISABLED"
+          : "NOT_CONFIGURED"
+        : !configured
+          ? "NOT_CONFIGURED"
+          : row.last_error &&
+              (!row.last_success_at || (row.last_error_at ?? "") > row.last_success_at)
+            ? "ERROR"
+            : row.last_success_at
+              ? "CONNECTED"
+              : "CONFIGURED";
 
     return {
       storeId: store.id,
@@ -150,7 +167,7 @@ export async function saveMetaSettings(input: {
     patch["last_error"] = null;
     patch["last_error_at"] = null;
   }
-  await supabaseAdmin
-    .from("meta_tracking_settings")
-    .upsert(patch as never, { onConflict: "store_id" });
+  const columns = SETTINGS_COLUMNS.filter((column) => Object.hasOwn(patch, column));
+  await exec(sql`INSERT INTO meta_tracking_settings ${sql(patch, ...columns)}
+    ON CONFLICT (store_id) DO UPDATE SET ${sql(patch, ...columns)}`);
 }
