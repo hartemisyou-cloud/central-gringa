@@ -75,7 +75,7 @@ const READY = {
   dashboard_responsibility: "PLATFORM",
   negative_balance_liability: "PLATFORM",
   donations_enabled: true,
-  releases_enabled: true,
+  releases_enabled: true, manual_payout_schedule_confirmed: true, max_hold_days: 90,
   ngo_fee_funding_cents: 10000,
   confirmed_by: "Test Human",
   confirmed_at: "2026-01-01T00:00:00Z",
@@ -310,5 +310,19 @@ describe("receipt never trusts URL", () => {
     const v = await svc.receiptView(d, "https://c");
     expect(v.status).toBe("PENDING");
     expect(v).not.toHaveProperty("downloads");
+  });
+});
+
+import { computeReleasePreview as crp, DEFAULT_SETTINGS as DS } from "./rules";
+describe("funds constraints", () => {
+  it("blocks release without manual payout schedule and hold limit", () => {
+    const p = crp({ settings: DS, donation: { id: "d", status: "PAID", amount_cents: 2000, currency: "USD", refunded_cents: 0, disputed: false, charge_id: null, beneficiary_snapshot: null } as any, beneficiary: null, charge: null, availableUsdCents: 0, otherHeldObligationsCents: 0, feeCoverageUsedCents: 0, existingRelease: false });
+    expect(p.blockers.some((b) => b.startsWith("Manual payout schedule"))).toBe(true);
+    expect(p.blockers).toContain("Country hold limit not configured");
+    expect(p.allowed).toBe(false);
+  });
+  it("blocks when hold limit exceeded", () => {
+    const p = crp({ settings: { ...DS, manual_payout_schedule_confirmed: true, max_hold_days: 30 }, donation: { id: "d", status: "PAID", amount_cents: 2000, currency: "USD", refunded_cents: 0, disputed: false, charge_id: null, beneficiary_snapshot: null, paid_at: "2026-01-01T00:00:00Z" } as any, beneficiary: null, charge: null, availableUsdCents: 0, otherHeldObligationsCents: 0, feeCoverageUsedCents: 0, existingRelease: false, now: Date.parse("2026-06-01T00:00:00Z") });
+    expect(p.blockers).toContain("Hold limit exceeded: reconciliation needed before any release");
   });
 });

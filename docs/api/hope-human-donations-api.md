@@ -83,3 +83,17 @@ Pricing eligibility, allowed recipient countries / recipient service agreement, 
 negative-balance responsibility choices, use of funds text, reviewed campaigns (manifest import
 stays UNREVIEWED), reviewed beneficiaries with Stripe-hosted onboarding complete, NGO fee funding.
 `integration_identifier` is sent as requested; it has not been verified against a live Stripe call.
+
+## Campaign manifest v1 (source SHA8e93)
+
+`docs/donations/campaign-manifest.v1.json` lists 54 trusted slug/title pairs; `campaign-manifest.v1.seed.sql` imports them idempotently as `review_status = PENDING`, `active = true`, no beneficiary. The manifest authorizes listing only — no creator accounts, verified campaign claims, beneficiary mappings, approvals or releases. The catalog shows these campaigns with `ready: false`, and global `ready` stays `false` until configuration is complete, so the checkout should explain "configuration pending" and keep Continue disabled.
+
+## Real-funds constraints (release gates)
+
+- The internal held ledger does not segregate or reserve Stripe cash. Automatic bank payouts can remove available balance, so release is blocked until a human confirms a manual payout schedule.
+- Release is blocked unless the full creator USD amount plus the NGO fee coverage is actually available, after setting aside every other held donation. Fees are never deducted from the creator, and other held donations never pay for them.
+- Release is blocked until the actual Stripe hold limit for the platform country (`max_hold_days`) is configured. Donations held longer than that limit are blocked and flagged for reconciliation. This is not escrow and there is no unlimited hold.
+- Separate transfers do not reverse automatically after refunds or disputes. The donation is flagged REVERSAL_REQUIRED (recovery/reconciliation needed) and release is frozen. Funds are never reported as recovered unless they actually are.
+- A transfer moves funds into the creator's Stripe balance. That is not a bank payout; the creator's own payout schedule controls when money reaches their bank.
+- The NGO covers processing and Connect fees. Optional Adaptive Pricing currency conversion fees are disclosed to the donor by Stripe and are not "zero fees".
+- A recipient country counts as eligible only if the real account/allowlist capability eligibility is confirmed. General Stripe country availability is not enough.

@@ -53,6 +53,8 @@ export function DonationsSection() {
         dashboard_responsibility: st.dashboard_responsibility ?? null,
         negative_balance_liability: st.negative_balance_liability ?? null,
         ngo_fee_funding_cents: st.ngo_fee_funding_cents ?? 0,
+        manual_payout_schedule_confirmed: st.manual_payout_schedule_confirmed ?? false,
+        max_hold_days: st.max_hold_days ?? null,
         ...Object.fromEntries(BOOL_GATES.map(([k]) => [k, Boolean(st[k])])),
       });
     }
@@ -112,6 +114,8 @@ export function DonationsSection() {
           <div className="space-y-1"><Label>Dashboard responsibility</Label>{choice("dashboard_responsibility", ["PLATFORM", "STRIPE"])}</div>
           <div className="space-y-1"><Label>Negative balance liability</Label>{choice("negative_balance_liability", ["PLATFORM", "STRIPE"])}</div>
           <div className="space-y-1"><Label>Dedicated NGO fee funding (cents)</Label><Input type="number" min={0} value={s.ngo_fee_funding_cents} onChange={(e) => setS({ ...s, ngo_fee_funding_cents: Number(e.target.value) || 0 })} /></div>
+          <div className="space-y-1"><Label>Max hold days (actual Stripe limit for the platform country; blank = not configured)</Label><Input type="number" min={1} value={s.max_hold_days ?? ""} onChange={(e) => setS({ ...s, max_hold_days: e.target.value ? Number(e.target.value) : null })} /></div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!s.manual_payout_schedule_confirmed} onChange={(e) => setS({ ...s, manual_payout_schedule_confirmed: e.target.checked })} /> I confirmed the Stripe payout schedule is manual (automatic bank payouts can remove the balance held for donations)</label>
         </div>
         <div className="space-y-2">
           {BOOL_GATES.map(([k, label]) => (

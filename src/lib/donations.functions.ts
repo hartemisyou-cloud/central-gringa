@@ -68,6 +68,8 @@ const settingsSchema = z.object({
   donations_enabled: z.boolean(),
   releases_enabled: z.boolean(),
   ngo_fee_funding_cents: z.number().int().min(0).max(100_000_000),
+  manual_payout_schedule_confirmed: z.boolean().default(false),
+  max_hold_days: z.number().int().min(1).max(3650).nullable().default(null),
   /** Typed name of the human confirming these financial responsibilities. */
   confirmedBy: z.string().trim().max(120).optional(),
 });
@@ -77,7 +79,7 @@ export const adminSaveDonationSettings = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const db = await admin();
     const { storeId, confirmedBy, ...rest } = data;
-    const needsConfirm = rest.donations_enabled || rest.releases_enabled || rest.fee_coverage_policy || rest.dashboard_responsibility || rest.negative_balance_liability;
+    const needsConfirm = rest.donations_enabled || rest.releases_enabled || rest.fee_coverage_policy || rest.dashboard_responsibility || rest.negative_balance_liability || rest.manual_payout_schedule_confirmed || rest.max_hold_days;
     if (needsConfirm && !confirmedBy) {
       return { ok: false as const, message: "Type your full name to confirm financial responsibilities." };
     }
