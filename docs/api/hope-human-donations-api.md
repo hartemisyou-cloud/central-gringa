@@ -39,16 +39,23 @@ concurrent requests return the same donation. There is never a fallback to ebook
 
 ## GET /api/public/v1/donations/status/{publicToken}
 ```json
-{"data":{"donation":{"donationId":"…","donationNumber":"…","publicToken":"…","purpose":"donation",
- "status":"PAID","amountCents":2000,"currency":"USD","baseAmountCents":2000,"refundedCents":0,
- "paidAt":"…","createdAt":"…","paymentUrl":"…","receiptUrl":"…",
- "campaign":{"slug":"…","title":"…"},
- "recipient":{"name":"Hope Human Foundation","country":"US","useOfFunds":"…"},
- "presentment":{"amount":1850,"currency":"EUR"}}}}
+{"data":{"purpose":"donation","donationId":"…","donationNumber":"HHF-…","publicToken":"…",
+ "status":"PAID","amountCents":2000,"currency":"USD",
+ "receiptUrl":"<central>/donations/receipt/<token>","campaignSlug":"example",
+ "payoutStatus":"HELD"}}
 ```
-`presentment` is null unless Stripe reported a localized charge. No items, no downloads.
-Statuses: PENDING, PROCESSING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED, PARTIALLY_REFUNDED,
+Status comes only from the database (verified webhooks). No ebook, order item or download fields.
+`status`: PENDING, PROCESSING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED, PARTIALLY_REFUNDED,
 DISPUTED, RELEASED, REVERSAL_REQUIRED.
+`payoutStatus`: NOT_APPLICABLE, HELD, RELEASE_IN_PROGRESS, RELEASE_FAILED, RELEASED, REVERSAL_REQUIRED.
+
+## Policy pages
+`/donations/terms`, `/donations/privacy`, `/donations/refunds`.
+
+## Checkout-side validation
+Accept a create response only when `paymentUrl` is exactly `<central origin>/donations/pay/<publicToken>`,
+`receiptUrl` is exactly `<central origin>/donations/receipt/<publicToken>`, `purpose` is `donation`,
+`amountCents`/`currency` match the request, and the campaign was `ready` in the catalog.
 
 ## Payment flow
 Checkout (Vercel) → POST /donations → redirect donor to `paymentUrl`. The central redirects (303)
@@ -62,10 +69,10 @@ Webhook events to add to the existing Stripe endpoint: `checkout.session.complet
 `checkout.session.expired` (plus the existing payment_intent / charge events).
 
 ## Funds and releases
-Separate charges and transfers: the platform is charged (no `transfer_data`, `on_behalf_of`,
+Separate charges and transfers. Payment is captured automatically (never `capture_method: manual`, which would break Adaptive Pricing); "hold" only means the transfer is delayed. The platform is charged (no `transfer_data`, `on_behalf_of`,
 `application_fee_amount`); funds are held until a person approves a release in `/admin`.
 Release = full original USD gross, linked with `source_transaction` to that donation's own
-charge, only when the charge settled in USD and funds are available. The NGO covers all fees from
+charge, only when the charge settled in USD and available USD balance covers the full gross after reserving every other held donation. `source_transaction` never bypasses that check. The NGO covers all fees from
 dedicated funding; if dedicated funding or free balance (excluding other held donations) is short,
 the release is blocked with the deficit shown. Refunds/disputes after release set
 `REVERSAL_REQUIRED` for human action — nothing is reversed automatically.

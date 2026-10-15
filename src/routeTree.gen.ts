@@ -14,7 +14,6 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CookiePolicyRouteImport } from './routes/cookie-policy'
 import { Route as DeliveryPolicyRouteImport } from './routes/delivery-policy'
-import { Route as DonationPolicyRouteImport } from './routes/donation-policy'
 import { Route as PrivacyPolicyRouteImport } from './routes/privacy-policy'
 import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -64,11 +63,6 @@ const CookiePolicyRoute = CookiePolicyRouteImport.update({
 const DeliveryPolicyRoute = DeliveryPolicyRouteImport.update({
   id: '/delivery-policy',
   path: '/delivery-policy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DonationPolicyRoute = DonationPolicyRouteImport.update({
-  id: '/donation-policy',
-  path: '/donation-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyPolicyRoute = PrivacyPolicyRouteImport.update({
@@ -216,7 +210,6 @@ export interface FileRoutesByFullPath {
   '/checkout': typeof CheckoutRoute
   '/cookie-policy': typeof CookiePolicyRoute
   '/delivery-policy': typeof DeliveryPolicyRoute
-  '/donation-policy': typeof DonationPolicyRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
@@ -249,7 +242,6 @@ export interface FileRoutesByTo {
   '/checkout': typeof CheckoutRoute
   '/cookie-policy': typeof CookiePolicyRoute
   '/delivery-policy': typeof DeliveryPolicyRoute
-  '/donation-policy': typeof DonationPolicyRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
@@ -283,7 +275,6 @@ export interface FileRoutesById {
   '/checkout': typeof CheckoutRoute
   '/cookie-policy': typeof CookiePolicyRoute
   '/delivery-policy': typeof DeliveryPolicyRoute
-  '/donation-policy': typeof DonationPolicyRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
@@ -318,7 +309,6 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/cookie-policy'
     | '/delivery-policy'
-    | '/donation-policy'
     | '/privacy-policy'
     | '/refund-policy'
     | '/terms'
@@ -351,7 +341,6 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/cookie-policy'
     | '/delivery-policy'
-    | '/donation-policy'
     | '/privacy-policy'
     | '/refund-policy'
     | '/terms'
@@ -384,7 +373,6 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/cookie-policy'
     | '/delivery-policy'
-    | '/donation-policy'
     | '/privacy-policy'
     | '/refund-policy'
     | '/terms'
@@ -418,7 +406,6 @@ export interface RootRouteChildren {
   CheckoutRoute: typeof CheckoutRoute
   CookiePolicyRoute: typeof CookiePolicyRoute
   DeliveryPolicyRoute: typeof DeliveryPolicyRoute
-  DonationPolicyRoute: typeof DonationPolicyRoute
   PrivacyPolicyRoute: typeof PrivacyPolicyRoute
   RefundPolicyRoute: typeof RefundPolicyRoute
   TermsRoute: typeof TermsRoute
@@ -476,13 +463,6 @@ declare module '@tanstack/react-router' {
       path: '/delivery-policy'
       fullPath: '/delivery-policy'
       preLoaderRoute: typeof DeliveryPolicyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/donation-policy': {
-      id: '/donation-policy'
-      path: '/donation-policy'
-      fullPath: '/donation-policy'
-      preLoaderRoute: typeof DonationPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy-policy': {
@@ -700,7 +680,6 @@ const rootRouteChildren: RootRouteChildren = {
   CheckoutRoute: CheckoutRoute,
   CookiePolicyRoute: CookiePolicyRoute,
   DeliveryPolicyRoute: DeliveryPolicyRoute,
-  DonationPolicyRoute: DonationPolicyRoute,
   PrivacyPolicyRoute: PrivacyPolicyRoute,
   RefundPolicyRoute: RefundPolicyRoute,
   TermsRoute: TermsRoute,
