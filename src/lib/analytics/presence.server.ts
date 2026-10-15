@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows, one, exec } from "@/lib/db/client.server";
+import type { Row } from "@/lib/db/types";
 
 /**
  * Presença em tempo real (servidor). Grava/expira sessões vivas e conta os
@@ -56,30 +57,27 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
   const now = new Date().toISOString();
 
   // Marcos já registrados para esta sessão (drawer / checkout) e loja associada.
-  const { data: existing } = await supabaseAdmin
-    .from("presence_sessions")
-    .select("store_id, cart_opened_at, cart_closed_at, checkout_viewed_at")
-    .eq("session_id", input.sessionId)
-    .maybeSingle();
+  const { data: existing } = await one<Row<"presence_sessions">>(
+    sql`SELECT store_id, cart_opened_at, cart_closed_at, checkout_viewed_at FROM presence_sessions WHERE session_id = ${input.sessionId}`,
+    true,
+  );
 
   let storeId: string | null = existing?.store_id ?? null;
   if (input.storeSlug) {
     const slug = input.storeSlug.trim().toLowerCase();
     // Resolução tolerante: slug exato, e como fallback o domínio da loja
     // (o site pode enviar "livrariadacultura.shop" em vez do slug).
-    const { data } = await supabaseAdmin
-      .from("stores")
-      .select("id")
-      .eq("slug", slug)
-      .maybeSingle();
+    const { data } = await one<Row<"stores">>(
+      sql`SELECT id FROM stores WHERE slug = ${slug}`,
+      true,
+    );
     let resolved = data?.id ?? null;
     if (!resolved) {
       const host = slug.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-      const { data: byDomain } = await supabaseAdmin
-        .from("stores")
-        .select("id")
-        .eq("domain", host)
-        .maybeSingle();
+      const { data: byDomain } = await one<Row<"stores">>(
+        sql`SELECT id FROM stores WHERE domain = ${host}`,
+        true,
+      );
       resolved = byDomain?.id ?? null;
     }
     if (!resolved) console.warn("[presence] store not resolved for slug", slug);
@@ -90,9 +88,11 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
   // heartbeat válido e CHECKOUT pode voltar para ACTIVE/CART.
   const state: PresenceState = incoming;
 
-  const row = existing as
-    | { cart_opened_at: string | null; cart_closed_at: string | null; checkout_viewed_at: string | null }
-    | null;
+  const row = existing as {
+    cart_opened_at: string | null;
+    cart_closed_at: string | null;
+    checkout_viewed_at: string | null;
+  } | null;
 
   // Marcos são cumulativos dentro da sessão: fechar e reabrir o drawer não
   // apaga nada, e chegar ao checkout marca a conversão definitivamente.
@@ -104,21 +104,32 @@ export async function recordPresence(input: PresenceHeartbeat, userAgent: string
       ? (row?.checkout_viewed_at ?? now)
       : (row?.checkout_viewed_at ?? null);
 
-  const { error } = await supabaseAdmin.from("presence_sessions").upsert(
-    {
-      session_id: input.sessionId,
-      store_id: storeId,
-      state,
-      page: input.page ?? null,
-      user_agent: userAgent ? userAgent.slice(0, 400) : null,
-      is_bot: isBot,
-      last_seen_at: now,
-      cart_opened_at: cartOpenedAt,
-      cart_closed_at: cartClosedAt,
-      checkout_viewed_at: checkoutViewedAt,
-    } as never,
-    { onConflict: "session_id" },
-  );
+  const heartbeatRow = {
+    session_id: input.sessionId,
+    store_id: storeId,
+    state,
+    page: input.page ?? null,
+    user_agent: userAgent ? userAgent.slice(0, 400) : null,
+    is_bot: isBot,
+    last_seen_at: now,
+    cart_opened_at: cartOpenedAt,
+    cart_closed_at: cartClosedAt,
+    checkout_viewed_at: checkoutViewedAt,
+  };
+  const columns = [
+    "session_id",
+    "store_id",
+    "state",
+    "page",
+    "user_agent",
+    "is_bot",
+    "last_seen_at",
+    "cart_opened_at",
+    "cart_closed_at",
+    "checkout_viewed_at",
+  ] as const;
+  const { error } = await exec(sql`INSERT INTO presence_sessions ${sql(heartbeatRow, ...columns)}
+    ON CONFLICT (session_id) DO UPDATE SET ${sql(heartbeatRow, ...columns)}`);
   if (error) console.error("[presence] upsert failed", error.message);
 
   return { ok: true, counted: !isBot };
@@ -162,18 +173,13 @@ export async function realtimeSnapshot(storeId?: string | null): Promise<Realtim
   const window5 = new Date(now - ABANDON_AFTER_MS).toISOString();
   const funnelWindow = new Date(now - FUNNEL_WINDOW_MS).toISOString();
 
-  let query = supabaseAdmin
-    .from("presence_sessions")
-    .select("session_id, state, last_seen_at, cart_opened_at, checkout_viewed_at")
-    .eq("is_bot", false)
-    .gte("last_seen_at", funnelWindow)
-    .limit(20000);
-  if (storeId) query = query.eq("store_id", storeId);
-
-  const { data, error } = await query;
+  const { data, error } = await rows<Row<"presence_sessions">>(sql`
+    SELECT session_id, state, last_seen_at, cart_opened_at, checkout_viewed_at
+    FROM presence_sessions WHERE is_bot = false AND last_seen_at >= ${funnelWindow}
+      ${storeId ? sql`AND store_id = ${storeId}` : sql``} LIMIT 20000`);
   if (error) console.error("[presence] snapshot failed", error.message);
 
-  const rows = (data ?? []) as Array<{
+  const sessionRows = (data ?? []) as Array<{
     session_id: string;
     state: string;
     last_seen_at: string;
@@ -188,7 +194,7 @@ export async function realtimeSnapshot(storeId?: string | null): Promise<Realtim
   const convertedSet = new Set<string>();
   const abandonedSet = new Set<string>();
 
-  for (const row of rows) {
+  for (const row of sessionRows) {
     if (row.cart_opened_at) {
       openedSet.add(row.session_id);
       if (row.checkout_viewed_at) convertedSet.add(row.session_id);
@@ -237,18 +243,15 @@ const PRUNE_WINDOW_SECONDS = 300;
 export async function prunePresence(force = false): Promise<{ pruned: boolean }> {
   try {
     if (!force) {
-      const { data, error } = await supabaseAdmin.rpc("bump_rate_limit", {
-        _bucket: "presence_prune",
-        _window_seconds: PRUNE_WINDOW_SECONDS,
-      });
+      const { data, error } = await one<{ value: number }>(sql`
+        SELECT public.bump_rate_limit(${"presence_prune"}, ${PRUNE_WINDOW_SECONDS}) AS value`);
       if (error) return { pruned: false };
-      if ((data ?? 0) !== 1) return { pruned: false };
+      if ((data?.value ?? 0) !== 1) return { pruned: false };
     }
 
-    await supabaseAdmin
-      .from("presence_sessions")
-      .delete()
-      .lt("last_seen_at", new Date(Date.now() - PRUNE_AFTER_MS).toISOString());
+    await exec(
+      sql`DELETE FROM presence_sessions WHERE last_seen_at < ${new Date(Date.now() - PRUNE_AFTER_MS).toISOString()}`,
+    );
     return { pruned: true };
   } catch (error) {
     console.error("[presence] prune failed", (error as Error).message);

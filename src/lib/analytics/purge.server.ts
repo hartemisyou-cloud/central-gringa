@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one, exec, count } from "@/lib/db/client.server";
+import type { Row } from "@/lib/db/types";
 import { recordAudit } from "@/lib/payments/audit.server";
 import { PaymentError } from "@/lib/payments/errors";
 
@@ -21,11 +22,10 @@ export type PurgePreview = {
 };
 
 async function loadStore(storeId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("stores")
-    .select("id, name, slug")
-    .eq("id", storeId)
-    .maybeSingle();
+  const { data, error } = await one<Row<"stores">>(
+    sql`SELECT id, name, slug FROM stores WHERE id = ${storeId}`,
+    true,
+  );
   if (error) throw new PaymentError("PROVIDER_ERROR", error.message);
   if (!data) throw new PaymentError("NOT_FOUND", "Store not found.");
   return data;
@@ -35,12 +35,12 @@ export async function previewAnalyticsPurge(storeId: string): Promise<PurgePrevi
   const store = await loadStore(storeId);
   const counts = await Promise.all(
     ANALYTICS_TABLES.map(async (table) => {
-      const { count, error } = await supabaseAdmin
-        .from(table)
-        .select("*", { count: "exact", head: true })
-        .eq("store_id", storeId);
+      // Identifier is selected solely from the fixed ANALYTICS_TABLES allowlist.
+      const { count: total, error } = await count(
+        sql`SELECT COUNT(*) AS count FROM ${sql(table)} WHERE store_id = ${storeId}`,
+      );
       if (error) throw new PaymentError("PROVIDER_ERROR", `${table}: ${error.message}`);
-      return { table, rows: count ?? 0 };
+      return { table, rows: total ?? 0 };
     }),
   );
   return {
@@ -68,12 +68,12 @@ export async function purgeAnalytics(storeId: string) {
   const before = await previewAnalyticsPurge(storeId);
 
   for (const table of ANALYTICS_TABLES) {
-    const { error } = await supabaseAdmin.from(table).delete().eq("store_id", storeId);
+    const { error } = await exec(sql`DELETE FROM ${sql(table)} WHERE store_id = ${storeId}`);
     if (error) throw new PaymentError("PROVIDER_ERROR", `${table}: ${error.message}`);
   }
 
   // Cache derivado: janela do prune de presença, para os cards recalcularem já.
-  await supabaseAdmin.from("rate_limit_counters").delete().eq("bucket", "presence_prune");
+  await exec(sql`DELETE FROM rate_limit_counters WHERE bucket = ${"presence_prune"}`);
 
   const deleted = Object.fromEntries(before.tables.map((t) => [t.table, t.rows]));
 

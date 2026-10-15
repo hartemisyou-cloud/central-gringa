@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows } from "@/lib/db/client.server";
 
 /**
  * Agregações de analytics de conversão. Toda consulta é obrigatoriamente
@@ -66,49 +66,35 @@ function pct(numerator: number, denominator: number): number {
 }
 
 async function fetchData(filters: AnalyticsFilters) {
-  let events = supabaseAdmin
-    .from("analytics_events")
-    .select(
-      "event_type, occurred_at, store_id, integration_id, order_id, payment_intent_id, payment_method, currency, amount_cents, country, browser, device_type, operating_system, referrer, checkout_session_id, decline_code, decline_category, source",
-    )
-    .gte("occurred_at", filters.from)
-    .lte("occurred_at", filters.to)
-    .order("occurred_at", { ascending: true })
-    .limit(50000);
+  const events = sql`SELECT event_type, occurred_at, store_id, integration_id, order_id,
+      payment_intent_id, payment_method, currency, amount_cents, country, browser,
+      device_type, operating_system, referrer, checkout_session_id, decline_code,
+      decline_category, source FROM analytics_events
+    WHERE occurred_at >= ${filters.from} AND occurred_at <= ${filters.to}
+      ${filters.storeId ? sql`AND store_id = ${filters.storeId}` : sql``}
+      ${filters.integrationId ? sql`AND integration_id = ${filters.integrationId}` : sql``}
+      ${filters.currency ? sql`AND currency = ${filters.currency}` : sql``}
+      ${filters.country ? sql`AND country = ${filters.country}` : sql``}
+      ${filters.deviceType ? sql`AND device_type = ${filters.deviceType}` : sql``}
+      ${filters.paymentMethod ? sql`AND payment_method = ${filters.paymentMethod}` : sql``}
+      ${filters.amountCents ? sql`AND amount_cents = ${filters.amountCents}` : sql``}
+    ORDER BY occurred_at ASC LIMIT 50000`;
 
-  let sessions = supabaseAdmin
-    .from("checkout_sessions")
-    .select(
-      "checkout_session_id, store_id, currency, amount_cents, country, device_type, browser, operating_system, referrer, utm_source, utm_medium, utm_campaign, status, viewed_at, started_at, attempted_at, succeeded_at",
-    )
-    .gte("first_seen_at", filters.from)
-    .lte("first_seen_at", filters.to)
-    .limit(50000);
+  const sessions = sql`SELECT checkout_session_id, store_id, currency, amount_cents,
+      country, device_type, browser, operating_system, referrer, utm_source,
+      utm_medium, utm_campaign, status, viewed_at, started_at, attempted_at, succeeded_at
+    FROM checkout_sessions WHERE first_seen_at >= ${filters.from} AND first_seen_at <= ${filters.to}
+      ${filters.storeId ? sql`AND store_id = ${filters.storeId}` : sql``}
+      ${filters.currency ? sql`AND currency = ${filters.currency}` : sql``}
+      ${filters.country ? sql`AND country = ${filters.country}` : sql``}
+      ${filters.deviceType ? sql`AND device_type = ${filters.deviceType}` : sql``}
+      ${filters.amountCents ? sql`AND amount_cents = ${filters.amountCents}` : sql``}
+    LIMIT 50000`;
 
-  if (filters.storeId) {
-    events = events.eq("store_id", filters.storeId);
-    sessions = sessions.eq("store_id", filters.storeId);
-  }
-  if (filters.integrationId) events = events.eq("integration_id", filters.integrationId);
-  if (filters.currency) {
-    events = events.eq("currency", filters.currency);
-    sessions = sessions.eq("currency", filters.currency);
-  }
-  if (filters.country) {
-    events = events.eq("country", filters.country);
-    sessions = sessions.eq("country", filters.country);
-  }
-  if (filters.deviceType) {
-    events = events.eq("device_type", filters.deviceType);
-    sessions = sessions.eq("device_type", filters.deviceType);
-  }
-  if (filters.paymentMethod) events = events.eq("payment_method", filters.paymentMethod);
-  if (filters.amountCents) {
-    events = events.eq("amount_cents", filters.amountCents);
-    sessions = sessions.eq("amount_cents", filters.amountCents);
-  }
-
-  const [{ data: eventRows }, { data: sessionRows }] = await Promise.all([events, sessions]);
+  const [{ data: eventRows }, { data: sessionRows }] = await Promise.all([
+    rows<EventRow>(events),
+    rows<SessionRow>(sessions),
+  ]);
   return {
     events: (eventRows ?? []) as EventRow[],
     sessions: (sessionRows ?? []) as SessionRow[],
@@ -222,7 +208,9 @@ export async function buildReport(filters: AnalyticsFilters) {
     return { ...stage, stepRate: pct(stage.count, previous), overallRate: pct(stage.count, views) };
   });
 
-  const wallets = ["apple_pay", "google_pay", "link", "card"].map((prefix) => walletBlock(events, prefix));
+  const wallets = ["apple_pay", "google_pay", "link", "card"].map((prefix) =>
+    walletBlock(events, prefix),
+  );
   const cardSelected = distinctSessions(events, "card_selected");
 
   const declineRows = events.filter((e) => e.event_type === "payment_failed");
@@ -259,21 +247,32 @@ export async function buildReport(filters: AnalyticsFilters) {
       attempts: distinctSessions(rows, "payment_submitted"),
       successes: countByType(rows, "payment_succeeded"),
       failures: countByType(rows, "payment_failed"),
-      conversionRate: pct(countByType(rows, "payment_succeeded"), distinctSessions(rows, "checkout_viewed")),
+      conversionRate: pct(
+        countByType(rows, "payment_succeeded"),
+        distinctSessions(rows, "checkout_viewed"),
+      ),
     }));
 
   const timings = {
     timeToCheckoutStartSec: median(
-      sessions.map((s) => seconds(s.viewed_at, s.started_at)).filter((v): v is number => v !== null),
+      sessions
+        .map((s) => seconds(s.viewed_at, s.started_at))
+        .filter((v): v is number => v !== null),
     ),
     timeToPaymentAttemptSec: median(
-      sessions.map((s) => seconds(s.started_at, s.attempted_at)).filter((v): v is number => v !== null),
+      sessions
+        .map((s) => seconds(s.started_at, s.attempted_at))
+        .filter((v): v is number => v !== null),
     ),
     timeToSuccessSec: median(
-      sessions.map((s) => seconds(s.attempted_at, s.succeeded_at)).filter((v): v is number => v !== null),
+      sessions
+        .map((s) => seconds(s.attempted_at, s.succeeded_at))
+        .filter((v): v is number => v !== null),
     ),
     medianCompletionSec: median(
-      sessions.map((s) => seconds(s.viewed_at, s.succeeded_at)).filter((v): v is number => v !== null),
+      sessions
+        .map((s) => seconds(s.viewed_at, s.succeeded_at))
+        .filter((v): v is number => v !== null),
     ),
     averageCompletionSec: (() => {
       const values = sessions
@@ -283,9 +282,13 @@ export async function buildReport(filters: AnalyticsFilters) {
     })(),
   };
 
-  const sources = [...group(sessions, (s) => s.utm_source ?? sourceFromReferrer(s.referrer)).entries()]
+  const sources = [
+    ...group(sessions, (s) => s.utm_source ?? sourceFromReferrer(s.referrer)).entries(),
+  ]
     .map(([label, rows]) => {
-      const attempts = rows.filter((r) => r.status === "ATTEMPTED" || r.status === "SUCCEEDED").length;
+      const attempts = rows.filter(
+        (r) => r.status === "ATTEMPTED" || r.status === "SUCCEEDED",
+      ).length;
       const successes = rows.filter((r) => r.status === "SUCCEEDED").length;
       return {
         label,
@@ -381,7 +384,8 @@ function buildInsights(input: {
   const apple = input.wallets.find((w) => w.method === "apple_pay");
   const card = input.wallets.find((w) => w.method === "card");
   if (apple && card && apple.selected >= MIN_SAMPLE && card.selected >= MIN_SAMPLE) {
-    const delta = Math.round((apple.conversionAfterSelection - card.conversionAfterSelection) * 10) / 10;
+    const delta =
+      Math.round((apple.conversionAfterSelection - card.conversionAfterSelection) * 10) / 10;
     if (Math.abs(delta) >= 5) {
       out.push({
         severity: "info",
@@ -446,7 +450,9 @@ export async function exportCsv(filters: AnalyticsFilters): Promise<string> {
   ];
   const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
   const lines = events.map((event) =>
-    headers.map((header) => escape((event as unknown as Record<string, unknown>)[header])).join(","),
+    headers
+      .map((header) => escape((event as unknown as Record<string, unknown>)[header]))
+      .join(","),
   );
   return [headers.join(","), ...lines].join("\n");
 }
