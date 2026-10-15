@@ -4,10 +4,10 @@
 hopehumanfoundation.org (user picks campaign + amount, clicks Donate)
   └─ same-tab form POST https://hopehumanbooks.com/donations/start
        └─ 303 → https://hopehumanbooks.com/donations/pay/<publicToken>
-            └─ 303 → official Stripe-hosted Checkout (checkout.stripe.com)
+            └─ 200 minimal Central (Books) document → immediate navigation → official Stripe-hosted Checkout (checkout.stripe.com)
 ```
 
-No extra page and no second click. `/donations/pay/<token>` stays the owner of the Session and keeps every readiness gate.
+No second click. `/donations/pay/<token>` returns a tiny Books-served document (`<meta name="referrer" content="no-referrer">`, nonce-CSP inline `location.replace(<persisted, re-validated checkout.stripe.com URL>)`, `<noscript>` refresh 0, accessible fallback link `rel="noreferrer noopener"`). No timer, no Stripe.js, no Session creation in this GET, no target taken from the request. Gate failures / non-PENDING / expired still `303` to the receipt. `/donations/pay/<token>` stays the owner of the Session and keeps every readiness gate.
 
 ## Request
 - `POST /donations/start`, `Content-Type: application/x-www-form-urlencoded`, exactly one field `payload` (JSON), body ≤ 8 KiB, enforced while streaming (reading is cancelled once the limit is exceeded); a malformed or oversize `Content-Length` is rejected with 400 before any store lookup, rate limit or creation.
@@ -37,3 +37,10 @@ Uses the same server-only `createDonation` (schema, fingerprint idempotency, col
   <button type="submit">Donate</button>
 </form>
 ```
+
+## Referrer and technical URLs (privacy / data minimization)
+- The production edge rewrites the `Referrer-Policy` response header to `strict-origin-when-cross-origin` (the app sends `no-referrer`; observed preview vs production). The effective `no-referrer` for the Central → Stripe navigation therefore comes from the meta tag in the Books document, not the header. Headers `no-store`, `nosniff` and `no-referrer` are still sent.
+- The request *into* `/donations/start` / `/donations/pay` still carries the Foundation page's referrer under the Foundation site's own policy; this project does not change that.
+- New Sessions send only Books URLs: logo `https://hopehumanbooks.com/brand/hope-human-logo.png` (byte-identical copy of the original Foundation logo, SHA-256 `4b163c39…665bda`) in `branding_settings.logo` and `product_data.images`; success/cancel = `<central origin>/donations/receipt/<token>`. No marketing attribution is sent to Stripe.
+- Limitation: this minimizes forwarded data; it does NOT prevent Stripe from associating the sites. The transaction stays openly a donation to Hope Human Foundation (`purpose=donation`, `submit_type=donate`, recipient name, campaign metadata).
+- Only NEW Sessions are affected. Stored session requests/idempotency keys and historical records are not rewritten or deleted (an already-stored request keeps its old logo URL).
