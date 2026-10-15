@@ -509,6 +509,8 @@ export type Database = {
           created_at: string
           ends_at: string | null
           id: string
+          manifest_source: string | null
+          manifest_version: string | null
           release_mode: string
           review_status: string
           reviewed_at: string | null
@@ -524,6 +526,8 @@ export type Database = {
           created_at?: string
           ends_at?: string | null
           id?: string
+          manifest_source?: string | null
+          manifest_version?: string | null
           release_mode?: string
           review_status?: string
           reviewed_at?: string | null
@@ -539,6 +543,8 @@ export type Database = {
           created_at?: string
           ends_at?: string | null
           id?: string
+          manifest_source?: string | null
+          manifest_version?: string | null
           release_mode?: string
           review_status?: string
           reviewed_at?: string | null
@@ -681,6 +687,8 @@ export type Database = {
           donations_enabled: boolean
           fee_coverage_policy: string | null
           id: string
+          manual_payout_schedule_confirmed: boolean
+          max_hold_days: number | null
           negative_balance_liability: string | null
           ngo_fee_funding_cents: number
           platform_country: string | null
@@ -706,6 +714,8 @@ export type Database = {
           donations_enabled?: boolean
           fee_coverage_policy?: string | null
           id?: string
+          manual_payout_schedule_confirmed?: boolean
+          max_hold_days?: number | null
           negative_balance_liability?: string | null
           ngo_fee_funding_cents?: number
           platform_country?: string | null
@@ -731,6 +741,8 @@ export type Database = {
           donations_enabled?: boolean
           fee_coverage_policy?: string | null
           id?: string
+          manual_payout_schedule_confirmed?: boolean
+          max_hold_days?: number | null
           negative_balance_liability?: string | null
           ngo_fee_funding_cents?: number
           platform_country?: string | null
