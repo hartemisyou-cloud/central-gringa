@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows, one, exec } from "@/lib/db/client.server";
+import type { Row } from "@/lib/db/types";
 import {
   getOrderAttributionRecord,
   type OrderAttributionRecord,
@@ -53,7 +54,7 @@ export function mapPaymentMethod(method: string | null): string {
     case "pix":
       return "pix";
     case "boleto":
-									      return "boleto";
+      return "boleto";
     default:
       // Card é o único método habilitado hoje (incl. Apple/Google Pay via card).
       return "credit_card";
@@ -78,14 +79,32 @@ export interface OrderContext {
   items: Array<{ id: string; name: string; quantity: number; priceInCents: number }>;
 }
 
-async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select(
-      "id, store_id, order_number, currency, total_cents, status, created_at, paid_at, customers:customer_id(email, phone, first_name, last_name, document), addresses:shipping_address_id(country), order_items(product_id, product_name, quantity, unit_price_cents)",
-    )
-    .eq("id", orderId)
-    .maybeSingle();
+type JoinedOrder = Row<"orders"> & {
+  customers: Pick<
+    Row<"customers">,
+    "email" | "phone" | "first_name" | "last_name" | "document"
+  > | null;
+  addresses: Pick<Row<"addresses">, "country"> | null;
+  order_items: Pick<
+    Row<"order_items">,
+    "product_id" | "product_name" | "quantity" | "unit_price_cents"
+  >[];
+};
+
+async function loadOrderContext(orderId: string, storeId: string): Promise<OrderContext | null> {
+  const { data: order } = await one<JoinedOrder>(
+    sql`
+    SELECT o.id, o.store_id, o.order_number, o.currency, o.total_cents, o.status, o.created_at, o.paid_at,
+      CASE WHEN c.id IS NULL THEN NULL ELSE jsonb_build_object('email', c.email, 'phone', c.phone,
+        'first_name', c.first_name, 'last_name', c.last_name, 'document', c.document) END AS customers,
+      CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object('country', a.country) END AS addresses,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('product_id', i.product_id, 'product_name', i.product_name,
+        'quantity', i.quantity, 'unit_price_cents', i.unit_price_cents)) FROM order_items i
+        WHERE i.order_id = o.id), '[]'::jsonb) AS order_items
+    FROM orders o LEFT JOIN customers c ON c.id = o.customer_id LEFT JOIN addresses a ON a.id = o.shipping_address_id
+    WHERE o.id = ${orderId} AND o.store_id = ${storeId}`,
+    true,
+  );
   if (!order) return null;
 
   const customer = order.customers as {
@@ -97,14 +116,10 @@ async function loadOrderContext(orderId: string): Promise<OrderContext | null> {
   } | null;
   const address = order.addresses as { country?: string | null } | null;
 
-  const { data: payment } = await supabaseAdmin
-    .from("payments")
-    .select("payment_method")
-    .eq("order_id", order.id)
-    .eq("status", "SUCCEEDED")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: payment } = await one<Row<"payments">>(
+    sql`SELECT payment_method FROM payments WHERE order_id = ${order.id} AND status = ${"SUCCEEDED"} ORDER BY created_at DESC LIMIT 1`,
+    true,
+  );
 
   const name = [customer?.first_name, customer?.last_name].filter(Boolean).join(" ").trim();
 
@@ -151,7 +166,16 @@ export function buildSalePayload(
     utm_term: attribution.utm_term ?? null,
   };
   // Identificadores de clique já capturados internamente, quando existirem.
-  for (const key of ["gclid", "fbclid", "ttclid", "msclkid", "gbraid", "wbraid", "fbp", "fbc"] as const) {
+  for (const key of [
+    "gclid",
+    "fbclid",
+    "ttclid",
+    "msclkid",
+    "gbraid",
+    "wbraid",
+    "fbp",
+    "fbc",
+  ] as const) {
     if (attribution[key]) tracking[key] = attribution[key] ?? null;
   }
 
@@ -190,10 +214,7 @@ export function buildSalePayload(
   };
 }
 
-async function postToUtmify(
-  apiToken: string,
-  body: unknown,
-): Promise<UtmifySendResult> {
+async function postToUtmify(apiToken: string, body: unknown): Promise<UtmifySendResult> {
   let response: Response;
   try {
     response = await fetch(UTMIFY_ORDERS_URL, {
@@ -225,19 +246,16 @@ export async function sendSaleForOrder(input: {
     const settings = await getUtmifySettingsWithToken(input.storeId);
     if (!settings) return { ok: true, skipped: "utmify_disabled" };
 
-    const context = await loadOrderContext(input.orderId);
+    const context = await loadOrderContext(input.orderId, input.storeId);
     if (!context) return { ok: true, skipped: "order_not_found" };
     // Só venda efetivamente aprovada. Recusado/cancelado/criado nunca chega aqui.
     if (context.status !== "PAID") return { ok: true, skipped: "order_not_paid" };
 
     // Idempotência: uma linha por (store_id, order_id, event_status).
-    const { data: existing } = await supabaseAdmin
-      .from("utmify_events")
-      .select("id, status, attempt_count")
-      .eq("store_id", input.storeId)
-      .eq("order_id", input.orderId)
-      .eq("event_status", "paid")
-      .maybeSingle();
+    const { data: existing } = await one<Row<"utmify_events">>(
+      sql`SELECT id, status, attempt_count FROM utmify_events WHERE store_id = ${input.storeId} AND order_id = ${input.orderId} AND event_status = ${"paid"}`,
+      true,
+    );
 
     if (existing?.status === "SENT") return { ok: true, skipped: "already_sent" };
     if (existing?.status === "FAILED_PERMANENT" && existing.attempt_count >= MAX_ATTEMPTS) {
@@ -246,17 +264,10 @@ export async function sendSaleForOrder(input: {
 
     let rowId = existing?.id ?? null;
     if (!rowId) {
-      const { data: inserted } = await supabaseAdmin
-        .from("utmify_events")
-        .insert({
-          store_id: input.storeId,
-          order_id: input.orderId,
-          order_number: context.orderNumber,
-          event_status: "paid",
-          status: "PENDING",
-        })
-        .select("id")
-        .maybeSingle();
+      const { data: inserted } = await one<{ id: string }>(
+        sql`INSERT INTO utmify_events (store_id, order_id, order_number, event_status, status) VALUES (${input.storeId}, ${input.orderId}, ${context.orderNumber}, ${"paid"}, ${"PENDING"}) RETURNING id`,
+        true,
+      );
       // Corrida entre workers: o índice único garante um único envio.
       if (!inserted) return { ok: true, skipped: "in_flight" };
       rowId = inserted.id;
@@ -275,19 +286,14 @@ export async function sendSaleForOrder(input: {
     const result = await postToUtmify(settings.apiToken, payload);
     const attempt = (existing?.attempt_count ?? 0) + 1;
 
-    await supabaseAdmin
-      .from("utmify_events")
-      .update({
-        status: result.ok
-          ? "SENT"
-          : result.permanent || attempt >= MAX_ATTEMPTS
-            ? "FAILED_PERMANENT"
-            : "FAILED",
-        attempt_count: attempt,
-        http_status: result.httpStatus ?? null,
-        last_error: result.ok ? null : result.error,
-      })
-      .eq("id", rowId);
+    const status = result.ok
+      ? "SENT"
+      : result.permanent || attempt >= MAX_ATTEMPTS
+        ? "FAILED_PERMANENT"
+        : "FAILED";
+    await exec(
+      sql`UPDATE utmify_events SET status = ${status}, attempt_count = ${attempt}, http_status = ${result.httpStatus ?? null}, last_error = ${result.ok ? null : result.error} WHERE id = ${rowId}`,
+    );
 
     await recordUtmifyHealth(input.storeId, {
       ok: result.ok,
@@ -308,16 +314,12 @@ export async function sendSaleForOrder(input: {
 
 /** Reenvio manual dos envios pendentes/falhos (nunca duplica: reusa a mesma linha). */
 export async function retryFailedUtmifyEvents(storeId: string): Promise<{ retried: number }> {
-  const { data: rows } = await supabaseAdmin
-    .from("utmify_events")
-    .select("order_id, attempt_count")
-    .eq("store_id", storeId)
-    .in("status", ["PENDING", "FAILED"])
-    .order("created_at", { ascending: true })
-    .limit(20);
+  const { data: pendingRows } = await rows<Row<"utmify_events">>(
+    sql`SELECT order_id, attempt_count FROM utmify_events WHERE store_id = ${storeId} AND status IN (${"PENDING"}, ${"FAILED"}) ORDER BY created_at ASC LIMIT 20`,
+  );
 
   let retried = 0;
-  for (const row of rows ?? []) {
+  for (const row of pendingRows ?? []) {
     if (!row.order_id) continue;
     await new Promise((resolve) => setTimeout(resolve, Math.min(row.attempt_count, 3) * 300));
     await sendSaleForOrder({ orderId: row.order_id, storeId });
@@ -396,20 +398,39 @@ export async function resendUtmifySaleForOrderNumber(orderNumber: string): Promi
   eventStatus?: string | null;
   attemptCount?: number | null;
 }> {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select("id, store_id, status")
-    .eq("order_number", orderNumber)
-    .maybeSingle();
+  const { data: order } = await one<Row<"orders">>(
+    sql`SELECT id, store_id, status FROM orders WHERE order_number = ${orderNumber}`,
+    true,
+  );
   if (!order) return { ok: false, message: "Order not found.", orderNumber };
+  if (order.status !== "PAID") {
+    return {
+      ok: false,
+      message: "Only paid orders can be sent to UTMify.",
+      orderNumber,
+      orderStatus: order.status,
+    };
+  }
 
   const settings = await getUtmifySettingsWithToken(order.store_id);
   if (!settings) {
-    return { ok: false, message: "UTMify disabled or missing token for the order's store.", orderNumber };
+    return {
+      ok: false,
+      message: "UTMify disabled or missing token for the order's store.",
+      orderNumber,
+    };
   }
 
-  const context = await loadOrderContext(order.id);
+  const context = await loadOrderContext(order.id, order.store_id);
   if (!context) return { ok: false, message: "Order context unavailable.", orderNumber };
+  if (context.status !== "PAID") {
+    return {
+      ok: false,
+      message: "Only paid orders can be sent to UTMify.",
+      orderNumber,
+      orderStatus: context.status,
+    };
+  }
 
   const attributionRecord = await getOrderAttributionRecord(order.id).catch(
     () => ({}) as OrderAttributionRecord,
@@ -436,39 +457,24 @@ export async function resendUtmifySaleForOrderNumber(orderNumber: string): Promi
     responseBody = sanitizeError((error as Error).message);
   }
 
-  const { data: existing } = await supabaseAdmin
-    .from("utmify_events")
-    .select("id, attempt_count")
-    .eq("store_id", order.store_id)
-    .eq("order_id", order.id)
-    .eq("event_status", "paid")
-    .maybeSingle();
+  const { data: existing } = await one<Row<"utmify_events">>(
+    sql`SELECT id, attempt_count FROM utmify_events WHERE store_id = ${order.store_id} AND order_id = ${order.id} AND event_status = ${"paid"}`,
+    true,
+  );
 
   const attempt = (existing?.attempt_count ?? 0) + 1;
-  const permanent = httpStatus !== null && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429;
+  const permanent =
+    httpStatus !== null && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429;
   const eventStatus = ok ? "SENT" : permanent ? "FAILED_PERMANENT" : "FAILED";
 
   if (existing?.id) {
-    await supabaseAdmin
-      .from("utmify_events")
-      .update({
-        status: eventStatus,
-        attempt_count: attempt,
-        http_status: httpStatus,
-        last_error: ok ? null : responseBody,
-      })
-      .eq("id", existing.id);
+    await exec(
+      sql`UPDATE utmify_events SET status = ${eventStatus}, attempt_count = ${attempt}, http_status = ${httpStatus}, last_error = ${ok ? null : responseBody} WHERE id = ${existing.id}`,
+    );
   } else {
-    await supabaseAdmin.from("utmify_events").insert({
-      store_id: order.store_id,
-      order_id: order.id,
-      order_number: context.orderNumber,
-      event_status: "paid",
-      status: eventStatus,
-      attempt_count: attempt,
-      http_status: httpStatus,
-      last_error: ok ? null : responseBody,
-    });
+    await exec(
+      sql`INSERT INTO utmify_events (store_id, order_id, order_number, event_status, status, attempt_count, http_status, last_error) VALUES (${order.store_id}, ${order.id}, ${context.orderNumber}, ${"paid"}, ${eventStatus}, ${attempt}, ${httpStatus}, ${ok ? null : responseBody})`,
+    );
   }
 
   await recordUtmifyHealth(order.store_id, {

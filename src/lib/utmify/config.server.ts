@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows, one, exec } from "@/lib/db/client.server";
+import type { Row } from "@/lib/db/types";
 import { decryptSecret, encryptSecret } from "@/lib/payments/crypto.server";
 
 /**
@@ -42,16 +43,31 @@ export interface UtmifySettingsSummary {
   connectionSuccessAt: string | null;
 }
 
+const HEALTH_COLUMNS = [
+  "last_success_at",
+  "last_error",
+  "last_error_at",
+  "last_order_number",
+] as const;
+const SETTINGS_COLUMNS = [
+  "store_id",
+  "webhook_id",
+  "enabled",
+  "is_test",
+  "api_token_ciphertext",
+  "api_token_last4",
+  "last_error",
+  "last_error_at",
+] as const;
 
 /** Config completa (token decifrado) — uso exclusivo do servidor. */
 export async function getUtmifySettingsWithToken(
   storeId: string,
 ): Promise<UtmifySettingsWithToken | null> {
-  const { data } = await supabaseAdmin
-    .from("utmify_settings")
-    .select("store_id, webhook_id, enabled, is_test, api_token_ciphertext")
-    .eq("store_id", storeId)
-    .maybeSingle();
+  const { data } = await one<Row<"utmify_settings">>(
+    sql`SELECT store_id, webhook_id, enabled, is_test, api_token_ciphertext FROM utmify_settings WHERE store_id = ${storeId}`,
+    true,
+  );
   if (!data?.enabled || !data.api_token_ciphertext) return null;
   let apiToken: string;
   try {
@@ -78,7 +94,8 @@ export async function recordUtmifyHealth(
         last_error_at: new Date().toISOString(),
       };
   if (result.ok && result.orderNumber) patch["last_order_number"] = result.orderNumber;
-  await supabaseAdmin.from("utmify_settings").update(patch as never).eq("store_id", storeId);
+  const columns = HEALTH_COLUMNS.filter((column) => Object.hasOwn(patch, column));
+  await exec(sql`UPDATE utmify_settings SET ${sql(patch, ...columns)} WHERE store_id = ${storeId}`);
 }
 
 /**
@@ -88,13 +105,13 @@ export async function recordUtmifyHealth(
  * NUNCA marca o painel de vendas como erro. Leitura pura — não envia nada.
  */
 export async function listUtmifySettings(): Promise<UtmifySettingsSummary[]> {
-  const { data: stores } = await supabaseAdmin.from("stores").select("id, name, slug").order("name");
-  const { data: settings } = await supabaseAdmin.from("utmify_settings").select("*");
-  const { data: events } = await supabaseAdmin
-    .from("utmify_events")
-    .select("store_id, status, order_number, last_error, created_at, updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(1000);
+  const { data: stores } = await rows<Row<"stores">>(
+    sql`SELECT id, name, slug FROM stores ORDER BY name ASC`,
+  );
+  const { data: settings } = await rows<Row<"utmify_settings">>(sql`SELECT * FROM utmify_settings`);
+  const { data: events } = await rows<Row<"utmify_events">>(
+    sql`SELECT store_id, status, order_number, last_error, created_at, updated_at FROM utmify_events ORDER BY updated_at DESC LIMIT 1000`,
+  );
 
   return (stores ?? []).map((store) => {
     const row = (settings ?? []).find((entry) => entry.store_id === store.id);
@@ -107,17 +124,18 @@ export async function listUtmifySettings(): Promise<UtmifySettingsSummary[]> {
     const lastFailed = failed[0];
     const configured = Boolean(row?.api_token_ciphertext);
 
-    const status: UtmifySettingsSummary["status"] = !row || !row.enabled
-      ? configured
-        ? "DISABLED"
-        : "NOT_CONFIGURED"
-      : !configured
-        ? "NOT_CONFIGURED"
-        : lastFailed && (!lastSent || (lastFailed.updated_at ?? "") > (lastSent.updated_at ?? ""))
-          ? "ERROR"
-          : lastSent
-            ? "CONNECTED"
-            : "CONFIGURED";
+    const status: UtmifySettingsSummary["status"] =
+      !row || !row.enabled
+        ? configured
+          ? "DISABLED"
+          : "NOT_CONFIGURED"
+        : !configured
+          ? "NOT_CONFIGURED"
+          : lastFailed && (!lastSent || (lastFailed.updated_at ?? "") > (lastSent.updated_at ?? ""))
+            ? "ERROR"
+            : lastSent
+              ? "CONNECTED"
+              : "CONFIGURED";
 
     const connectionStatus: UtmifySettingsSummary["connectionStatus"] = !row
       ? "UNKNOWN"
@@ -150,7 +168,6 @@ export async function listUtmifySettings(): Promise<UtmifySettingsSummary[]> {
   });
 }
 
-
 export async function saveUtmifySettings(input: {
   storeId: string;
   webhookId: string | null;
@@ -170,5 +187,7 @@ export async function saveUtmifySettings(input: {
     patch["last_error"] = null;
     patch["last_error_at"] = null;
   }
-  await supabaseAdmin.from("utmify_settings").upsert(patch as never, { onConflict: "store_id" });
+  const columns = SETTINGS_COLUMNS.filter((column) => Object.hasOwn(patch, column));
+  await exec(sql`INSERT INTO utmify_settings ${sql(patch, ...columns)}
+    ON CONFLICT (store_id) DO UPDATE SET ${sql(patch, ...columns)}`);
 }
