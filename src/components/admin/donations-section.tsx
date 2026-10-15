@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type S = Record<string, any>;
+type S = any;
 
 const BOOL_GATES: Array<[string, string]> = [
   ["stripe_fundraising_approved", "Stripe approved this account for fundraising (confirmed outside this app)"],

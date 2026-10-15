@@ -42,7 +42,7 @@ export const adminDonationOverview = createServerFn({ method: "GET" }).handler(a
     gaps: settingsGaps(settings, integration?.status === "ACTIVE"),
     campaigns: (campaigns ?? []).map((c: Record<string, unknown>) => ({
       ...c,
-      gaps: campaignGaps(c as never, (benById.get(c.beneficiary_id as string) as never) ?? null, settings),
+      gaps: campaignGaps(c as never, (benById.get(c["beneficiary_id"] as string) as never) ?? null, settings),
     })),
     beneficiaries: beneficiaries ?? [],
     donations: donations ?? [],

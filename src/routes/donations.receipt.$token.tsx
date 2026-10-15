@@ -40,7 +40,7 @@ function Receipt() {
   if (!d) {
     return <main className="mx-auto max-w-xl px-5 py-16"><h1 className="text-2xl font-semibold">Donation not found</h1></main>;
   }
-  const copy = STATUS_COPY[d.status] ?? STATUS_COPY.PENDING!;
+  const copy = STATUS_COPY[d.status] ?? STATUS_COPY["PENDING"]!;
   return (
     <main className="mx-auto max-w-xl space-y-6 px-5 py-16">
       <p className="text-sm uppercase tracking-wide text-muted-foreground">Donation · {d.donationNumber}</p>
