@@ -1,7 +1,7 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one } from "@/lib/db/client.server";
 import { PaymentError } from "./errors";
 import type { StoreRow } from "./store-auth.server";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database } from "@/lib/db/types";
 
 /**
  * Camada Checkout V2 (PREVIEW/TESTE) — aditiva e isolada.
@@ -21,12 +21,10 @@ export async function bootstrapCheckoutV2(input: { store: StoreRow; sku: string 
   const sku = input.sku.trim();
   if (!sku) throw new PaymentError("INVALID_INPUT", "SKU is required.");
 
-  const { data: product } = await supabaseAdmin
-    .from("products")
-    .select("id, name, sku, price_cents, currency, stock, reserved_stock, active")
-    .eq("store_id", input.store.id)
-    .eq("sku", sku)
-    .maybeSingle();
+  const { data: product } = await one<Database["public"]["Tables"]["products"]["Row"]>(sql`
+    select id, name, sku, price_cents, currency, stock, reserved_stock, active
+    from public.products where store_id = ${input.store.id} and sku = ${sku}
+  `, true);
 
   if (!product) throw new PaymentError("SKU_NOT_FOUND", "SKU not found for this store.");
 
@@ -40,11 +38,10 @@ export async function bootstrapCheckoutV2(input: { store: StoreRow; sku: string 
   if (!input.store.stripe_integration_id) {
     throw new PaymentError("CONFIG_ERROR", "Store has no payment integration configured.");
   }
-  const { data: integrationRow } = await supabaseAdmin
-    .from("stripe_integrations")
-    .select("id, status, environment, publishable_key")
-    .eq("id", input.store.stripe_integration_id)
-    .maybeSingle();
+  const { data: integrationRow } = await one<Pick<IntegrationRow, "id" | "status" | "environment" | "publishable_key">>(sql`
+    select id, status, environment, publishable_key from public.stripe_integrations
+    where id = ${input.store.stripe_integration_id}
+  `, true);
 
   const integration = integrationRow as Pick<
     IntegrationRow,
@@ -104,22 +101,16 @@ function normalizeStatusV2(internal: string): CheckoutV2Status {
  * O webhook Stripe existente continua sendo a única fonte de atualização.
  */
 export async function getCheckoutV2Status(input: { store: StoreRow; publicToken: string }) {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select("id, order_number, status, currency, total_cents")
-    .eq("public_token", input.publicToken)
-    .eq("store_id", input.store.id) // isolamento entre lojas (anti-IDOR)
-    .maybeSingle();
+  const { data: order } = await one<Database["public"]["Tables"]["orders"]["Row"]>(sql`
+    select id, order_number, status, currency, total_cents from public.orders
+    where public_token = ${input.publicToken} and store_id = ${input.store.id}
+  `, true);
 
   if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
 
-  const { data: payment } = await supabaseAdmin
-    .from("payments")
-    .select("status")
-    .eq("order_id", order.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: payment } = await one<{ status: string }>(sql`
+    select status from public.payments where order_id = ${order.id} order by created_at desc limit 1
+  `, true);
 
   return {
     orderNumber: order.order_number,

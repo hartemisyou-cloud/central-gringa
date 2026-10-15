@@ -1,6 +1,7 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one } from "@/lib/db/client.server";
+import { get } from "@vercel/blob";
 import { PaymentError } from "./errors";
-import { EBOOK_BUCKET, EBOOK_PREFIX, workById, worksForSkus, type HhbWork } from "@/lib/catalog/hhb";
+import { EBOOK_PREFIX, workById, worksForSkus, type HhbWork } from "@/lib/catalog/hhb";
 
 /**
  * Ebook fulfillment. Downloads are authorized ONLY by the order's database
@@ -26,11 +27,15 @@ export function deliverableWorks(status: string, skus: string[]): HhbWork[] {
 }
 
 async function loadOrder(publicToken: string) {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select("id, status, order_number, order_items(sku)")
-    .eq("public_token", publicToken)
-    .maybeSingle();
+  const { data: order, error } = await one<{
+    id: string; status: string; order_number: string; order_items: { sku: string }[];
+  }>(sql`
+    SELECT o.id, o.status, o.order_number,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('sku', i.sku))
+        FROM public.order_items i WHERE i.order_id = o.id), '[]'::jsonb) AS order_items
+    FROM public.orders o WHERE o.public_token = ${publicToken}
+  `, true);
+  if (error) throw new PaymentError("CONFIG_ERROR", "Order temporarily unavailable.");
   if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
   return order;
 }
@@ -71,11 +76,14 @@ export async function downloadWork(publicToken: string, workId: string): Promise
     );
   }
   const work = workById(workId)!;
-  const { data, error } = await supabaseAdmin.storage
-    .from(EBOOK_BUCKET)
-    .download(`${EBOOK_PREFIX}${work.file}`);
-  if (error || !data) throw new PaymentError("CONFIG_ERROR", "File temporarily unavailable.");
-  return new Response(data.stream(), {
+  let data;
+  try {
+    data = await get(`${EBOOK_PREFIX}${work.file}`, { access: "private" });
+  } catch {
+    throw new PaymentError("CONFIG_ERROR", "File temporarily unavailable.");
+  }
+  if (data?.statusCode !== 200) throw new PaymentError("CONFIG_ERROR", "File temporarily unavailable.");
+  return new Response(data.stream, {
     status: 200,
     headers: {
       "content-type": "text/plain; charset=utf-8",

@@ -1,7 +1,7 @@
 import { PaymentError } from "./errors";
 import { decryptSecret } from "./crypto.server";
 import { StripeService } from "./stripe.server";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database } from "@/lib/db/types";
 
 export type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"];
 export type PaymentEnvironment = Database["public"]["Enums"]["payment_environment"];

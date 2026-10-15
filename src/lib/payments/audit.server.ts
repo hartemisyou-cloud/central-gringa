@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, exec } from "@/lib/db/client.server";
 
 const FORBIDDEN_KEYS = [
   "secret",
@@ -44,14 +44,15 @@ export async function recordAudit(entry: {
   metadata?: Record<string, unknown>;
   ip?: string | null;
 }): Promise<void> {
-  const { error } = await supabaseAdmin.from("audit_logs").insert({
+  const row = {
     actor_id: entry.actorId ?? null,
     actor_email: entry.actorEmail ?? null,
     action: entry.action,
     resource_type: entry.resourceType,
     resource_id: entry.resourceId ?? null,
-    metadata: sanitizeMetadata(entry.metadata ?? {}) as never,
+    metadata: sql.json(sanitizeMetadata(entry.metadata ?? {}) as never),
     ip: entry.ip ?? null,
-  });
+  };
+  const { error } = await exec(sql`INSERT INTO public.audit_logs ${sql(row, "actor_id", "actor_email", "action", "resource_type", "resource_id", "metadata", "ip")}`);
   if (error) console.error("[audit] failed to record entry", error.message);
 }

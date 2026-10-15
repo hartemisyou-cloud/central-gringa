@@ -1,7 +1,7 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one, exec } from "@/lib/db/client.server";
 import { PaymentError } from "./errors";
 import { sha256Hex, timingSafeEqual } from "./crypto.server";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database } from "@/lib/db/types";
 
 export type StoreRow = Database["public"]["Tables"]["stores"]["Row"];
 
@@ -34,13 +34,11 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
   // nenhuma escreve — podem ir em paralelo. A ORDEM DAS VALIDAÇÕES abaixo
   // permanece exatamente a mesma de antes.
   const [{ data: keyRow }, requestedResult] = await Promise.all([
-    supabaseAdmin
-      .from("store_api_keys")
-      .select("id, store_id, key_hash, status")
-      .eq("key_id", keyId)
-      .maybeSingle(),
+    one<Pick<Database["public"]["Tables"]["store_api_keys"]["Row"], "id" | "store_id" | "key_hash" | "status">>(sql`
+      select id, store_id, key_hash, status from public.store_api_keys where key_id = ${keyId}
+    `, true),
     requestedSlug
-      ? supabaseAdmin.from("stores").select("*").eq("slug", requestedSlug).maybeSingle()
+      ? one<StoreRow>(sql`select * from public.stores where slug = ${requestedSlug}`, true)
       : Promise.resolve({ data: null }),
   ]);
 
@@ -60,12 +58,10 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
     if (!requested) throw new PaymentError("NOT_FOUND", "Store not found.");
 
     if (requested.id !== keyRow.store_id) {
-      const { data: scope } = await supabaseAdmin
-        .from("store_api_key_scopes")
-        .select("id")
-        .eq("api_key_id", keyRow.id)
-        .eq("store_id", requested.id)
-        .maybeSingle();
+      const { data: scope } = await one<{ id: string }>(sql`
+        select id from public.store_api_key_scopes
+        where api_key_id = ${keyRow.id} and store_id = ${requested.id}
+      `, true);
       if (!scope) {
         throw new PaymentError("FORBIDDEN", "Credential not authorized for this store.");
       }
@@ -73,11 +69,9 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
     // A linha completa já veio na consulta por slug: dispensa o SELECT por id.
     store = requested;
   } else {
-    const { data } = await supabaseAdmin
-      .from("stores")
-      .select("*")
-      .eq("id", keyRow.store_id)
-      .maybeSingle();
+    const { data } = await one<StoreRow>(sql`
+      select * from public.stores where id = ${keyRow.store_id}
+    `, true);
     store = data;
   }
 
@@ -90,10 +84,7 @@ export async function authenticateStoreRequest(request: Request): Promise<StoreR
   const { runInBackground } = await import("./background.server");
   await runInBackground(
     async () => {
-      await supabaseAdmin
-        .from("store_api_keys")
-        .update({ last_used_at: new Date().toISOString() })
-        .eq("id", keyRow.id);
+      await exec(sql`update public.store_api_keys set last_used_at = ${new Date().toISOString()} where id = ${keyRow.id}`);
     },
     "store_api_keys.last_used_at",
   );
@@ -107,13 +98,13 @@ export async function enforceRateLimit(
   limit: number,
   windowSeconds: number,
 ): Promise<void> {
-  const { data, error } = await supabaseAdmin.rpc("bump_rate_limit", {
-    _bucket: bucket,
-    _window_seconds: windowSeconds,
-  });
-  if (error) {
-    console.error("[rate-limit] failed", error.message);
-    return;
+  const { data: result, error } = await one<{ value: number }>(sql`
+    select public.bump_rate_limit(${bucket}, ${windowSeconds}) as value
+  `);
+  const data = result?.value;
+  if (error || !Number.isSafeInteger(data) || data! < 1) {
+    console.error("[rate-limit] unavailable", error?.code ?? "INVALID_COUNTER");
+    throw new PaymentError("CONFIG_ERROR", "Request protection is temporarily unavailable.");
   }
   if (typeof data === "number" && data > limit) {
     throw new PaymentError("RATE_LIMITED", "Too many requests. Please try again shortly.");

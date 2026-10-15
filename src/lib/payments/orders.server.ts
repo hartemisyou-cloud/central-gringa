@@ -1,15 +1,17 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one, rows, exec, count as rowCount } from "@/lib/db/client.server";
 import { PaymentError } from "./errors";
 import { buildTotals, priceItems, type PriceableProduct, type RequestedItem } from "./pricing";
 import { normalizePostalCode, resolveShippingService } from "./shipping";
 import { mapProviderStatus, providerFromIntegration } from "./provider.server";
 import { randomToken } from "./crypto.server";
 import type { StoreRow } from "./store-auth.server";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database } from "@/lib/db/types";
 import { type Attribution } from "./attribution";
 
 
 type IntegrationRow = Database["public"]["Tables"]["stripe_integrations"]["Row"];
+type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
+type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 
 export interface CustomerInput {
   firstName: string;
@@ -31,11 +33,10 @@ export interface AddressInput {
 }
 
 async function loadProducts(storeId: string, productIds: string[]): Promise<PriceableProduct[]> {
-  const { data, error } = await supabaseAdmin
-    .from("products")
-    .select("id, name, sku, price_cents, currency, stock, reserved_stock, active, weight_grams")
-    .eq("store_id", storeId)
-    .in("id", productIds);
+  const { data, error } = await rows<PriceableProduct>(sql`
+    select id, name, sku, price_cents, currency, stock, reserved_stock, active, weight_grams
+    from public.products where store_id = ${storeId} and id in ${sql(productIds)}
+  `);
   if (error) throw new PaymentError("INVALID_INPUT", "Failed to load products.");
   return data ?? [];
 }
@@ -137,20 +138,13 @@ export async function createOrder(input: {
 
   const totals = buildTotals({ ...priced, shippingCents: option.amountCents });
 
-  const { data: customer, error: customerError } = await supabaseAdmin
-    .from("customers")
-    .upsert(
-      {
-        store_id: input.store.id,
-        email: input.customer.email.toLowerCase(),
-        first_name: input.customer.firstName,
-        last_name: input.customer.lastName,
-        phone: input.customer.phone ?? null,
-      },
-      { onConflict: "store_id,email" },
-    )
-    .select("id")
-    .single();
+  const { data: customer, error: customerError } = await one<{ id: string }>(sql`
+    insert into public.customers (store_id, email, first_name, last_name, phone)
+    values (${input.store.id}, ${input.customer.email.toLowerCase()}, ${input.customer.firstName},
+      ${input.customer.lastName}, ${input.customer.phone ?? null})
+    on conflict (store_id, email) do update set first_name = excluded.first_name,
+      last_name = excluded.last_name, phone = excluded.phone returning id
+  `);
   if (customerError || !customer) {
     throw new PaymentError("INVALID_INPUT", "Could not save customer details.");
   }
@@ -159,88 +153,57 @@ export async function createOrder(input: {
   let addressId: string | null = null;
   if (input.address && !allDigital) {
     const addr = input.address;
-    const { data: address, error: addressError } = await supabaseAdmin
-      .from("addresses")
-      .insert({
-        store_id: input.store.id,
-        customer_id: customer.id,
-        recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
-        phone: input.customer.phone ?? null,
-        // Sem entrega física o código postal é apenas informativo: guarda como veio.
-        postal_code: noShipping ? addr.postalCode.trim() : normalizePostalCode(addr.postalCode),
-        street: addr.street,
-        number: addr.number ?? "",
-        complement: addr.complement ?? null,
-        district: addr.district ?? "",
-        city: addr.city,
-        state: addr.state ?? "",
-        country: addr.country ?? "US",
-      })
-      .select("id")
-      .single();
+    const { data: address, error: addressError } = await one<{ id: string }>(sql`
+      insert into public.addresses (store_id, customer_id, recipient_name, phone, postal_code,
+        street, number, complement, district, city, state, country)
+      values (${input.store.id}, ${customer.id}, ${`${input.customer.firstName} ${input.customer.lastName}`.trim()},
+        ${input.customer.phone ?? null}, ${noShipping ? addr.postalCode.trim() : normalizePostalCode(addr.postalCode)},
+        ${addr.street}, ${addr.number ?? ""}, ${addr.complement ?? null}, ${addr.district ?? ""},
+        ${addr.city}, ${addr.state ?? ""}, ${addr.country ?? "US"}) returning id
+    `);
     if (addressError || !address) {
       throw new PaymentError("INVALID_INPUT", "Invalid shipping address.");
     }
     addressId = address.id;
   }
 
-  const { data: order, error: orderError } = await supabaseAdmin
-    .from("orders")
-    .insert({
-      store_id: input.store.id,
-      order_number: orderNumber(),
-      customer_id: customer.id,
-      shipping_address_id: addressId,
-      environment: input.store.environment,
-      currency: totals.currency,
-      subtotal_cents: totals.subtotalCents,
-      shipping_cents: totals.shippingCents,
-      discount_cents: totals.discountCents,
-      total_cents: totals.totalCents,
-      shipping_method: option.label,
-      public_token: randomToken(32),
-    })
-    .select("*")
-    .single();
+  const { data: order, error: orderError } = await one<OrderRow>(sql`
+    insert into public.orders (store_id, order_number, customer_id, shipping_address_id, environment,
+      currency, subtotal_cents, shipping_cents, discount_cents, total_cents, shipping_method, public_token)
+    values (${input.store.id}, ${orderNumber()}, ${customer.id}, ${addressId}, ${input.store.environment},
+      ${totals.currency}, ${totals.subtotalCents}, ${totals.shippingCents}, ${totals.discountCents},
+      ${totals.totalCents}, ${option.label}, ${randomToken(32)}) returning *
+  `);
   if (orderError || !order) {
     throw new PaymentError("INVALID_INPUT", "Could not create the order.");
   }
 
-  const { error: itemsError } = await supabaseAdmin.from("order_items").insert(
-    totals.items.map((item) => ({
-      order_id: order.id,
-      product_id: item.productId,
-      product_name: item.productName,
-      sku: item.sku,
-      unit_price_cents: item.unitPriceCents,
-      quantity: item.quantity,
-      total_cents: item.totalCents,
-    })),
-  );
+  const itemRecords = totals.items.map((item) => ({
+    order_id: order.id, product_id: item.productId, product_name: item.productName,
+    sku: item.sku, unit_price_cents: item.unitPriceCents, quantity: item.quantity, total_cents: item.totalCents,
+  }));
+  const { error: itemsError } = await exec(sql`insert into public.order_items
+    ${sql(itemRecords, "order_id", "product_id", "product_name", "sku", "unit_price_cents", "quantity", "total_cents")}`);
   if (itemsError) {
-    await supabaseAdmin.from("orders").delete().eq("id", order.id);
+    await exec(sql`delete from public.orders where id = ${order.id}`);
     throw new PaymentError("INVALID_INPUT", "Could not save order items.");
   }
 
   // Reserva de estoque atômica (evita condição de corrida / oversell).
   for (const item of totals.items) {
-    const { data: reserved } = await supabaseAdmin.rpc("reserve_stock", {
-      _product_id: item.productId,
-      _qty: item.quantity,
-    });
+    const { data: result } = await one<{ reserved: boolean }>(sql`
+      select public.reserve_stock(${item.productId}, ${item.quantity}) as reserved
+    `);
+    const reserved = result?.reserved;
     if (reserved !== true) {
-      await supabaseAdmin.rpc("release_order_stock", { _order_id: order.id });
-      await supabaseAdmin.from("orders").delete().eq("id", order.id);
+      await exec(sql`select public.release_order_stock(${order.id})`);
+      await exec(sql`delete from public.orders where id = ${order.id}`);
       throw new PaymentError("OUT_OF_STOCK", `Insufficient stock for "${item.productName}".`);
     }
   }
-  await supabaseAdmin.from("orders").update({ stock_reserved: true }).eq("id", order.id);
-  await supabaseAdmin.from("payment_events").insert({
-    order_id: order.id,
-    type: "ORDER_CREATED",
-    message: "Order created",
-    metadata: { total_cents: totals.totalCents } as never,
-  });
+  await exec(sql`update public.orders set stock_reserved = true where id = ${order.id}`);
+  await exec(sql`insert into public.payment_events (order_id, type, message, metadata)
+    values (${order.id}, 'ORDER_CREATED', 'Order created', ${sql.json({ total_cents: totals.totalCents })})`);
 
   const { saveOrderAttribution } = await import("./attribution.server");
   const attribution = await saveOrderAttribution(order.id, input.attribution, input.clientContext);
@@ -253,11 +216,7 @@ export async function createOrder(input: {
 /** Leitura pura da integração da loja (sem validação) — permite paralelizar. */
 function fetchIntegrationForStore(store: StoreRow) {
   if (!store.stripe_integration_id) return Promise.resolve({ data: null });
-  return supabaseAdmin
-    .from("stripe_integrations")
-    .select("*")
-    .eq("id", store.stripe_integration_id)
-    .maybeSingle();
+  return one<IntegrationRow>(sql`select * from public.stripe_integrations where id = ${store.stripe_integration_id}`, true);
 }
 
 /** Validações da integração — ordem e mensagens idênticas às anteriores. */
@@ -385,23 +344,11 @@ export async function createOrderPayment(input: {
   // a ORDEM DAS VALIDAÇÕES e as mensagens de erro permanecem exatamente as mesmas.
   // A atribuição NÃO é lida aqui: ela nunca vai para o metadata da Stripe.
   const [orderResult, integrationResult, existingResult, itemsResult] = await Promise.all([
-    supabaseAdmin
-      .from("orders")
-      .select("*")
-      .eq("id", input.orderId)
-      .eq("store_id", input.store.id) // isolamento entre lojas (anti-IDOR)
-      .maybeSingle(),
+    one<OrderRow>(sql`select * from public.orders where id = ${input.orderId} and store_id = ${input.store.id}`, true),
     fetchIntegrationForStore(input.store),
-    supabaseAdmin
-      .from("payments")
-      .select("*")
-      .eq("order_id", input.orderId)
-      .in("status", ["REQUIRES_PAYMENT", "PROCESSING"])
-      .maybeSingle(),
-    supabaseAdmin
-      .from("order_items")
-      .select("product_id, product_name, sku, quantity")
-      .eq("order_id", input.orderId),
+    one<PaymentRow>(sql`select * from public.payments where order_id = ${input.orderId}
+      and status in ('REQUIRES_PAYMENT', 'PROCESSING')`, true),
+    rows<OrderItemRow>(sql`select product_id, product_name, sku, quantity from public.order_items where order_id = ${input.orderId}`),
   ]);
 
 
@@ -435,30 +382,18 @@ export async function createOrderPayment(input: {
     }
     // Valor divergente: cancela e recria numa nova tentativa.
     await provider.cancelPayment(existing.provider_payment_id).catch(() => undefined);
-    await supabaseAdmin.from("payments").update({ status: "CANCELLED" }).eq("id", existing.id);
+    await exec(sql`update public.payments set status = 'CANCELLED' where id = ${existing.id}`);
   }
 
-  const { count } = await supabaseAdmin
-    .from("payments")
-    .select("id", { count: "exact", head: true })
-    .eq("order_id", order.id);
+  const { count } = await rowCount(sql`select count(*) as count from public.payments where order_id = ${order.id}`);
   const attempt = (count ?? 0) + 1;
   const idempotencyKey = `payment:create:${order.id}:${attempt}`;
 
-  const { data: payment, error: paymentError } = await supabaseAdmin
-    .from("payments")
-    .insert({
-      store_id: order.store_id,
-      order_id: order.id,
-      integration_id: integration.id,
-      amount_cents: order.total_cents,
-      currency: order.currency,
-      environment: order.environment,
-      attempt,
-      idempotency_key: idempotencyKey,
-    })
-    .select("*")
-    .single();
+  const { data: payment, error: paymentError } = await one<PaymentRow>(sql`
+    insert into public.payments (store_id, order_id, integration_id, amount_cents, currency, environment, attempt, idempotency_key)
+    values (${order.store_id}, ${order.id}, ${integration.id}, ${order.total_cents}, ${order.currency},
+      ${order.environment}, ${attempt}, ${idempotencyKey}) returning *
+  `);
   if (paymentError || !payment) {
     throw new PaymentError("INVALID_STATE", "A payment is already in progress for this order.");
   }
@@ -475,7 +410,9 @@ export async function createOrderPayment(input: {
   const itemRows = (itemsResult.data ?? []) as OrderItemRow[];
   const productIds = [...new Set(itemRows.map((i) => i.product_id))];
   const { data: productRows } = productIds.length
-    ? await supabaseAdmin.from("products").select("id, category, weight_grams").in("id", productIds)
+    ? await rows<{ id: string; category: string | null; weight_grams: number }>(sql`
+        select id, category, weight_grams from public.products where id in ${sql(productIds)}
+      `)
     : { data: [] };
   const itemsMetadata = buildItemsMetadata(itemRows, productRows ?? []);
 
@@ -504,34 +441,21 @@ export async function createOrderPayment(input: {
         : {}),
     });
   } catch (error) {
-    await supabaseAdmin
-      .from("payments")
-      .update({ status: "FAILED", last_error: (error as Error).message })
-      .eq("id", payment.id);
+    await exec(sql`update public.payments set status = 'FAILED', last_error = ${(error as Error).message} where id = ${payment.id}`);
     throw error;
   }
 
-  await supabaseAdmin
-    .from("payments")
-    .update({
-      provider_payment_id: created.providerPaymentId,
-      status: mapProviderStatus(created.status),
-    })
-    .eq("id", payment.id);
+  await exec(sql`update public.payments set provider_payment_id = ${created.providerPaymentId},
+    status = ${mapProviderStatus(created.status)} where id = ${payment.id}`);
 
   // Pós-processamento não bloqueante: nada abaixo é pré-requisito do
   // clientSecret devolvido ao checkout. Vai para ctx.waitUntil (com await de
   // fallback fora do Worker), preservando o mesmo trabalho e a mesma ordem.
   const { runInBackground } = await import("./background.server");
   await runInBackground(async () => {
-    await supabaseAdmin.from("orders").update({ status: "PAYMENT_PROCESSING" }).eq("id", order.id);
-    await supabaseAdmin.from("payment_events").insert({
-      order_id: order.id,
-      payment_id: payment.id,
-      type: "PAYMENT_CREATED",
-      message: "Payment created at provider",
-      metadata: { attempt } as never,
-    });
+    await exec(sql`update public.orders set status = 'PAYMENT_PROCESSING' where id = ${order.id}`);
+    await exec(sql`insert into public.payment_events (order_id, payment_id, type, message, metadata)
+      values (${order.id}, ${payment.id}, 'PAYMENT_CREATED', 'Payment created at provider', ${sql.json({ attempt })})`);
 
     const { recordServerEvent } = await import("@/lib/analytics/ingest.server");
     await recordServerEvent({
@@ -563,23 +487,26 @@ export async function createOrderPayment(input: {
 
 /** Status público do pedido — sem dados internos da Stripe. */
 export async function getOrderPublicStatus(input: { store: StoreRow; publicToken: string }) {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select(
-      "id, order_number, status, currency, subtotal_cents, shipping_cents, discount_cents, total_cents, shipping_method, created_at, paid_at, order_items(product_name, quantity, unit_price_cents, total_cents), addresses:shipping_address_id(recipient_name, street, number, complement, district, city, state, postal_code)",
-    )
-    .eq("public_token", input.publicToken)
-    .eq("store_id", input.store.id)
-    .maybeSingle();
+  const { data: order } = await one<Pick<OrderRow, "id" | "order_number" | "status" | "currency" | "subtotal_cents" | "shipping_cents" | "discount_cents" | "total_cents" | "shipping_method" | "created_at" | "paid_at"> & {
+    order_items: Array<{ product_name: string; quantity: number; unit_price_cents: number; total_cents: number }>;
+    addresses: { recipient_name: string; street: string; number: string; complement: string | null; district: string; city: string; state: string; postal_code: string } | null;
+  }>(sql`
+    select o.id, o.order_number, o.status, o.currency, o.subtotal_cents, o.shipping_cents, o.discount_cents,
+      o.total_cents, o.shipping_method, o.created_at, o.paid_at,
+      coalesce((select jsonb_agg(jsonb_build_object('product_name', i.product_name, 'quantity', i.quantity,
+        'unit_price_cents', i.unit_price_cents, 'total_cents', i.total_cents))
+        from public.order_items i where i.order_id = o.id), '[]'::jsonb) as order_items,
+      case when a.id is null then null else jsonb_build_object('recipient_name', a.recipient_name,
+        'street', a.street, 'number', a.number, 'complement', a.complement, 'district', a.district,
+        'city', a.city, 'state', a.state, 'postal_code', a.postal_code) end as addresses
+    from public.orders o left join public.addresses a on a.id = o.shipping_address_id
+    where o.public_token = ${input.publicToken} and o.store_id = ${input.store.id}
+  `, true);
   if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
 
-  const { data: payment } = await supabaseAdmin
-    .from("payments")
-    .select("status, payment_method, updated_at")
-    .eq("order_id", order.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: payment } = await one<Pick<PaymentRow, "status" | "payment_method" | "updated_at">>(sql`
+    select status, payment_method, updated_at from public.payments where order_id = ${order.id} order by created_at desc limit 1
+  `, true);
 
   return { order, paymentStatus: payment?.status ?? null };
 }

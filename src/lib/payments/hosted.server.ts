@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one } from "@/lib/db/client.server";
 import { PaymentError } from "./errors";
 import { createOrderPayment } from "./orders.server";
 import type { StoreRow } from "./store-auth.server";
@@ -28,13 +28,15 @@ export async function getHostedPaymentSession(
   publicToken: string,
   options?: { storeId?: string },
 ): Promise<HostedPaymentSession> {
-  const { data: order } = await supabaseAdmin
-    .from("orders")
-    .select(
-      "id, store_id, order_number, status, total_cents, currency, order_items(product_id, product_name, quantity, total_cents)",
-    )
-    .eq("public_token", publicToken)
-    .maybeSingle();
+  const { data: order } = await one<{
+    id: string; store_id: string; order_number: string; status: string; total_cents: number; currency: string;
+    order_items: Array<{ product_id: string; product_name: string; quantity: number; total_cents: number }>;
+  }>(sql`
+    select o.id, o.store_id, o.order_number, o.status, o.total_cents, o.currency,
+      coalesce((select jsonb_agg(jsonb_build_object('product_id', i.product_id, 'product_name', i.product_name,
+        'quantity', i.quantity, 'total_cents', i.total_cents)) from public.order_items i where i.order_id = o.id), '[]'::jsonb) as order_items
+    from public.orders o where o.public_token = ${publicToken}
+  `, true);
   if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
   if (options?.storeId && order.store_id !== options.storeId) {
     throw new PaymentError("NOT_FOUND", "Order not found.");
@@ -43,11 +45,7 @@ export async function getHostedPaymentSession(
     throw new PaymentError("INVALID_STATE", "This order no longer accepts payments.");
   }
 
-  const { data: store } = await supabaseAdmin
-    .from("stores")
-    .select("*")
-    .eq("id", order.store_id)
-    .maybeSingle();
+  const { data: store } = await one<StoreRow>(sql`select * from public.stores where id = ${order.store_id}`, true);
   if (!store) throw new PaymentError("NOT_FOUND", "Store not found.");
 
   const payment = await createOrderPayment({ store: store as StoreRow, orderId: order.id });

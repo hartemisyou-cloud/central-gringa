@@ -1,12 +1,12 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, one, exec } from "@/lib/db/client.server";
 import { PaymentError } from "./errors";
 import { decryptSecret } from "./crypto.server";
 import { constructStripeEvent, type StripeEvent } from "./stripe.server";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database } from "@/lib/db/types";
 
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 
-/** Throws when a Supabase write/RPC failed so the event stays FAILED and Stripe retries. */
+/** Throws when a database write/RPC failed so the event stays FAILED and Stripe retries. */
 function must<T extends { error: { message: string } | null }>(result: T, what: string): T {
   if (result.error) throw new Error(`${what} failed: ${result.error.message}`);
   return result;
@@ -17,23 +17,22 @@ const SETTLED_AFTER_SUCCESS = new Set(["SUCCEEDED", "REFUNDED", "PARTIALLY_REFUN
 const REFUND_STATES = new Set(["REFUNDED", "PARTIALLY_REFUNDED"]);
 
 async function markOrder(orderId: string, status: Database["public"]["Enums"]["order_status"]) {
-  const patch: Database["public"]["Tables"]["orders"]["Update"] = { status };
-  if (status === "PAID") patch.paid_at = new Date().toISOString();
-  must(await supabaseAdmin.from("orders").update(patch).eq("id", orderId), "Order update");
+  const query = status === "PAID"
+    ? sql`update public.orders set status = ${status}, paid_at = ${new Date().toISOString()} where id = ${orderId}`
+    : sql`update public.orders set status = ${status} where id = ${orderId}`;
+  must(await exec(query), "Order update");
 }
 
 async function rpc(name: "commit_order_stock" | "release_order_stock", orderId: string) {
-  must(await supabaseAdmin.rpc(name, { _order_id: orderId }), `RPC ${name}`);
+  const query = name === "commit_order_stock"
+    ? sql`select public.commit_order_stock(${orderId})`
+    : sql`select public.release_order_stock(${orderId})`;
+  must(await exec(query), `RPC ${name}`);
 }
 
 async function logEvent(payment: PaymentRow, type: string, message: string) {
-  await supabaseAdmin.from("payment_events").insert({
-    payment_id: payment.id,
-    order_id: payment.order_id,
-    type,
-    message,
-    metadata: {} as never,
-  });
+  await exec(sql`insert into public.payment_events (payment_id, order_id, type, message, metadata)
+    values (${payment.id}, ${payment.order_id}, ${type}, ${message}, ${sql.json({})})`);
 }
 
 /** Mirrors the final financial state into analytics (server source). */
@@ -59,12 +58,7 @@ async function trackPayment(
 
 async function findPayment(providerPaymentId: string): Promise<PaymentRow | null> {
   const { data } = must(
-    await supabaseAdmin
-      .from("payments")
-      .select("*")
-      .eq("provider", "STRIPE")
-      .eq("provider_payment_id", providerPaymentId)
-      .maybeSingle(),
+    await one<PaymentRow>(sql`select * from public.payments where provider = 'STRIPE' and provider_payment_id = ${providerPaymentId}`, true),
     "Payment lookup",
   );
   return data;
@@ -96,19 +90,14 @@ export async function applyEvent(
       // failure) completes the remaining steps instead of being skipped.
       if (payment.status !== "SUCCEEDED") {
         must(
-          await supabaseAdmin
-            .from("payments")
-            .update({ status: "SUCCEEDED", payment_method: method?.type ?? null })
-            .eq("id", payment.id),
+          await exec(sql`update public.payments set status = 'SUCCEEDED', payment_method = ${method?.type ?? null} where id = ${payment.id}`),
           "Payment update",
         );
       }
       const { data: order } = must(
-        await supabaseAdmin
-          .from("orders")
-          .select("status, stock_committed")
-          .eq("id", payment.order_id)
-          .maybeSingle(),
+        await one<{ status: string; stock_committed: boolean }>(sql`
+          select status, stock_committed from public.orders where id = ${payment.order_id}
+        `, true),
         "Order lookup",
       );
       if (!order) throw new Error("Order missing for payment.");
@@ -146,10 +135,7 @@ export async function applyEvent(
         | { message?: string; decline_code?: string; code?: string }
         | null;
       must(
-        await supabaseAdmin
-          .from("payments")
-          .update({ status: "FAILED", last_error: lastError?.message ?? null })
-          .eq("id", payment.id),
+        await exec(sql`update public.payments set status = 'FAILED', last_error = ${lastError?.message ?? null} where id = ${payment.id}`),
         "Payment update",
       );
       await markOrder(payment.order_id, "PAYMENT_FAILED");
@@ -165,7 +151,7 @@ export async function applyEvent(
       if (!payment) return "Payment not found locally (ignored).";
       if (SETTLED_AFTER_SUCCESS.has(payment.status)) return "Late cancel after success (ignored).";
       must(
-        await supabaseAdmin.from("payments").update({ status: "CANCELLED" }).eq("id", payment.id),
+        await exec(sql`update public.payments set status = 'CANCELLED' where id = ${payment.id}`),
         "Payment update",
       );
       await markOrder(payment.order_id, "CANCELLED");
@@ -183,19 +169,13 @@ export async function applyEvent(
       const refunded = Math.max(Number(object["amount_refunded"] ?? 0), payment.refunded_cents ?? 0);
       const fully = refunded >= payment.amount_cents;
       must(
-        await supabaseAdmin
-          .from("payments")
-          .update({ refunded_cents: refunded, status: fully ? "REFUNDED" : "PARTIALLY_REFUNDED" })
-          .eq("id", payment.id),
+        await exec(sql`update public.payments set refunded_cents = ${refunded},
+          status = ${fully ? "REFUNDED" : "PARTIALLY_REFUNDED"} where id = ${payment.id}`),
         "Payment update",
       );
       await markOrder(payment.order_id, fully ? "REFUNDED" : "PARTIALLY_REFUNDED");
       must(
-        await supabaseAdmin
-          .from("refunds")
-          .update({ status: "SUCCEEDED" })
-          .eq("payment_id", payment.id)
-          .eq("status", "PENDING"),
+        await exec(sql`update public.refunds set status = 'SUCCEEDED' where payment_id = ${payment.id} and status = 'PENDING'`),
         "Refund update",
       );
       await logEvent(payment, "REFUND_APPLIED", fully ? "Full refund" : "Partial refund");
@@ -223,11 +203,9 @@ export async function processStripeWebhook(input: {
   rawBody: string;
   signature: string | null;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { data: integration } = await supabaseAdmin
-    .from("stripe_integrations")
-    .select("id, environment, webhook_secret_ciphertext")
-    .eq("id", input.integrationId)
-    .maybeSingle();
+  const { data: integration } = await one<Pick<Database["public"]["Tables"]["stripe_integrations"]["Row"], "id" | "environment" | "webhook_secret_ciphertext">>(sql`
+    select id, environment, webhook_secret_ciphertext from public.stripe_integrations where id = ${input.integrationId}
+  `, true);
 
   if (!integration?.webhook_secret_ciphertext) {
     throw new PaymentError("CONFIG_ERROR", "Webhook not configured for this integration.");
@@ -241,24 +219,22 @@ export async function processStripeWebhook(input: {
     throw new PaymentError("FORBIDDEN", "Event environment does not match the integration.");
   }
 
-  const { error: insertError } = await supabaseAdmin.from("webhook_events").insert({
-    stripe_event_id: event.id,
-    event_type: event.type,
-    livemode: event.livemode,
-    integration_id: integration.id,
-    payload_summary: { object_id: (event.data.object as { id?: string }).id ?? null } as never,
-  });
+  const { error: insertError } = await exec(sql`
+    insert into public.webhook_events (stripe_event_id, event_type, livemode, integration_id, payload_summary)
+    values (${event.id}, ${event.type}, ${event.livemode}, ${integration.id},
+      ${sql.json({ object_id: (event.data.object as { id?: string }).id ?? null })})
+  `);
 
   if (insertError) {
+    // Database outages/permission failures must never be acknowledged as duplicates.
+    if (insertError.code !== "23505") throw new Error(`Webhook recording failed: ${insertError.message}`);
     // UNIQUE(provider, stripe_event_id): seen before. Only skip when it was
     // actually processed; FAILED (or stuck RECEIVED) events are retried so a
     // transient error never loses a payment confirmation.
-    const { data: existing } = await supabaseAdmin
-      .from("webhook_events")
-      .select("processing_status, received_at")
-      .eq("provider", "STRIPE")
-      .eq("stripe_event_id", event.id)
-      .maybeSingle();
+    const { data: existing } = must(await one<{ processing_status: string; received_at: string }>(sql`
+      select processing_status, received_at from public.webhook_events
+      where provider = 'STRIPE' and stripe_event_id = ${event.id}
+    `, true), "Webhook duplicate lookup");
     if (existing?.processing_status === "PROCESSED") {
       return { status: 200, body: { received: true, duplicate: true } };
     }
@@ -267,34 +243,21 @@ export async function processStripeWebhook(input: {
       // later; if that delivery crashed, the retry (after 2 min) reprocesses it.
       return { status: 409, body: { received: true, inFlight: true } };
     }
-    await supabaseAdmin
-      .from("webhook_events")
-      .update({ processing_status: "RECEIVED", error_message: null })
-      .eq("stripe_event_id", event.id);
+    must(await exec(sql`update public.webhook_events set processing_status = 'RECEIVED', error_message = null
+      where provider = 'STRIPE' and stripe_event_id = ${event.id}`), "Webhook retry reset");
   }
 
   try {
     const message = await applyEvent(event, { integrationId: integration.id, livemode: expectedLive });
     // Written last: an event is PROCESSED only after every financial write succeeded.
-    await supabaseAdmin
-      .from("webhook_events")
-      .update({
-        processed: true,
-        processing_status: "PROCESSED",
-        processed_at: new Date().toISOString(),
-        error_message: message,
-      })
-      .eq("stripe_event_id", event.id);
+    must(await exec(sql`update public.webhook_events set processed = true, processing_status = 'PROCESSED',
+      processed_at = ${new Date().toISOString()}, error_message = ${message}
+      where provider = 'STRIPE' and stripe_event_id = ${event.id}`), "Webhook completion update");
     return { status: 200, body: { received: true } };
   } catch (error) {
-    await supabaseAdmin
-      .from("webhook_events")
-      .update({
-        processing_status: "FAILED",
-        processed_at: new Date().toISOString(),
-        error_message: (error as Error).message.slice(0, 500),
-      })
-      .eq("stripe_event_id", event.id);
+    await exec(sql`update public.webhook_events set processing_status = 'FAILED',
+      processed_at = ${new Date().toISOString()}, error_message = ${(error as Error).message.slice(0, 500)}
+      where provider = 'STRIPE' and stripe_event_id = ${event.id}`);
     throw error;
   }
 }

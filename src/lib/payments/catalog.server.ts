@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sql, rows } from "@/lib/db/client.server";
 import { PaymentError } from "./errors";
 import type { StoreRow } from "./store-auth.server";
 
@@ -17,14 +17,11 @@ export interface PublicProduct {
 
 /** Catálogo público da loja: apenas colunas seguras, sempre isolado por store_id. */
 export async function listStoreProducts(store: StoreRow): Promise<PublicProduct[]> {
-  const { data, error } = await supabaseAdmin
-    .from("products")
-    .select(
-      "id, name, slug, description, sku, price_cents, currency, stock, reserved_stock, image_url, category",
-    )
-    .eq("store_id", store.id)
-    .eq("active", true)
-    .order("name", { ascending: true });
+  const { data, error } = await rows<import("@/lib/db/types").Database["public"]["Tables"]["products"]["Row"]>(sql`
+    select id, name, slug, description, sku, price_cents, currency, stock,
+           reserved_stock, image_url, category
+    from public.products where store_id = ${store.id} and active = true order by name asc
+  `);
 
   if (error) throw new PaymentError("INVALID_INPUT", "Failed to load the catalog.");
 

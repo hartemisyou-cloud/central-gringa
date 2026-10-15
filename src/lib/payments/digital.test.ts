@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
+vi.mock("@/lib/db/client.server", () => ({ sql: {}, one: vi.fn(), rows: vi.fn(), exec: vi.fn(), count: vi.fn() }));
 
 import { buildTotals, priceItems, type PriceableProduct } from "./pricing";
 import { HHB_PRODUCTS, HHB_WORKS, worksForSkus } from "@/lib/catalog/hhb";
