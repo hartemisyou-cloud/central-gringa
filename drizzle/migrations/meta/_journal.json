@@ -29,6 +29,13 @@
       "when": 1792033255479,
       "tag": "0003_donation_financial_correctness",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792034342743,
+      "tag": "0004_donation_release_guards",
+      "breakpoints": true
     }
   ]
 }

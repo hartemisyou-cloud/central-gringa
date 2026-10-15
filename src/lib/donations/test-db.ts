@@ -18,7 +18,7 @@ export async function makeTestDb() {
   const pg = new PGlite();
   await pg.exec(STUBS);
   const dir = join(process.cwd(), "drizzle/migrations");
-  for (const f of ["0001_donations_subsystem.sql", "0002_donation_funds_constraints.sql", "0003_donation_financial_correctness.sql"]) {
+  for (const f of ["0001_donations_subsystem.sql", "0002_donation_funds_constraints.sql", "0003_donation_financial_correctness.sql", "0004_donation_release_guards.sql"]) {
     await pg.exec(readFileSync(join(dir, f), "utf8").replace(/--> statement-breakpoint/g, ""));
   }
   return { pg, client: builderClient(pg) };
