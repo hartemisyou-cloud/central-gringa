@@ -640,6 +640,8 @@ export type Database = {
           idempotency_key: string
           integration_id: string | null
           livemode: boolean | null
+          manual_reconciliation_reason: string | null
+          manual_reconciliation_required: boolean
           platform_account_id: string | null
           preview_hash: string
           resolved_at: string | null
@@ -664,6 +666,8 @@ export type Database = {
           idempotency_key: string
           integration_id?: string | null
           livemode?: boolean | null
+          manual_reconciliation_reason?: string | null
+          manual_reconciliation_required?: boolean
           platform_account_id?: string | null
           preview_hash: string
           resolved_at?: string | null
@@ -688,6 +692,8 @@ export type Database = {
           idempotency_key?: string
           integration_id?: string | null
           livemode?: boolean | null
+          manual_reconciliation_reason?: string | null
+          manual_reconciliation_required?: boolean
           platform_account_id?: string | null
           preview_hash?: string
           resolved_at?: string | null
@@ -824,6 +830,8 @@ export type Database = {
           campaign_id: string
           charge_id: string | null
           checkout_expires_at: string | null
+          checkout_first_attempt_at: string | null
+          checkout_manual_review: boolean
           checkout_session_id: string | null
           checkout_url: string | null
           created_at: string
@@ -863,6 +871,8 @@ export type Database = {
           campaign_id: string
           charge_id?: string | null
           checkout_expires_at?: string | null
+          checkout_first_attempt_at?: string | null
+          checkout_manual_review?: boolean
           checkout_session_id?: string | null
           checkout_url?: string | null
           created_at?: string
@@ -902,6 +912,8 @@ export type Database = {
           campaign_id?: string
           charge_id?: string | null
           checkout_expires_at?: string | null
+          checkout_first_attempt_at?: string | null
+          checkout_manual_review?: boolean
           checkout_session_id?: string | null
           checkout_url?: string | null
           created_at?: string
@@ -2178,6 +2190,10 @@ export type Database = {
         }
         Returns: Json
       }
+      donation_release_flag_manual: {
+        Args: { _reason: string; _release_id: string }
+        Returns: Json
+      }
       donation_release_mark: {
         Args: {
           _error: string
@@ -2199,6 +2215,10 @@ export type Database = {
           _preview_hash: string
           _source: string
         }
+        Returns: Json
+      }
+      donation_release_submit_guard: {
+        Args: { _release_id: string; _window_seconds: number }
         Returns: Json
       }
       has_role: {
