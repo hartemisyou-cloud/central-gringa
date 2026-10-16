@@ -45,6 +45,7 @@ export interface OrderContext {
   orderId: string;
   storeId: string;
   orderNumber: string;
+  environment: Row<"orders">["environment"];
   currency: string;
   valueCents: number;
   paidAt: string | null;
@@ -76,7 +77,7 @@ export async function loadOrderContext(
   const { data: order } = await one<JoinedOrder>(
     sql`
     SELECT o.id, o.store_id, o.order_number, o.currency, o.total_cents, o.paid_at,
-      o.status, o.public_token,
+      o.status, o.environment, o.public_token,
       CASE WHEN c.id IS NULL THEN NULL ELSE jsonb_build_object(
         'email', c.email, 'phone', c.phone, 'first_name', c.first_name, 'last_name', c.last_name) END AS customers,
       CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object(
@@ -109,6 +110,7 @@ export async function loadOrderContext(
     orderId: order.id,
     storeId: order.store_id,
     orderNumber: order.order_number,
+    environment: order.environment,
     currency: order.currency,
     valueCents: order.total_cents,
     paidAt: order.paid_at,
@@ -165,7 +167,7 @@ export async function buildPayload(
     userAgent?: string | null;
     /** Só usado pelo modo de teste do painel; produção nunca passa isto. */
     eventIdOverride?: string;
-    /** Só usado pelo modo de teste do painel; produção nunca passa isto. */
+    /** Pedidos TEST e testes explícitos do painel; LIVE automático omite isto. */
     testEventCode?: string | null;
   } = {},
 ) {
@@ -238,9 +240,8 @@ export async function buildPayload(
   };
   if (url) event["event_source_url"] = url;
 
-  // PRODUÇÃO: nunca enviar test_event_code. `extra.testEventCode` só é
-  // preenchido pelos botões de teste do painel admin — o caminho do webhook
-  // (sendPurchaseForOrder) nunca passa esse campo.
+  // O envio automático só passa test_event_code para pedidos TEST.
+  // Os testes explícitos do painel também podem fornecê-lo.
   const body: Record<string, unknown> = { data: [event] };
   if (extra.testEventCode) body["test_event_code"] = extra.testEventCode;
   return body;
@@ -300,6 +301,11 @@ export async function sendPurchaseForOrder(input: {
     if (!context) return { ok: true, skipped: "order_not_found" };
     // PAID é a única fonte de verdade para Purchase.
     if (context.status !== "PAID") return { ok: true, skipped: "order_not_paid" };
+    const testEventCode =
+      context.environment === "test" ? settings.testEventCode?.trim() || null : null;
+    if (context.environment === "test" && !testEventCode) {
+      return { ok: true, skipped: "test_event_code_missing" };
+    }
 
     // Idempotência: uma linha por (store_id, order_id, event_name = Purchase).
     const { data: existing } = await one<Row<"meta_conversion_events">>(
@@ -334,6 +340,7 @@ export async function sendPurchaseForOrder(input: {
     const payload = await buildPayload(context, {
       clientIp: input.clientIp ?? null,
       userAgent: input.userAgent ?? null,
+      testEventCode,
     });
     const result = await postToMeta(settings.pixelId!, settings.accessToken, payload);
 
