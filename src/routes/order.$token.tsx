@@ -11,6 +11,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/order/$token")({
+  validateSearch: (search: Record<string, unknown>): { via: string } => ({ via: typeof search["via"] === "string" ? search["via"] : "" }),
   head: () => ({
     meta: [
       { title: "Your order — Hope Human Books" },
