@@ -11,6 +11,8 @@ interface DonationOverviewDto {
   storeId: string;
   settings: SettingsDto | null;
   collectionGaps: string[];
+  collectionEnabled: boolean;
+  environment: "TEST" | "LIVE" | null;
   testFallback: boolean;
   gaps: string[];
   campaigns: (Row<"donation_campaigns"> & { gaps: string[] })[];
@@ -56,7 +58,7 @@ export const adminDonationOverview = createServerFn({ method: "GET" }).handler(
       collectionGaps,
       effectiveCollectionSettings,
       settingsGaps,
-      campaignGaps,
+      collectionCampaignGaps,
       integrationGaps,
       onboardingGaps,
       beneficiaryGaps,
@@ -102,22 +104,20 @@ export const adminDonationOverview = createServerFn({ method: "GET" }).handler(
       sql`SELECT donation_id, status, transfer_id, error FROM public.donation_releases`,
     );
     const relBy = new Map((releases ?? []).map((r) => [r.donation_id, r]));
-    const benById = new Map((beneficiaries ?? []).map((b) => [b.id, b]));
+    const collection = effectiveCollectionSettings({ store, integration, settings });
     return {
       storeId: store.id as string,
       settings,
       /** NGO collection (the only active flow). */
       collectionGaps: collectionGaps({ store, integration, settings }),
-      testFallback: effectiveCollectionSettings({ store, integration, settings }).testFallback,
+      collectionEnabled: collection.settings.donations_enabled,
+      environment: store.environment === "test" ? "TEST" : store.environment === "live" ? "LIVE" : null,
+      testFallback: collection.testFallback,
       /** Deferred transfer/payout readiness (stays OFF). */
       gaps: settingsGaps(settings, integrationGaps(integration ? { ...integration } : null)),
       campaigns: (campaigns ?? []).map((c) => ({
         ...c,
-        gaps: campaignGaps(
-          c as never,
-          (benById.get(c["beneficiary_id"] as string) as never) ?? null,
-          settings,
-        ),
+        gaps: collectionCampaignGaps(c),
       })),
       beneficiaries: (beneficiaries ?? []).map((b) => ({
         id: b["id"],
@@ -136,6 +136,29 @@ export const adminDonationOverview = createServerFn({ method: "GET" }).handler(
     };
   },
 );
+
+/** Collection pause switch only. Historical financial/approval settings are preserved. */
+export const adminSaveDonationCollection = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({ storeId: z.string().uuid(), enabled: z.boolean() }).strict().parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { sql, one, exec } = await admin();
+    const { data: store, error: storeError } = await one<Pick<Row<"stores">, "id">>(
+      sql`SELECT id FROM public.stores WHERE id = ${data.storeId}`,
+      true,
+    );
+    if (storeError) return { ok: false as const, message: "Could not verify the store." };
+    if (!store) return { ok: false as const, message: "Store not found." };
+    const { error } = await exec(sql`
+      INSERT INTO public.donation_settings (store_id, donations_enabled)
+      VALUES (${data.storeId}, ${data.enabled})
+      ON CONFLICT (store_id) DO UPDATE SET donations_enabled = EXCLUDED.donations_enabled
+    `);
+    return error
+      ? { ok: false as const, message: "Could not save donation collection." }
+      : { ok: true as const };
+  });
 
 const settingsSchema = z.object({
   storeId: z.string().uuid(),
@@ -248,14 +271,16 @@ export const adminImportCampaigns = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { sql, exec } = await admin();
-    // Import never approves: new rows stay UNREVIEWED and inactive. Existing rows keep their review state.
+    // Authenticated imports are active for collection without fabricating approval.
+    // Existing rows keep all state, including an explicit pause or review history.
     const rows = data.campaigns.map((c) => ({
       store_id: data.storeId,
       slug: c.slug,
       title: c.title,
+      active: true,
     }));
     const { error } =
-      await exec(sql`INSERT INTO public.donation_campaigns ${sql(rows, "store_id", "slug", "title")}
+      await exec(sql`INSERT INTO public.donation_campaigns ${sql(rows, "store_id", "slug", "title", "active")}
       ON CONFLICT (store_id, slug) DO NOTHING`);
     return error
       ? { ok: false as const, message: "Import failed." }
