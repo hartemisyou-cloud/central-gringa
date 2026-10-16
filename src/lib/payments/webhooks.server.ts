@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PaymentError } from "./errors";
-import { decryptSecret } from "./crypto.server";
+import { resolveIntegrationStripeCredentials } from "./stripe-credentials.server";
 import { constructStripeEvent, type StripeEvent } from "./stripe.server";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -230,17 +230,9 @@ export async function processStripeWebhook(input: {
   rawBody: string;
   signature: string | null;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { data: integration } = await supabaseAdmin
-    .from("stripe_integrations")
-    .select("id, environment, webhook_secret_ciphertext")
-    .eq("id", input.integrationId)
-    .maybeSingle();
-
-  if (!integration?.webhook_secret_ciphertext) {
-    throw new PaymentError("CONFIG_ERROR", "Webhook not configured for this integration.");
-  }
-
-  const secret = await decryptSecret(integration.webhook_secret_ciphertext);
+  const credentials = await resolveIntegrationStripeCredentials(input.integrationId, "webhook");
+  const integration = { id: credentials.integrationId, environment: credentials.environment };
+  const secret = credentials.webhookSecret;
   const event = await constructStripeEvent(input.rawBody, input.signature, secret);
 
   const expectedLive = integration.environment === "live";
