@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { purchaseProduct, safePurchaseCheckoutUrl } from "@/lib/catalog/purchase";
 import { preparePurchase } from "@/lib/purchase.functions";
+import { initPixel, trackInitiateCheckout, trackPageView } from "@/lib/meta/pixel";
 
 export const Route = createFileRoute("/comprar/$slug")({
   loader: ({ params }) => { const product = purchaseProduct(params.slug); if (!product) throw notFound(); return product; },
@@ -32,6 +33,21 @@ function PurchasePage() {
     try { token = sessionStorage.getItem(key) ?? undefined; } catch { /* Storage can be blocked. */ }
     void prepare({ data: { slug: product.slug, ...(token ? { token } : {}) } }).then((result) => {
       if (!result.ok) { setMessage(result.message); setFailed(true); return; }
+      // Meta Pixel: PageView no carregamento e InitiateCheckout quando a
+      // sessão de pagamento existe. Somente dados do livro — nada de campanha,
+      // fundação ou doação. O Purchase sai só pela Conversions API (webhook PAID).
+      if ("metaPixelId" in result && result.metaPixelId) {
+        initPixel(result.metaPixelId);
+        trackPageView();
+        if ("url" in result && result.url && "product" in result && result.product) {
+          trackInitiateCheckout({
+            value: Number((result.product.priceCents / 100).toFixed(2)),
+            currency: result.product.currency,
+            contents: [{ id: result.product.id, quantity: 1, item_price: Number((result.product.priceCents / 100).toFixed(2)) }],
+            contentName: result.product.name,
+          });
+        }
+      }
       try { sessionStorage.setItem(key, result.publicToken); } catch { /* Payment does not depend on browser storage. */ }
       if ("url" in result && result.url) window.location.replace(safePurchaseCheckoutUrl(result.url));
       else window.location.replace(`/order/${encodeURIComponent(result.publicToken)}`);
