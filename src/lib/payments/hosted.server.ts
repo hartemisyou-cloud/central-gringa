@@ -2,6 +2,7 @@ import { sql, one } from "@/lib/db/client.server";
 import { PaymentError } from "./errors";
 import { createOrderPayment } from "./orders.server";
 import type { StoreRow } from "./store-auth.server";
+import { CheckoutFailure } from "./checkout-log.server";
 
 export interface HostedPaymentSession {
   orderNumber: string;
@@ -28,7 +29,7 @@ export async function getHostedPaymentSession(
   publicToken: string,
   options?: { storeId?: string },
 ): Promise<HostedPaymentSession> {
-  const { data: order } = await one<{
+  const { data: order, error: orderError } = await one<{
     id: string; store_id: string; order_number: string; status: string; total_cents: number; currency: string;
     order_items: Array<{ product_id: string; product_name: string; quantity: number; total_cents: number }>;
   }>(sql`
@@ -37,6 +38,7 @@ export async function getHostedPaymentSession(
         'quantity', i.quantity, 'total_cents', i.total_cents)) from public.order_items i where i.order_id = o.id), '[]'::jsonb) as order_items
     from public.orders o where o.public_token = ${publicToken}
   `, true);
+  if (orderError) throw new CheckoutFailure("db_unreachable", "pay.load-order", orderError, { code: "NOT_FOUND", message: "Order not found." });
   if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
   if (options?.storeId && order.store_id !== options.storeId) {
     throw new PaymentError("NOT_FOUND", "Order not found.");
@@ -45,7 +47,8 @@ export async function getHostedPaymentSession(
     throw new PaymentError("INVALID_STATE", "This order no longer accepts payments.");
   }
 
-  const { data: store } = await one<StoreRow>(sql`select * from public.stores where id = ${order.store_id}`, true);
+  const { data: store, error: storeError } = await one<StoreRow>(sql`select * from public.stores where id = ${order.store_id}`, true);
+  if (storeError) throw new CheckoutFailure("db_unreachable", "pay.load-store", storeError, { code: "NOT_FOUND", message: "Store not found." });
   if (!store) throw new PaymentError("NOT_FOUND", "Store not found.");
 
   const payment = await createOrderPayment({ store: store as StoreRow, orderId: order.id });

@@ -18,6 +18,8 @@ import { Route as PrivacyPolicyRouteImport } from './routes/privacy-policy'
 import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
+import { Route as AdminHealthCheckoutRouteImport } from './routes/admin_.health-checkout'
+import { Route as ComprarSlugRouteImport } from './routes/comprar.$slug'
 import { Route as DonationsPrivacyRouteImport } from './routes/donations.privacy'
 import { Route as DonationsRefundsRouteImport } from './routes/donations.refunds'
 import { Route as DonationsStartRouteImport } from './routes/donations.start'
@@ -87,6 +89,16 @@ const TermsRoute = TermsRouteImport.update({
 const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
   id: '/admin_/analytics',
   path: '/admin/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminHealthCheckoutRoute = AdminHealthCheckoutRouteImport.update({
+  id: '/admin_/health-checkout',
+  path: '/admin/health-checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComprarSlugRoute = ComprarSlugRouteImport.update({
+  id: '/comprar/$slug',
+  path: '/comprar/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DonationsPrivacyRoute = DonationsPrivacyRouteImport.update({
@@ -238,6 +250,8 @@ export interface FileRoutesByFullPath {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/health-checkout': typeof AdminHealthCheckoutRoute
+  '/comprar/$slug': typeof ComprarSlugRoute
   '/donations/privacy': typeof DonationsPrivacyRoute
   '/donations/refunds': typeof DonationsRefundsRoute
   '/donations/start': typeof DonationsStartRoute
@@ -274,6 +288,8 @@ export interface FileRoutesByTo {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/health-checkout': typeof AdminHealthCheckoutRoute
+  '/comprar/$slug': typeof ComprarSlugRoute
   '/donations/privacy': typeof DonationsPrivacyRoute
   '/donations/refunds': typeof DonationsRefundsRoute
   '/donations/start': typeof DonationsStartRoute
@@ -311,6 +327,8 @@ export interface FileRoutesById {
   '/refund-policy': typeof RefundPolicyRoute
   '/terms': typeof TermsRoute
   '/admin_/analytics': typeof AdminAnalyticsRoute
+  '/admin_/health-checkout': typeof AdminHealthCheckoutRoute
+  '/comprar/$slug': typeof ComprarSlugRoute
   '/donations/privacy': typeof DonationsPrivacyRoute
   '/donations/refunds': typeof DonationsRefundsRoute
   '/donations/start': typeof DonationsStartRoute
@@ -349,6 +367,8 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin/analytics'
+    | '/admin/health-checkout'
+    | '/comprar/$slug'
     | '/donations/privacy'
     | '/donations/refunds'
     | '/donations/start'
@@ -385,6 +405,8 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin/analytics'
+    | '/admin/health-checkout'
+    | '/comprar/$slug'
     | '/donations/privacy'
     | '/donations/refunds'
     | '/donations/start'
@@ -421,6 +443,8 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/terms'
     | '/admin_/analytics'
+    | '/admin_/health-checkout'
+    | '/comprar/$slug'
     | '/donations/privacy'
     | '/donations/refunds'
     | '/donations/start'
@@ -458,6 +482,8 @@ export interface RootRouteChildren {
   RefundPolicyRoute: typeof RefundPolicyRoute
   TermsRoute: typeof TermsRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  AdminHealthCheckoutRoute: typeof AdminHealthCheckoutRoute
+  ComprarSlugRoute: typeof ComprarSlugRoute
   DonationsPrivacyRoute: typeof DonationsPrivacyRoute
   DonationsRefundsRoute: typeof DonationsRefundsRoute
   DonationsStartRoute: typeof DonationsStartRoute
@@ -543,6 +569,20 @@ declare module '@tanstack/react-router' {
       path: '/admin/analytics'
       fullPath: '/admin/analytics'
       preLoaderRoute: typeof AdminAnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/health-checkout': {
+      id: '/admin_/health-checkout'
+      path: '/admin/health-checkout'
+      fullPath: '/admin/health-checkout'
+      preLoaderRoute: typeof AdminHealthCheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/comprar/$slug': {
+      id: '/comprar/$slug'
+      path: '/comprar/$slug'
+      fullPath: '/comprar/$slug'
+      preLoaderRoute: typeof ComprarSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/donations/privacy': {
@@ -764,6 +804,8 @@ const rootRouteChildren: RootRouteChildren = {
   RefundPolicyRoute: RefundPolicyRoute,
   TermsRoute: TermsRoute,
   AdminAnalyticsRoute: AdminAnalyticsRoute,
+  AdminHealthCheckoutRoute: AdminHealthCheckoutRoute,
+  ComprarSlugRoute: ComprarSlugRoute,
   DonationsPrivacyRoute: DonationsPrivacyRoute,
   DonationsRefundsRoute: DonationsRefundsRoute,
   DonationsStartRoute: DonationsStartRoute,
