@@ -1,5 +1,9 @@
 # Roadmap
 
+- [ ] Add ebook purchase handoff `/comprar/<slug>` with server-created hosted Checkout and paid-only delivery.
+- [ ] Add the requested disclosure and redirects in Foundation — blocked: other-project snapshots are read-only.
+- [ ] Verify purchase handoff with mocked Stripe, existing regression tests, and preview.
+
 - [x] Fix storefront crash from placeholder PAYMENTS_API_BASE_URL
 - [x] Remove literal store credential from docs
 - [x] Store `hope-human-books` (USD) + 11 HHB products (idempotent script)
