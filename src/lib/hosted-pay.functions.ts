@@ -12,6 +12,8 @@ export const loadHostedPaymentSession = createServerFn({ method: "GET" })
     try {
       return { ok: true as const, session: await getHostedPaymentSession(data.token) };
     } catch (error) {
+      const { logCheckoutFailure } = await import("@/lib/payments/checkout-log.server");
+      logCheckoutFailure(error, "pay.load-session");
       return { ok: false as const, message: (error as Error).message };
     }
   });
