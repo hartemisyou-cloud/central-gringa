@@ -71,7 +71,7 @@ function ReceiptPage() {
               : failed ? <XCircle className="mx-auto size-10 text-destructive" />
               : <Clock className="mx-auto size-10 text-muted-foreground" />}
             <h1 className="mt-4 font-display text-2xl font-semibold">
-              {data && !data.ok ? "Order not found" : paid && fromFoundation ? "Order confirmed" : paid ? "Thank you — your ebooks are ready" : failed ? "Payment not completed" : "Waiting for payment confirmation"}
+              {data && !data.ok ? "Order not found" : fromFoundation && receipt ? "Order confirmed" : paid ? "Thank you — your ebooks are ready" : failed ? "Payment not completed" : "Waiting for payment confirmation"}
             </h1>
             {receipt ? (
               <p className="mt-2 text-sm text-muted-foreground">
