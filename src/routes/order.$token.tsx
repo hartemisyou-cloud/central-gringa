@@ -43,10 +43,10 @@ function ReceiptPage() {
   const paid = receipt?.status === "PAID";
   const failed = receipt ? ["PAYMENT_FAILED", "CANCELLED"].includes(receipt.status) : false;
   const presence = usePresence({ state: "CHECKOUT_VIEWED" });
-  const [fromFoundation, setFromFoundation] = useState(false);
-  useEffect(() => {
-    try { if (sessionStorage.getItem("hbb_from_hhf") === "1") setFromFoundation(true); } catch { /* Storage can be blocked. */ }
-  }, []);
+  // Retorno à Fundação ativado pelo parâmetro via=hhf gravado na success_url
+  // quando a entrada em /comprar veio com Referer da Fundação.
+  const { via } = Route.useSearch();
+  const fromFoundation = via === "hhf";
   useEffect(() => {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
