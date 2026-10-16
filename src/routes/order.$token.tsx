@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Clock, Download, Loader2, XCircle } from "lucide-react";
 
 import { BrandMark, PolicyLinks } from "@/components/policies/PolicyLinks";
@@ -42,9 +42,21 @@ function ReceiptPage() {
   const paid = receipt?.status === "PAID";
   const failed = receipt ? ["PAYMENT_FAILED", "CANCELLED"].includes(receipt.status) : false;
   const presence = usePresence({ state: "CHECKOUT_VIEWED" });
+  const [fromFoundation, setFromFoundation] = useState(false);
+  useEffect(() => {
+    try { if (sessionStorage.getItem("hbb_from_hhf") === "1") setFromFoundation(true); } catch { /* Storage can be blocked. */ }
+  }, []);
   useEffect(() => {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
+  useEffect(() => {
+    if (!paid || !fromFoundation || !receipt) return;
+    const timer = setTimeout(() => {
+      try { sessionStorage.removeItem("hbb_from_hhf"); } catch { /* Storage can be blocked. */ }
+      window.location.replace(`https://www.hopehumanfoundation.org/thank-you?amount=${Math.round(receipt.totalCents / 100)}`);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [paid, fromFoundation, receipt]);
 
   return (
     <div className="min-h-screen">
@@ -57,7 +69,7 @@ function ReceiptPage() {
               : failed ? <XCircle className="mx-auto size-10 text-destructive" />
               : <Clock className="mx-auto size-10 text-muted-foreground" />}
             <h1 className="mt-4 font-display text-2xl font-semibold">
-              {data && !data.ok ? "Order not found" : paid ? "Thank you — your ebooks are ready" : failed ? "Payment not completed" : "Waiting for payment confirmation"}
+              {data && !data.ok ? "Order not found" : paid && fromFoundation ? "Order confirmed" : paid ? "Thank you — your ebooks are ready" : failed ? "Payment not completed" : "Waiting for payment confirmation"}
             </h1>
             {receipt ? (
               <p className="mt-2 text-sm text-muted-foreground">
