@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 export const preparePurchase = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => z.object({ slug: z.string().min(1).max(100), token: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict().parse(input))
+  .inputValidator((input: unknown) => z.object({ slug: z.string().min(1).max(100), token: z.string().regex(/^[A-Za-z0-9]{32}$/).optional() }).strict().parse(input))
   .handler(async ({ data }) => {
     const { getRequest, setResponseHeader } = await import("@tanstack/react-start/server");
     const request = getRequest();
