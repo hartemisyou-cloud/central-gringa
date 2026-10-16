@@ -30,7 +30,11 @@ function PurchasePage() {
     started.current = true;
     const key = `hhb-purchase:${product.slug}`;
     let token: string | undefined;
-    try { token = sessionStorage.getItem(key) ?? undefined; } catch { /* Storage can be blocked. */ }
+    try {
+      token = sessionStorage.getItem(key) ?? undefined;
+      // Flag local-only: nunca entra em API, Stripe, Meta ou UTMify.
+      if (document.referrer.includes("hopehumanfoundation.org")) sessionStorage.setItem("hbb_from_hhf", "1");
+    } catch { /* Storage can be blocked. */ }
     void prepare({ data: { slug: product.slug, ...(token ? { token } : {}) } }).then((result) => {
       if (!result.ok) { setMessage(result.message); setFailed(true); return; }
       // Meta Pixel: PageView no carregamento e InitiateCheckout quando a
