@@ -34,7 +34,7 @@ export function safeCheckoutError(error: unknown): string {
     : inner && typeof inner === "object" && "message" in inner && typeof inner.message === "string"
       ? inner.message : error instanceof Error ? error.message : "Unknown server error.";
   for (const [name, value] of Object.entries(process.env)) {
-    if (/KEY|SECRET|PASSWORD|TOKEN|DATABASE_URL/i.test(name) && value && value.length >= 8) message = message.split(value).join("[redacted]");
+    if (/KEY|SECRET|PASSWORD|TOKEN|DATABASE_URL|BLOB_STORE_ID/i.test(name) && value && value.length >= 8) message = message.split(value).join("[redacted]");
   }
   return message
     .replace(/\b(?:sk|rk|pk)_(?:test|live)_[^\s'"`,;]+/gi, "[redacted]")
