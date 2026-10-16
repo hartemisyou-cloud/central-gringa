@@ -1,3 +1,5 @@
+> Historical, inactive design notes. The basic admin no longer exposes Connect, beneficiary review, financial attestations or transfer/release controls. These are not prerequisites for direct NGO collection. See `docs/api/hope-human-donations-api.md` for the current flow. Existing records and guarded deferred code are retained; this document does not activate any provider setting or transfer.
+
 # Hope Human Foundation — Stripe Connect configuration plan (DRAFT for human approval)
 
 Status: **DRAFT. Every gate is OFF.** Nothing in this document has been activated. No Stripe account
