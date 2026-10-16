@@ -94,7 +94,9 @@ function orderNumber(): string {
 export async function createOrder(input: {
   store: StoreRow;
   items: RequestedItem[];
-  customer: CustomerInput;
+  customer?: CustomerInput;
+  /** Only the server-owned hosted ebook flow may let Stripe collect contact details. */
+  collectCustomerAtCheckout?: true;
   /** Opcional: pedidos 100% digitais (eBooks) não exigem endereço de entrega. */
   address?: AddressInput | undefined;
   shippingOptionId: string;
@@ -114,11 +116,14 @@ export async function createOrder(input: {
   // Digital-only carts (all products weight 0) never ship and never need an
   // address or phone. Physical carts keep the full validation.
   const allDigital = isDigitalOnly(priced.totalWeightGrams);
+  if (!input.customer && !(allDigital && input.collectCustomerAtCheckout === true)) {
+    throw new PaymentError("INVALID_INPUT", "Customer details are required.");
+  }
   const noShipping = input.noShipping === true || allDigital;
   if (!noShipping && !input.address) {
     throw new PaymentError("INVALID_INPUT", "A shipping address is required for physical items.");
   }
-  if (!allDigital && !input.customer.phone) {
+  if (!allDigital && !input.customer?.phone) {
     throw new PaymentError("INVALID_INPUT", "A phone number is required for physical items.");
   }
   const options = noShipping
@@ -137,6 +142,8 @@ export async function createOrder(input: {
 
   const totals = buildTotals({ ...priced, shippingCents: option.amountCents });
 
+  let customerId: string | null = null;
+  if (input.customer) {
   const { data: customer, error: customerError } = await supabaseAdmin
     .from("customers")
     .upsert(
@@ -154,16 +161,18 @@ export async function createOrder(input: {
   if (customerError || !customer) {
     throw new PaymentError("INVALID_INPUT", "Could not save customer details.");
   }
+  customerId = customer.id;
+  }
 
   // Pedido digital (eBook) sem endereço informado: não cria registro de entrega.
   let addressId: string | null = null;
-  if (input.address && !allDigital) {
+  if (input.address && !allDigital && input.customer) {
     const addr = input.address;
     const { data: address, error: addressError } = await supabaseAdmin
       .from("addresses")
       .insert({
         store_id: input.store.id,
-        customer_id: customer.id,
+        customer_id: customerId,
         recipient_name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
         phone: input.customer.phone ?? null,
         // Sem entrega física o código postal é apenas informativo: guarda como veio.
@@ -189,7 +198,7 @@ export async function createOrder(input: {
     .insert({
       store_id: input.store.id,
       order_number: orderNumber(),
-      customer_id: customer.id,
+      customer_id: customerId,
       shipping_address_id: addressId,
       environment: input.store.environment,
       currency: totals.currency,
@@ -322,7 +331,7 @@ const STRIPE_METADATA_ALLOWLIST = [
   "category",
 ] as const;
 
-function pickOperationalMetadata(input: Record<string, string>): Record<string, string> {
+export function pickOperationalMetadata(input: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const key of STRIPE_METADATA_ALLOWLIST) {
     const value = input[key];
@@ -331,7 +340,7 @@ function pickOperationalMetadata(input: Record<string, string>): Record<string, 
   return out;
 }
 
-function buildItemsMetadata(
+export function buildItemsMetadata(
 
   items: OrderItemRow[],
   products: { id: string; category: string | null; weight_grams: number }[],

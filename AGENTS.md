@@ -10,6 +10,7 @@
 <!-- LOVABLE:END -->
 
 ## Architecture rules
+- `/comprar/<slug>` is an additive server-owned ebook Checkout flow with an explicit six-product allowlist; contact collection happens at Stripe without invented customers, and signature-verified webhooks bind the persisted Checkout Session to its PaymentIntent before fulfillment. Why: real ebook purchases reuse order stock, operational metadata, and paid-only downloads without changing donation sessions.
 - Ebook downloads are authorized only by orders.status = PAID (set solely by the verified Stripe webhook); files live in the private `ebooks` bucket and are streamed by `/api/public/v1/downloads/...`. Why: URL flags or client claims must never unlock paid files.
 - Digital-only carts (all products weight 0) skip address, phone and shipping; physical carts still require address and phone. Why: no invented customer data for ebooks.
 - SKU → file mapping lives in `src/lib/catalog/hhb.ts`, generated from the provenance manifest in `docs/catalog/`. Why: bundles must map to real, verifiable files.

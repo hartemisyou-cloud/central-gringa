@@ -36,6 +36,18 @@ function encodeForm(params: StripeParams, prefix = "", out = new URLSearchParams
   return out;
 }
 
+export interface StripeCheckoutSession {
+  id: string;
+  url: string | null;
+  status: string;
+  livemode: boolean;
+  expires_at: number;
+  payment_intent: string | null;
+  amount_total: number | null;
+  currency: string | null;
+  metadata?: Record<string, string>;
+}
+
 export interface StripePaymentIntent {
   id: string;
   client_secret?: string;
@@ -125,6 +137,14 @@ export class StripeService {
 
   retrieveAccount(): Promise<StripeAccount> {
     return this.request<StripeAccount>("GET", "/account");
+  }
+
+  createCheckoutSession(params: StripeParams, idempotencyKey: string): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>("POST", "/checkout/sessions", params, idempotencyKey);
+  }
+
+  retrieveCheckoutSession(id: string): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>("GET", `/checkout/sessions/${encodeURIComponent(id)}`);
   }
 
   createPaymentIntent(
