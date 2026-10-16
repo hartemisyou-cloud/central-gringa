@@ -47,6 +47,22 @@ describe("hosted digital checkout parameter builder", () => {
     expect(params.payment_intent_data.metadata).toEqual(params.metadata);
     expect(JSON.stringify(params)).not.toMatch(/via|hhf|foundation|campaign|utm_|referrer|tracking/);
   });
+  it("changes only the success URL when the Foundation return destination is requested", () => {
+    const input = fixture();
+    const base = buildEbookCheckoutSessionParams(input);
+    const routed = buildEbookCheckoutSessionParams({ ...input, successUrl: "https://www.hopehumanfoundation.org/thank-you?amount=22" });
+    expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=22");
+    expect({ ...routed, success_url: null }).toEqual({ ...base, success_url: null });
+  });
+  it.each([
+    "https://example.com/thank-you?amount=22",
+    "http://www.hopehumanfoundation.org/thank-you?amount=22",
+    "https://www.hopehumanfoundation.org/thank-you",
+    "https://www.hopehumanfoundation.org/thank-you?amount=0",
+    "https://www.hopehumanfoundation.org/thank-you?amount=22&extra=1",
+  ])("rejects invalid return destination %s", (successUrl) => {
+    expect(() => buildEbookCheckoutSessionParams({ ...fixture(), successUrl })).toThrow();
+  });
   it("keeps the request-derived origin and stable creation-time expiry", () => {
     const input = { ...fixture(), origin: "https://preview.example.test", createdAt: new Date("2026-10-16T12:00:00Z") };
     expect(buildEbookCheckoutSessionParams(input).success_url).toBe("https://preview.example.test/order/public-token");
