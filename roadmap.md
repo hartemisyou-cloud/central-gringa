@@ -1,8 +1,9 @@
 # Roadmap
 
-- [ ] Add ebook purchase handoff `/comprar/<slug>` with server-created hosted Checkout and paid-only delivery.
+- [x] Add ebook purchase handoff `/comprar/<slug>` with server-created hosted Checkout and paid-only delivery.
 - [ ] Add the requested disclosure and redirects in Foundation — blocked: other-project snapshots are read-only.
-- [ ] Verify purchase handoff with mocked Stripe, existing regression tests, and preview.
+- [x] Verify purchase handoff with mocked Stripe, existing regression tests, and preview (134 tests; preview safe-failure and invalid-slug checks).
+- [ ] Verify actual hosted purchase through paid download — blocked on Foundation edits and authorized test checkout; no real Stripe calls made.
 
 - [x] Fix storefront crash from placeholder PAYMENTS_API_BASE_URL
 - [x] Remove literal store credential from docs
