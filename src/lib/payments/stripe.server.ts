@@ -36,6 +36,18 @@ function encodeForm(params: StripeParams, prefix = "", out = new URLSearchParams
   return out;
 }
 
+export interface StripeCheckoutSession {
+  id: string;
+  url: string | null;
+  status: string;
+  livemode: boolean;
+  expires_at: number;
+  payment_intent: string | null;
+  amount_total: number | null;
+  currency: string | null;
+  metadata?: Record<string, string>;
+}
+
 export interface StripePaymentIntent {
   id: string;
   client_secret?: string;

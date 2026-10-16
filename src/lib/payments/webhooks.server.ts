@@ -70,6 +70,13 @@ async function findPayment(providerPaymentId: string): Promise<PaymentRow | null
   return data;
 }
 
+async function findEventPayment(object: Record<string, unknown>, ctx?: { integrationId: string; livemode: boolean }) {
+  const payment = await findPayment(String(object["id"]));
+  if (payment) return payment;
+  const { bindPurchaseIntent } = await import("./purchase.server");
+  return bindPurchaseIntent(object, ctx);
+}
+
 export async function applyEvent(
   event: StripeEvent,
   ctx?: { integrationId: string; livemode: boolean },
@@ -84,7 +91,7 @@ export async function applyEvent(
 
   switch (event.type) {
     case "payment_intent.succeeded": {
-      const payment = await findPayment(String(object["id"]));
+      const payment = await findEventPayment(object, ctx);
       if (!payment) return "Payment not found locally (ignored).";
       // A delayed success must never undo a refund.
       if (REFUND_STATES.has(payment.status)) return "Late success after refund (ignored).";
@@ -137,7 +144,7 @@ export async function applyEvent(
       return "Payment confirmed.";
     }
     case "payment_intent.payment_failed": {
-      const payment = await findPayment(String(object["id"]));
+      const payment = await findEventPayment(object, ctx);
       if (!payment) return "Payment not found locally (ignored).";
       // Guard BEFORE any mutation: never overwrite success/refund/cancel records.
       if (SETTLED_AFTER_SUCCESS.has(payment.status)) return "Late failure after success (ignored).";
@@ -161,7 +168,7 @@ export async function applyEvent(
       return "Payment declined.";
     }
     case "payment_intent.canceled": {
-      const payment = await findPayment(String(object["id"]));
+      const payment = await findEventPayment(object, ctx);
       if (!payment) return "Payment not found locally (ignored).";
       if (SETTLED_AFTER_SUCCESS.has(payment.status)) return "Late cancel after success (ignored).";
       must(
