@@ -47,6 +47,13 @@ export async function startPurchase(slug: string, origin: string, publicToken?: 
     throw new PaymentError("CONFIG_ERROR", "Secure checkout is not configured yet.");
   }
   const stripe = new StripeService(await decryptSecret(integration.secret_key_ciphertext));
+  // Apenas o Pixel ID público (seguro para o navegador); o token nunca sai do servidor.
+  const { getPublicMetaConfig } = await import("@/lib/meta/config.server");
+  const meta = await getPublicMetaConfig(store.id).catch(() => ({ pixelId: null }));
+  const tracking = {
+    metaPixelId: meta.pixelId,
+    product: { id: product.id, name: product.name, priceCents: product.price_cents, currency: product.currency },
+  };
   if (publicToken) {
     const { data: order, error } = await supabaseAdmin.from("orders").select("*, order_items(product_id, quantity)").eq("store_id", store.id).eq("public_token", publicToken).maybeSingle();
     if (error || !order || order.environment !== store.environment || order.order_items.length !== 1 || order.order_items[0]?.product_id !== product.id || order.order_items[0]?.quantity !== 1 || order.total_cents !== product.price_cents) throw new PaymentError("NOT_FOUND", "Order not found.");
@@ -56,7 +63,7 @@ export async function startPurchase(slug: string, origin: string, publicToken?: 
     const session = await stripe.retrieveCheckoutSession(saved.session_id);
     if (session.livemode !== (store.environment === "live") || session.metadata?.["order_id"] !== order.id) throw new PaymentError("INVALID_STATE", "Checkout binding mismatch.");
     if (session.status !== "open" || session.expires_at * 1000 <= Date.now()) return { publicToken, receipt: true as const };
-    return { publicToken, url: safePurchaseCheckoutUrl(session.url) };
+    return { publicToken, url: safePurchaseCheckoutUrl(session.url), ...tracking };
   }
   const result = await createOrder({ store, items: [{ productId: product.id, quantity: 1 }], collectCustomerAtCheckout: true, shippingOptionId: "no-shipping" });
   const order = result.order;
@@ -77,7 +84,7 @@ export async function startPurchase(slug: string, origin: string, publicToken?: 
     const linked = await supabaseAdmin.from("payments").update({ provider_payment_id: session.payment_intent }).eq("id", payment.id);
     if (linked.error) throw new PaymentError("INVALID_STATE", "Could not persist payment binding.");
   }
-  return { publicToken: order.public_token, url };
+  return { publicToken: order.public_token, url, ...tracking };
 }
 
 /** Called only inside the already signature-verified ebook webhook pipeline. */
