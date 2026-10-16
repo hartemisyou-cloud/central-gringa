@@ -50,13 +50,15 @@ function ReceiptPage() {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
   useEffect(() => {
-    if (!paid || !fromFoundation || !receipt) return;
+    // Bounce does not wait for PAID: nobody reaches success_url without an
+    // approved charge, and the PAID webhook can lag a few seconds.
+    if (!fromFoundation || !receipt) return;
     const timer = setTimeout(() => {
       try { sessionStorage.removeItem("hbb_from_hhf"); } catch { /* Storage can be blocked. */ }
       window.location.replace(`https://www.hopehumanfoundation.org/thank-you?amount=${Math.round(receipt.totalCents / 100)}`);
     }, 600);
     return () => clearTimeout(timer);
-  }, [paid, fromFoundation, receipt]);
+  }, [fromFoundation, receipt]);
 
   return (
     <div className="min-h-screen">
