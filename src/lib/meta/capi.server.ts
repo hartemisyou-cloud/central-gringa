@@ -57,7 +57,7 @@ export interface OrderContext {
   state: string | null;
   postalCode: string | null;
   country: string | null;
-  items: Array<{ productId: string; quantity: number; totalCents: number }>;
+  items: Array<{ productId: string; productName: string | null; quantity: number; totalCents: number }>;
   storeDomain: string | null;
 }
 
@@ -65,7 +65,7 @@ export async function loadOrderContext(orderId: string): Promise<OrderContext | 
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
-      "id, store_id, order_number, currency, total_cents, paid_at, status, public_token, customers:customer_id(email, phone, first_name, last_name), addresses:shipping_address_id(city, state, postal_code, country), order_items(product_id, quantity, total_cents), stores:store_id(domain)",
+      "id, store_id, order_number, currency, total_cents, paid_at, status, public_token, customers:customer_id(email, phone, first_name, last_name), addresses:shipping_address_id(city, state, postal_code, country), order_items(product_id, product_name, quantity, total_cents), stores:store_id(domain)",
     )
     .eq("id", orderId)
     .maybeSingle();
@@ -103,6 +103,7 @@ export async function loadOrderContext(orderId: string): Promise<OrderContext | 
     country: address?.country ?? null,
     items: (order.order_items ?? []).map((item) => ({
       productId: item.product_id,
+      productName: item.product_name ?? null,
       quantity: item.quantity,
       totalCents: item.total_cents,
     })),
@@ -195,6 +196,14 @@ export async function buildPayload(
     customData["content_type"] = "product";
     customData["content_ids"] = context.items.map((item) => item.productId);
     customData["num_items"] = context.items.reduce((total, item) => total + item.quantity, 0);
+    // Nome do produto no mesmo formato dos demais eventos da loja
+    // (título — autora; vários itens: primeiro + contagem).
+    const firstName = context.items[0]?.productName;
+    if (firstName) {
+      customData["content_name"] = context.items.length > 1
+        ? `${firstName} + ${context.items.length - 1} item(s)`
+        : firstName;
+    }
   }
   for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const) {
     const value = attribution[key];
