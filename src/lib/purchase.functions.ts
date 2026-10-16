@@ -13,7 +13,9 @@ export const preparePurchase = createServerFn({ method: "POST" })
       const { enforceRateLimit, clientIp } = await import("@/lib/payments/store-auth.server");
       await enforceRateLimit(`ebook-purchase:${clientIp(request)}`, 10, 60);
       const { startPurchase } = await import("@/lib/payments/purchase.server");
-      return { ok: true as const, ...await startPurchase(data.slug, origin, data.token) };
+      // Referer da Fundação ativa o retorno pós-pagamento via ?via=hhf na success_url.
+      const viaHhf = (request.headers.get("referer") ?? "").includes("hopehumanfoundation.org");
+      return { ok: true as const, ...await startPurchase(data.slug, origin, data.token, viaHhf) };
     } catch {
       return { ok: false as const, message: "Secure checkout is unavailable. Please try again later." };
     }

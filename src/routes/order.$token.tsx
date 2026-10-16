@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { CheckCircle2, Clock, Download, Loader2, XCircle } from "lucide-react";
 
 import { BrandMark, PolicyLinks } from "@/components/policies/PolicyLinks";
@@ -11,6 +11,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/order/$token")({
+  validateSearch: (search: Record<string, unknown>): { via: string } => ({ via: typeof search["via"] === "string" ? search["via"] : "" }),
   head: () => ({
     meta: [
       { title: "Your order — Hope Human Books" },
@@ -42,10 +43,10 @@ function ReceiptPage() {
   const paid = receipt?.status === "PAID";
   const failed = receipt ? ["PAYMENT_FAILED", "CANCELLED"].includes(receipt.status) : false;
   const presence = usePresence({ state: "CHECKOUT_VIEWED" });
-  const [fromFoundation, setFromFoundation] = useState(false);
-  useEffect(() => {
-    try { if (sessionStorage.getItem("hbb_from_hhf") === "1") setFromFoundation(true); } catch { /* Storage can be blocked. */ }
-  }, []);
+  // Retorno à Fundação ativado pelo parâmetro via=hhf gravado na success_url
+  // quando a entrada em /comprar veio com Referer da Fundação.
+  const { via } = Route.useSearch();
+  const fromFoundation = via === "hhf";
   useEffect(() => {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
@@ -54,7 +55,6 @@ function ReceiptPage() {
     // approved charge, and the PAID webhook can lag a few seconds.
     if (!fromFoundation || !receipt) return;
     const timer = setTimeout(() => {
-      try { sessionStorage.removeItem("hbb_from_hhf"); } catch { /* Storage can be blocked. */ }
       window.location.replace(`https://www.hopehumanfoundation.org/thank-you?amount=${Math.round(receipt.totalCents / 100)}`);
     }, 600);
     return () => clearTimeout(timer);

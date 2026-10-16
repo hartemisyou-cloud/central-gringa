@@ -48,6 +48,10 @@ describe("ebook purchase handoff", () => {
     expect(request).toMatchObject({ mode: "payment", submit_type: "pay", metadata: { product_type: "ebook", sku: "HHB-EB-030", order_id: "order" }, line_items: [{ quantity: 1, price_data: { unit_amount: 3000, currency: "usd", product_data: { name: product.name } } }] });
     expect(request["success_url"]).toBe(`https://hopehumanbooks.com/order/${order.public_token}`);
     expect(request["cancel_url"]).toBe(request["success_url"]);
+    const viaRequest = buildPurchaseSessionRequest(order, product, "https://hopehumanbooks.com", true);
+    expect(viaRequest["success_url"]).toBe(`https://hopehumanbooks.com/order/${order.public_token}?via=hhf`);
+    expect(viaRequest["cancel_url"]).toBe(`https://hopehumanbooks.com/order/${order.public_token}`);
+    expect(JSON.stringify(viaRequest)).not.toMatch(/campaign|donation|hopehumanfoundation|transfer_data|on_behalf_of/);
     expect(JSON.stringify(request)).not.toMatch(/campaign|donation|hopehumanfoundation|transfer_data|on_behalf_of/);
   });
   it("creates and persists hosted checkout without fake customer details", async () => {

@@ -10,7 +10,8 @@ import type { Database } from "@/integrations/supabase/types";
 type Product = Database["public"]["Tables"]["products"]["Row"];
 type Order = Database["public"]["Tables"]["orders"]["Row"];
 
-export function buildPurchaseSessionRequest(order: Order, product: Product, origin: string): StripeParams {
+export function buildPurchaseSessionRequest(order: Order, product: Product, origin: string, viaHhf = false): StripeParams {
+  const returnUrl = `${origin}/order/${order.public_token}${viaHhf ? "?via=hhf" : ""}`;
   const metadata = pickOperationalMetadata({
     store_id: order.store_id, order_id: order.id, order_number: order.order_number,
     environment: order.environment,
@@ -18,7 +19,7 @@ export function buildPurchaseSessionRequest(order: Order, product: Product, orig
   });
   return {
     mode: "payment", submit_type: "pay", client_reference_id: order.id,
-    success_url: `${origin}/order/${order.public_token}`,
+    success_url: returnUrl,
     cancel_url: `${origin}/order/${order.public_token}`,
     metadata, payment_intent_data: { metadata, description: `Order ${order.order_number}` },
     line_items: [{ quantity: 1, price_data: { currency: order.currency.toLowerCase(), unit_amount: order.total_cents,
@@ -26,7 +27,7 @@ export function buildPurchaseSessionRequest(order: Order, product: Product, orig
   };
 }
 
-export async function startPurchase(slug: string, origin: string, publicToken?: string) {
+export async function startPurchase(slug: string, origin: string, publicToken?: string, viaHhf = false) {
   const expected = purchaseProduct(slug);
   if (!expected) throw new PaymentError("NOT_FOUND", "Book not found.");
   const storeResult = await supabaseAdmin.from("stores").select("*").eq("slug", HHB_STORE_SLUG).maybeSingle();
@@ -73,7 +74,7 @@ export async function startPurchase(slug: string, origin: string, publicToken?: 
     amount_cents: order.total_cents, currency: order.currency, attempt: 1, idempotency_key: key,
   }).select("id").single();
   if (paymentError || !payment) throw new PaymentError("INVALID_STATE", "Could not prepare payment.");
-  const session = await stripe.createCheckoutSession(buildPurchaseSessionRequest(order, product, origin), key);
+  const session = await stripe.createCheckoutSession(buildPurchaseSessionRequest(order, product, origin, viaHhf), key);
   if (session.livemode !== (store.environment === "live") || session.metadata?.["order_id"] !== order.id || session.status !== "open") throw new PaymentError("INVALID_STATE", "Checkout binding mismatch.");
   const url = safePurchaseCheckoutUrl(session.url);
   const saved = await supabaseAdmin.from("stripe_checkout_sessions").insert({ store_id: store.id, order_id: order.id, integration_id: integration.id,
