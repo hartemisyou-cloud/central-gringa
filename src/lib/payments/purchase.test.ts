@@ -7,6 +7,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from:
 vi.mock("./crypto.server", () => ({ decryptSecret: vi.fn(async () => "mock-only") }));
 vi.mock("./stripe.server", () => ({ StripeService: class { createCheckoutSession = mocks.createSession; retrieveCheckoutSession = mocks.retrieve; } }));
 vi.mock("./orders.server", async (original) => ({ ...await original<typeof import("./orders.server")>(), createOrder: mocks.createOrder }));
+vi.mock("@/lib/meta/config.server", () => ({ getPublicMetaConfig: vi.fn(async () => ({ pixelId: "pixel-mock", enabled: true })) }));
 import { buildPurchaseSessionRequest, startPurchase, bindPurchaseIntent } from "./purchase.server";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -51,7 +52,7 @@ describe("ebook purchase handoff", () => {
   });
   it("creates and persists hosted checkout without fake customer details", async () => {
     queue({ data: store }, { data: product }, { data: integration }, { data: { id: "payment" } }, {}, {});
-    expect(await startPurchase("little-women", "https://hopehumanbooks.com")).toEqual({ publicToken: order.public_token, url: session.url });
+    expect(await startPurchase("little-women", "https://hopehumanbooks.com")).toEqual({ publicToken: order.public_token, url: session.url, metaPixelId: "pixel-mock", product: { id: product.id, name: product.name, priceCents: 3000, currency: "USD" } });
     expect(mocks.createOrder).toHaveBeenCalledWith({ store, items: [{ productId: product.id, quantity: 1 }], collectCustomerAtCheckout: true, shippingOptionId: "no-shipping" });
     expect(mocks.createSession.mock.calls[0]?.[1]).toBe("ebook-checkout:order:1");
   });
