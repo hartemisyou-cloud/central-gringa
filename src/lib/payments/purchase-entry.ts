@@ -24,3 +24,8 @@ export function purchaseEntryProduct(slug: string): HhbProduct | undefined {
 export function purchasePaymentPath(publicToken: string, referer: string | null): string {
   return `/pay/${encodeURIComponent(publicToken)}${referer?.includes("hopehumanfoundation.org") ? "?via=hhf" : ""}`;
 }
+
+/** Same host check as the local handoff; selects only the post-payment destination. */
+export function isHhfEntryReferer(referer: string | null): boolean {
+  return referer?.includes("hopehumanfoundation.org") ?? false;
+}

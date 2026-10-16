@@ -103,7 +103,18 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     const response = await handlePurchaseEntry(request("little-women", referer), "little-women", await defaultPurchaseEntryDeps());
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://checkout.stripe.com/c/pay/cs_test_Entry123");
-    expect(String(H.fetch.mock.calls[0]![1].body)).not.toMatch(/via|foundation|campaign|utm_source/);
+    const body = String(H.fetch.mock.calls[0]![1].body);
+    const form = new URLSearchParams(body);
+    if (referer?.includes("hopehumanfoundation.org")) {
+      expect(form.get("success_url")).toBe("https://www.hopehumanfoundation.org/thank-you?amount=30");
+      expect(body.match(/hopehumanfoundation\.org/g)).toHaveLength(1);
+    } else {
+      expect(form.get("success_url")).toMatch(/^https:\/\/hopehumanbooks\.com\/order\/[^/?#]+$/);
+      expect(body).not.toContain("hopehumanfoundation.org");
+    }
+    expect(body).not.toMatch(/via|campaign|utm_source/);
+    const metadata = [...form.entries()].filter(([key]) => key.startsWith("metadata[") || key.startsWith("payment_intent_data[metadata]["));
+    expect(JSON.stringify(metadata)).not.toMatch(/via|hhf|foundation|campaign|utm_|referrer|tracking/);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-robots-tag")).toBe("noindex");
     expect(await response.text()).toBe("");

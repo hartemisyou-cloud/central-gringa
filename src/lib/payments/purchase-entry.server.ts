@@ -1,7 +1,7 @@
 import { HHB_STORE_ID } from "@/lib/catalog/hhb";
 import type { StoreRow } from "./store-auth.server";
 import { PaymentError } from "./errors";
-import { purchaseEntryProduct } from "./purchase-entry";
+import { isHhfEntryReferer, purchaseEntryProduct } from "./purchase-entry";
 import { CheckoutFailure, logCheckoutFailure } from "./checkout-log.server";
 import type { createOrder } from "./orders.server";
 import type { createEbookCheckoutSession } from "./checkout-session.server";
@@ -38,7 +38,13 @@ export async function handlePurchaseEntry(
       items: [{ productId: product.id, quantity: 1 }],
       shippingOptionId: "no-shipping",
     });
-    const checkout = await deps.createCheckout({ store, orderId: order.order.id, slug, origin: new URL(request.url).origin });
+    const checkout = await deps.createCheckout({
+      store,
+      orderId: order.order.id,
+      slug,
+      origin: new URL(request.url).origin,
+      hhf: isHhfEntryReferer(request.headers.get("referer")),
+    });
     return new Response(null, {
       status: 302,
       headers: { ...headers, location: checkout.url },
