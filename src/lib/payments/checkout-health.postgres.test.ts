@@ -39,7 +39,7 @@ beforeEach(async () => {
   H.fetch.mockImplementation(async (_url: string, init: RequestInit) => {
     const form = new URLSearchParams(String(init.body));
     const metadata = Object.fromEntries([...form.entries()].filter(([key]) => /^metadata\[/.test(key)).map(([key, value]) => [key.slice(9, -1), value]));
-    return Response.json({ id: "cs_test_Fixture123", status: "open", livemode: false, metadata, amount_total: Number(form.get("line_items[0][price_data][unit_amount]")), currency: "usd", url: "https://checkout.stripe.com/c/pay/cs_test_Fixture123" });
+    return Response.json({ id: "cs_test_Fixture123", status: "open", mode: "payment", livemode: false, metadata, amount_total: Number(form.get("line_items[0][price_data][unit_amount]")), currency: "usd", url: "https://checkout.stripe.com/c/pay/cs_test_Fixture123" });
   });
   vi.stubGlobal("fetch", H.fetch);
   await H.current!.db.exec("TRUNCATE stores, stripe_integrations CASCADE");
@@ -76,6 +76,15 @@ describe("protected PostgreSQL/Blob checkout diagnostic", () => {
     const form = new URLSearchParams(init.body);
     expect(form.get("mode")).toBe("payment"); expect(form.get("line_items[0][quantity]")).toBe("1");
     expect(form.get("line_items[0][price_data][unit_amount]")).toBe("3000");
+    expect(form.get("line_items[0][price_data][product_data][name]")).toBe(purchaseName());
+    expect(form.get("line_items[0][price_data][product_data][description]")).toBe(`Order ${form.get("metadata[order_number]")} · Digital delivery, no shipping`);
+    expect(form.get("submit_type")).toBe("pay");
+    expect(form.get("success_url")).toMatch(/^https:\/\/books\.example\.test\/order\/[A-Za-z0-9]+$/);
+    expect(form.get("cancel_url")).toBe("https://books.example.test/comprar/little-women");
+    expect(init.headers["Idempotency-Key"]).toBe(`checkout:create:${form.get("metadata[order_id]")}:1`);
+    expect(Number(form.get("expires_at"))).toBeGreaterThan(Math.floor(Date.now() / 1000) + 29 * 60);
+    expect(Number(form.get("expires_at"))).toBeLessThanOrEqual(Math.ceil(Date.now() / 1000) + 31 * 60);
+    expect(form.has("customer_email")).toBe(false); expect(form.has("client_reference_id")).toBe(false);
     expect(form.get("payment_intent_data[description]")).toBe(`Order ${form.get("metadata[order_number]")}`);
     for (const [key, value] of Object.entries({ category: "ebook", delivery_type: "digital", environment: "test", item_count: "1", product_type: "ebook", quantity: "1", sku: "HHB-EB-030" })) {
       expect(form.get(`metadata[${key}]`)).toBe(value); expect(form.get(`payment_intent_data[metadata][${key}]`)).toBe(value);

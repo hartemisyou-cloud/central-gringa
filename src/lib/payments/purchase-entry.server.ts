@@ -1,15 +1,17 @@
 import { HHB_STORE_ID } from "@/lib/catalog/hhb";
 import type { StoreRow } from "./store-auth.server";
 import { PaymentError } from "./errors";
-import { purchaseEntryProduct, purchasePaymentPath } from "./purchase-entry";
+import { purchaseEntryProduct } from "./purchase-entry";
 import { CheckoutFailure, logCheckoutFailure } from "./checkout-log.server";
 import type { createOrder } from "./orders.server";
+import type { createEbookCheckoutSession } from "./checkout-session.server";
 
 export interface PurchaseEntryDeps {
   loadStore(): Promise<StoreRow | null>;
   rateLimit(bucket: string, limit: number, windowSeconds: number): Promise<void>;
   clientIp(request: Request): string;
   createOrder: typeof createOrder;
+  createCheckout: typeof createEbookCheckoutSession;
 }
 
 const headers = { "cache-control": "no-store", "x-robots-tag": "noindex" };
@@ -36,9 +38,10 @@ export async function handlePurchaseEntry(
       items: [{ productId: product.id, quantity: 1 }],
       shippingOptionId: "no-shipping",
     });
+    const checkout = await deps.createCheckout({ store, orderId: order.order.id, slug, origin: new URL(request.url).origin });
     return new Response(null, {
       status: 302,
-      headers: { ...headers, location: purchasePaymentPath(order.publicToken, request.headers.get("referer")) },
+      headers: { ...headers, location: checkout.url },
     });
   } catch (error) {
     if (!(error instanceof PaymentError) || error instanceof CheckoutFailure || error.code === "CONFIG_ERROR" || error.code === "PROVIDER_ERROR") {
@@ -55,6 +58,7 @@ export async function defaultPurchaseEntryDeps(): Promise<PurchaseEntryDeps> {
   const { sql, one } = await import("@/lib/db/client.server");
   const { enforceRateLimit, clientIp } = await import("./store-auth.server");
   const { createOrder } = await import("./orders.server");
+  const { createEbookCheckoutSession } = await import("./checkout-session.server");
   return {
     loadStore: async () => {
       const result = await one<StoreRow>(sql`select * from public.stores where id = ${HHB_STORE_ID}`, true);
@@ -64,5 +68,6 @@ export async function defaultPurchaseEntryDeps(): Promise<PurchaseEntryDeps> {
     rateLimit: enforceRateLimit,
     clientIp,
     createOrder,
+    createCheckout: createEbookCheckoutSession,
   };
 }

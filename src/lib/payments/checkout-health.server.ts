@@ -5,7 +5,7 @@ import { EBOOK_PREFIX, HHB_STORE_ID, HHB_WORKS } from "@/lib/catalog/hhb";
 import { get } from "@vercel/blob";
 import { PURCHASE_ENTRY_SLUGS, purchaseEntryProduct } from "./purchase-entry";
 import { decryptSecret, randomToken } from "./crypto.server";
-import { buildOrderPaymentMetadata, buildPaymentDescription } from "./orders.server";
+import { buildEbookCheckoutSessionParams, checkoutIdempotencyKey, validateEbookCheckoutSession } from "./checkout-session.server";
 import { StripeService } from "./stripe.server";
 import { CheckoutFailure, classifyCheckoutFailure, logCheckoutFailure, safeCheckoutError } from "./checkout-log.server";
 
@@ -101,20 +101,15 @@ export async function runCheckoutHealth(origin: string) {
     report.dry_run.checked = true;
     try {
       if (store.environment !== "test" || report.integration.environment !== "test" || !/^(sk|rk)_test_/.test(secretKey)) throw new CheckoutFailure("stripe_error", "health.test_mode", new Error("Dry-run requires TEST database integration credentials. No Stripe Session was requested."));
-      const order = { id: crypto.randomUUID(), store_id: store.id, order_number: `ORD-HEALTH-${randomToken(12)}`, environment: "test", customer_id: null };
-      const items = [{ product_id: littleWomen.id, product_name: littleWomen.name, sku: littleWomen.sku, quantity: 1 }];
-      const metadata = buildOrderPaymentMetadata(order, items, [littleWomen]);
-      const receipt = `${origin}/order/${randomToken(32)}`;
+      const order = { id: crypto.randomUUID(), store_id: store.id, order_number: `ORD-HEALTH-${randomToken(12)}`,
+        environment: "test" as const, customer_id: null, public_token: randomToken(32),
+        total_cents: littleWomen.price_cents, currency: littleWomen.currency };
+      const items = [{ product_id: littleWomen.id, product_name: littleWomen.name, sku: littleWomen.sku, quantity: 1,
+        unit_price_cents: littleWomen.price_cents, total_cents: littleWomen.price_cents }];
+      const params = buildEbookCheckoutSessionParams({ order, items, products: [littleWomen], slug: "little-women", origin, createdAt: new Date() });
       report.dry_run.amount_cents = littleWomen.price_cents;
-      const session = await new StripeService(secretKey).createCheckoutSession({
-        mode: "payment", submit_type: "pay", success_url: receipt, cancel_url: receipt,
-        client_reference_id: order.id, metadata,
-        payment_intent_data: { description: buildPaymentDescription(order, items), metadata },
-        line_items: [{ quantity: 1, price_data: { currency: littleWomen.currency.toLowerCase(), unit_amount: littleWomen.price_cents,
-          product_data: { name: littleWomen.name, description: littleWomen.description ?? undefined } } }],
-      }, `checkout-health:${order.id}`);
-      const url = new URL(session.url ?? "");
-      if (session.livemode !== false || session.status !== "open" || session.metadata?.["order_id"] !== order.id || session.amount_total !== littleWomen.price_cents || session.currency !== "usd" || url.protocol !== "https:" || url.hostname !== "checkout.stripe.com" || url.username || url.password || url.port) throw new Error("Stripe returned an unexpected TEST Session binding, amount or destination.");
+      const session = await new StripeService(secretKey).createCheckoutSession(params, checkoutIdempotencyKey(order.id, 1));
+      validateEbookCheckoutSession(session, order, params.metadata);
       report.dry_run.session_created = true;
     } catch (error) { report.dry_run.error = failure(error instanceof CheckoutFailure ? error : new CheckoutFailure("stripe_error", "health.session_create", error), "health.session_create"); }
   }

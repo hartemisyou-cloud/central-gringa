@@ -15,7 +15,7 @@ const STRIPE_VERSION = "2024-06-20";
 
 export type StripeParams = Record<string, unknown>;
 
-/** Only the protected health diagnostic creates Checkout Sessions; /pay keeps Elements. */
+/** Digital /comprar and the protected diagnostic use Sessions; /pay keeps Elements. */
 export interface StripeCheckoutSession {
   id: string;
   url: string | null;
@@ -23,6 +23,9 @@ export interface StripeCheckoutSession {
   livemode: boolean;
   amount_total: number | null;
   currency: string | null;
+  mode: string;
+  payment_status?: string;
+  payment_intent?: string | null;
   metadata?: Record<string, string>;
 }
 
@@ -140,6 +143,10 @@ export class StripeService {
 
   createCheckoutSession(params: StripeParams, idempotencyKey: string): Promise<StripeCheckoutSession> {
     return this.request<StripeCheckoutSession>("POST", "/checkout/sessions", params, idempotencyKey);
+  }
+
+  retrieveCheckoutSession(id: string): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>("GET", `/checkout/sessions/${encodeURIComponent(id)}`);
   }
 
   createPaymentIntent(

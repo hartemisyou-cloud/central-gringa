@@ -18,14 +18,17 @@ const REFUND_STATES = new Set(["REFUNDED", "PARTIALLY_REFUNDED"]);
 
 async function markOrder(orderId: string, status: Database["public"]["Enums"]["order_status"]) {
   const query = status === "PAID"
-    ? sql`update public.orders set status = ${status}, paid_at = ${new Date().toISOString()} where id = ${orderId}`
+    ? sql`update public.orders set status = ${status}, paid_at = coalesce(paid_at, ${new Date().toISOString()})
+        where id = ${orderId} and status not in ('PAID', 'REFUNDED', 'PARTIALLY_REFUNDED')`
     : sql`update public.orders set status = ${status} where id = ${orderId}`;
   must(await exec(query), "Order update");
 }
 
 async function rpc(name: "commit_order_stock" | "release_order_stock", orderId: string) {
   const query = name === "commit_order_stock"
-    ? sql`select public.commit_order_stock(${orderId})`
+    ? sql`with locked_order as materialized (
+        select id, stock_committed, status from public.orders where id = ${orderId} for update
+      ) select public.commit_order_stock(id) from locked_order where not stock_committed and status = 'PAID'`
     : sql`select public.release_order_stock(${orderId})`;
   must(await exec(query), `RPC ${name}`);
 }
@@ -64,6 +67,58 @@ async function findPayment(providerPaymentId: string): Promise<PaymentRow | null
   return data;
 }
 
+/** Bind only a Session created for this local payment attempt, never order metadata alone. */
+async function bindCheckoutSession(
+  object: Record<string, unknown>,
+  ctx: { integrationId: string; livemode: boolean } | undefined,
+): Promise<{ paymentIntentId: string; paid: boolean } | null> {
+  const metadata = object["metadata"] as Record<string, unknown> | undefined;
+  const sessionId = object["id"];
+  const intent = object["payment_intent"];
+  const paymentIntentId = typeof intent === "string" ? intent
+    : intent && typeof intent === "object" && "id" in intent && typeof intent.id === "string" ? intent.id : null;
+  const environment = ctx?.livemode ? "live" : "test";
+  if (!ctx || typeof sessionId !== "string" || !sessionId.startsWith("cs_")
+    || !paymentIntentId?.startsWith("pi_") || object["mode"] !== "payment"
+    || object["livemode"] !== ctx.livemode || object["status"] !== "complete"
+    || !["paid", "unpaid"].includes(String(object["payment_status"]))
+    || typeof metadata?.["order_id"] !== "string" || metadata["environment"] !== environment
+    || typeof metadata["store_id"] !== "string" || typeof metadata["order_number"] !== "string") return null;
+
+  const { data: payment } = must(await one<PaymentRow & {
+    order_store_id: string; order_environment: string; order_total_cents: number;
+    order_currency: string; order_number: string; order_status: string;
+  }>(sql`
+    select p.*, o.store_id as order_store_id, o.environment as order_environment,
+      o.total_cents as order_total_cents, o.currency as order_currency,
+      o.order_number, o.status as order_status
+    from public.payments p join public.orders o on o.id = p.order_id
+    where p.provider = 'STRIPE' and p.order_id = ${metadata["order_id"]}
+      and p.integration_id = ${ctx.integrationId}
+      and p.idempotency_key = 'checkout:create:' || p.order_id || ':' || p.attempt::text
+      and (p.provider_payment_id = ${sessionId} or p.provider_payment_id = ${paymentIntentId})
+  `, true), "Checkout payment lookup");
+  if (!payment || payment.store_id !== metadata["store_id"] || payment.order_store_id !== payment.store_id
+    || payment.environment !== environment || payment.order_environment !== environment
+    || payment.order_number !== metadata["order_number"]
+    || payment.amount_cents !== object["amount_total"] || payment.order_total_cents !== payment.amount_cents
+    || typeof object["currency"] !== "string" || object["currency"].toUpperCase() !== payment.currency.toUpperCase()
+    || payment.order_currency.toUpperCase() !== payment.currency.toUpperCase()
+    || REFUND_STATES.has(payment.status) || REFUND_STATES.has(payment.order_status)
+    || payment.status === "CANCELLED" || payment.order_status === "CANCELLED") return null;
+
+  // provider_payment_id starts as the real cs_ ID. Once bound, a signed repeat
+  // must match the same pi_ ID. Session IDs remain in the append-only audit log;
+  // no SELECT on payment_events or schema/ACL change is required.
+  const { data: bound } = must(await one<PaymentRow>(sql`
+    update public.payments set provider_payment_id = ${paymentIntentId}
+    where id = ${payment.id} and integration_id = ${ctx.integrationId}
+      and (provider_payment_id = ${sessionId} or provider_payment_id = ${paymentIntentId})
+      and status not in ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELLED') returning *
+  `, true), "Checkout payment binding");
+  return bound ? { paymentIntentId, paid: object["payment_status"] === "paid" } : null;
+}
+
 export async function applyEvent(
   event: StripeEvent,
   ctx?: { integrationId: string; livemode: boolean },
@@ -77,6 +132,16 @@ export async function applyEvent(
   if (donationResult !== null) return donationResult;
 
   switch (event.type) {
+    case "checkout.session.completed":
+    case "checkout.session.async_payment_succeeded": {
+      const checkout = await bindCheckoutSession(object, ctx);
+      if (!checkout) return "Checkout session does not match a local payment (ignored).";
+      if (!checkout.paid) return "Checkout payment is pending.";
+      // Reuse the unchanged PaymentIntent success pipeline, including stock,
+      // delivery and the existing independently idempotent analytics dispatch.
+      return applyEvent({ ...event, type: "payment_intent.succeeded",
+        data: { object: { id: checkout.paymentIntentId } } }, ctx);
+    }
     case "payment_intent.succeeded": {
       const payment = await findPayment(String(object["id"]));
       if (!payment) return "Payment not found locally (ignored).";
@@ -90,7 +155,8 @@ export async function applyEvent(
       // failure) completes the remaining steps instead of being skipped.
       if (payment.status !== "SUCCEEDED") {
         must(
-          await exec(sql`update public.payments set status = 'SUCCEEDED', payment_method = ${method?.type ?? null} where id = ${payment.id}`),
+          await exec(sql`update public.payments set status = 'SUCCEEDED', payment_method = ${method?.type ?? null}
+            where id = ${payment.id} and status not in ('REFUNDED', 'PARTIALLY_REFUNDED')`),
           "Payment update",
         );
       }
