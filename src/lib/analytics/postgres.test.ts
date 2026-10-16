@@ -350,6 +350,7 @@ describe("PostgreSQL integration configuration", () => {
     expect(result).toMatchObject({
       orderId: ORDER_A,
       storeId: STORE_A,
+      environment: "test",
       email: "reader@example.com",
       phone: null,
       country: null,
@@ -359,13 +360,80 @@ describe("PostgreSQL integration configuration", () => {
     });
   });
 
+  it("sends automatic TEST purchases only with the configured Meta test code", async () => {
+    await saveMetaSettings({
+      storeId: STORE_A,
+      pixelId: "123456789",
+      accessToken: "test-meta-token",
+      enabled: true,
+      testEventCode: "TEST-FIXTURE",
+    });
+    await H.current!
+      .client`UPDATE orders SET status = 'PAID', paid_at = now() WHERE id = ${ORDER_A}`;
+
+    expect((await sendPurchaseForOrder({ storeId: STORE_A, orderId: ORDER_A })).ok).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body));
+    expect(body.test_event_code).toBe("TEST-FIXTURE");
+    expect(body.data[0]).toMatchObject({
+      event_name: "Purchase",
+      custom_data: { currency: "USD", value: 20 },
+    });
+    expect(await H.current!.client`SELECT status, attempt_count FROM meta_conversion_events`).toEqual([
+      expect.objectContaining({ status: "SENT", attempt_count: 1 }),
+    ]);
+  });
+
+  it.each([null, "", "   "])(
+    "skips automatic TEST purchases without a usable test code (%j)",
+    async (testEventCode) => {
+      await saveMetaSettings({
+        storeId: STORE_A,
+        pixelId: "123456789",
+        accessToken: "test-meta-token",
+        enabled: true,
+        testEventCode,
+      });
+      await H.current!
+        .client`UPDATE orders SET status = 'PAID', paid_at = now() WHERE id = ${ORDER_A}`;
+
+      expect(await sendPurchaseForOrder({ storeId: STORE_A, orderId: ORDER_A })).toEqual({
+        ok: true,
+        skipped: "test_event_code_missing",
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(await H.current!.client`SELECT id FROM meta_conversion_events`).toHaveLength(0);
+      expect(await H.current!.client`SELECT status FROM orders WHERE id = ${ORDER_A}`).toEqual([
+        expect.objectContaining({ status: "PAID" }),
+      ]);
+    },
+  );
+
+  it("omits the configured Meta test code for automatic LIVE purchases", async () => {
+    await saveMetaSettings({
+      storeId: STORE_A,
+      pixelId: "123456789",
+      accessToken: "test-meta-token",
+      enabled: true,
+      testEventCode: "TEST-FIXTURE",
+    });
+    await H.current!
+      .client`UPDATE orders SET environment = 'live', status = 'PAID', paid_at = now() WHERE id = ${ORDER_A}`;
+
+    expect((await sendPurchaseForOrder({ storeId: STORE_A, orderId: ORDER_A })).ok).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body));
+    expect(body).not.toHaveProperty("test_event_code");
+    expect(body.data[0]).toMatchObject({ event_name: "Purchase" });
+  });
+
   it("dispatches only PAID sales and reuses local idempotency records", async () => {
     await saveMetaSettings({
       storeId: STORE_A,
       pixelId: "123456789",
       accessToken: "test-meta-token",
       enabled: true,
-      testEventCode: null,
+      testEventCode: "TEST-FIXTURE",
     });
     await saveUtmifySettings({
       storeId: STORE_A,
