@@ -9,6 +9,7 @@ import { getReceipt } from "@/lib/hhb-store.functions";
 import { formatMoney, ORDER_STATUS_LABEL } from "@/lib/format";
 import { usePresence } from "@/hooks/usePresence";
 import { Button } from "@/components/ui/button";
+import { scheduleHhfPaidReturn } from "@/lib/payments/hhf-return";
 
 export const Route = createFileRoute("/order/$token")({
   head: () => ({
@@ -40,6 +41,12 @@ function ReceiptPage() {
   });
   const receipt = data?.ok ? data.receipt : null;
   const paid = receipt?.status === "PAID";
+  const receiptStatus = receipt?.status;
+  const receiptTotalCents = receipt?.totalCents;
+  useEffect(
+    () => scheduleHhfPaidReturn(receiptStatus, receiptTotalCents),
+    [token, receiptStatus, receiptTotalCents],
+  );
   const failed = receipt ? ["PAYMENT_FAILED", "CANCELLED"].includes(receipt.status) : false;
   const presence = usePresence({ state: "CHECKOUT_VIEWED" });
   useEffect(() => {

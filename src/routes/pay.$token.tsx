@@ -1,7 +1,8 @@
 import { BrandMark, PolicyLinks } from "@/components/policies/PolicyLinks";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
+import type { Stripe, StripeElementsOptions } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js/pure";
 import {
   Elements,
   ExpressCheckoutElement,
@@ -18,6 +19,7 @@ import { captureHostedAttribution, loadHostedPaymentSession } from "@/lib/hosted
 import { createCheckoutTracker } from "@/lib/analytics/client";
 import { usePresence } from "@/hooks/usePresence";
 import { captureAttribution } from "@/lib/tracking/attribution-client";
+import { checkoutEntryKey, consumeHhfEntry } from "@/lib/payments/hhf-return";
 import {
   initPixel,
   trackInitiateCheckout,
@@ -71,10 +73,16 @@ export const Route = createFileRoute("/pay/$token")({
 
 function HostedPayPage() {
   const result = Route.useLoaderData();
+  const entryKey = useLocation({ select: checkoutEntryKey });
+  const [preparedEntry, setPreparedEntry] = useState<string | null>(null);
   const [stripe, setStripe] = useState<Stripe | null>(null);
   const session = result.ok ? (result.session as Session) : null;
 
   useEffect(() => {
+    // PaymentForm mounts only after Stripe loads: consume local routing state
+    // first so its events and attribution never receive the via=hhf marker.
+    consumeHhfEntry();
+    setPreparedEntry(entryKey);
     if (!session) return;
     let active = true;
     void loadStripe(session.publishableKey).then((instance) => {
@@ -83,7 +91,7 @@ function HostedPayPage() {
     return () => {
       active = false;
     };
-  }, [session]);
+  }, [session, entryKey]);
 
   const options = useMemo<StripeElementsOptions | null>(
     () =>
@@ -136,7 +144,7 @@ function HostedPayPage() {
 
       <section className="px-6 pb-12 lg:px-16 lg:pt-16">
         <div className="mx-auto w-full max-w-[420px] lg:mr-auto lg:ml-8">
-          {stripe && options ? (
+          {stripe && options && preparedEntry === entryKey ? (
             <Elements stripe={stripe} options={options}>
               <PaymentForm session={session} />
             </Elements>
