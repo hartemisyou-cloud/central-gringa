@@ -10,7 +10,8 @@ import type { Database } from "@/integrations/supabase/types";
 type Product = Database["public"]["Tables"]["products"]["Row"];
 type Order = Database["public"]["Tables"]["orders"]["Row"];
 
-export function buildPurchaseSessionRequest(order: Order, product: Product, origin: string): StripeParams {
+export function buildPurchaseSessionRequest(order: Order, product: Product, origin: string, viaHhf = false): StripeParams {
+  const returnUrl = `${origin}/order/${order.public_token}${viaHhf ? "?via=hhf" : ""}`;
   const metadata = pickOperationalMetadata({
     store_id: order.store_id, order_id: order.id, order_number: order.order_number,
     environment: order.environment,
@@ -18,7 +19,7 @@ export function buildPurchaseSessionRequest(order: Order, product: Product, orig
   });
   return {
     mode: "payment", submit_type: "pay", client_reference_id: order.id,
-    success_url: `${origin}/order/${order.public_token}`,
+    success_url: returnUrl,
     cancel_url: `${origin}/order/${order.public_token}`,
     metadata, payment_intent_data: { metadata, description: `Order ${order.order_number}` },
     line_items: [{ quantity: 1, price_data: { currency: order.currency.toLowerCase(), unit_amount: order.total_cents,
