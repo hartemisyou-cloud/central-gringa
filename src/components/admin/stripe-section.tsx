@@ -58,7 +58,12 @@ export function StripeSection() {
                   <p className="break-all font-mono text-xs">
                     Webhook URL: {origin}/api/public/webhooks/stripe/{row.integration.id}
                   </p>
-                  <p className="text-xs">Events: payment_intent.succeeded, payment_intent.payment_failed, payment_intent.canceled, charge.refunded, charge.dispute.created</p>
+                  <p className="text-xs">
+                    Events: payment_intent.succeeded, payment_intent.payment_failed,
+                    payment_intent.canceled, charge.refunded, charge.dispute.created,
+                    checkout.session.completed, checkout.session.async_payment_succeeded,
+                    checkout.session.async_payment_failed, checkout.session.expired
+                  </p>
                 </div>
               ) : null}
             </div>
