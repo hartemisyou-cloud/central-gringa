@@ -1,7 +1,8 @@
 /**
  * Pure donation rules (no I/O) — readiness gates, request validation,
  * fingerprints, webhook matching, session request snapshot and release math.
- * Everything here fails closed: missing configuration means "not ready".
+ * Technical integration and financial transition checks fail closed.
+ * Direct collection defaults on for a usable integration unless explicitly paused.
  * Donation status transitions live in the database (donation_apply_event).
  */
 import { z } from "zod";
@@ -110,7 +111,7 @@ export function integrationGaps(i: IntegrationLike | null): string[] {
   return g;
 }
 
-/** Human responsibility / approval gates shared by payment acceptance and release. */
+/** Human responsibility / approval gates for the deferred transfer flow only. */
 export function responsibilityGaps(c: DonationSettings): string[] {
   const gaps: string[] = [];
   if (!c.platform_country) gaps.push("Platform Stripe account country not set");
@@ -131,7 +132,7 @@ export function responsibilityGaps(c: DonationSettings): string[] {
   return gaps;
 }
 
-/** Gaps that block accepting donations. Empty list = ready. */
+/** Deferred transfer readiness. Direct NGO collection uses collectionGaps instead. */
 export function settingsGaps(s: DonationSettings | null, integration: boolean | string[]): string[] {
   const c = s ?? DEFAULT_SETTINGS;
   const gaps: string[] = [];
@@ -153,7 +154,7 @@ export function settingsGaps(s: DonationSettings | null, integration: boolean | 
  * ------------------------------------------------------------------ */
 
 export const COLLECTION_DEFAULT_USE_OF_FUNDS =
-  "Received by Hope Human Foundation in support of the selected campaign. Any future transfer to a campaign recipient requires a separate, human-verified process that is not active.";
+  "Received by Hope Human Foundation in support of the selected campaign.";
 
 export interface CollectionStoreLike {
   status?: string | null;
@@ -166,23 +167,28 @@ export interface CollectionContext {
   settings: DonationSettings | null;
 }
 
-function integrationUsableForTest(i: IntegrationLike | null, store: CollectionStoreLike | null): boolean {
+function integrationUsableForCollection(i: IntegrationLike | null, store: CollectionStoreLike | null): boolean {
   return Boolean(
-    i && i.status === "ACTIVE" && i.environment === "test" && i.secret_key_ciphertext && i.stripe_account_id &&
-      store && store.status === "ACTIVE" && store.environment === "test",
+    i && i.status === "ACTIVE" && (i.environment === "test" || i.environment === "live") &&
+      i.secret_key_ciphertext && i.stripe_account_id &&
+      (i.environment === "test" || i.webhook_secret_ciphertext) &&
+      store && store.status === "ACTIVE" && store.environment === i.environment,
   );
 }
 
 /**
- * Effective collection settings. Documented TEST-only fallback: when NO settings row exists and
- * store + integration are truly ACTIVE/test with key and account, sandbox collection is on.
- * No DB write, no confirmed_by, every release/onboarding/live-approval field stays off/null.
+ * Missing settings default collection on only for a usable, mode-matched integration.
+ * LIVE still requires signed webhooks. No DB write or approval is fabricated;
+ * every release/onboarding/approval field remains off/null in the financial defaults.
  * Any saved row (e.g. donations_enabled=false) always wins.
  */
 export function effectiveCollectionSettings(ctx: CollectionContext): { settings: DonationSettings; testFallback: boolean } {
   if (ctx.settings) return { settings: ctx.settings, testFallback: false };
-  if (integrationUsableForTest(ctx.integration, ctx.store)) {
-    return { settings: { ...DEFAULT_SETTINGS, donations_enabled: true }, testFallback: true };
+  if (integrationUsableForCollection(ctx.integration, ctx.store)) {
+    return {
+      settings: { ...DEFAULT_SETTINGS, donations_enabled: true },
+      testFallback: ctx.integration?.environment === "test",
+    };
   }
   return { settings: DEFAULT_SETTINGS, testFallback: false };
 }
@@ -202,12 +208,8 @@ export function collectionGaps(ctx: CollectionContext): string[] {
     if (i.environment !== "test" && i.environment !== "live") g.push("Stripe integration mode unknown");
     if (store && store.environment !== i.environment) g.push("Store and Stripe integration modes differ");
     if (i.environment === "live") {
-      // LIVE: no bypass. Signed webhooks + real human approvals are mandatory.
+      // Provider credentials and signed financial events remain mandatory in LIVE.
       if (!i.webhook_secret_ciphertext) g.push("Stripe webhook signing secret missing");
-      if (!c.stripe_fundraising_approved) g.push("Stripe fundraising approval not confirmed");
-      if (!c.legal_account_name_confirmed) g.push("Legal Stripe account name (shown on receipts and terms) not confirmed");
-      if (!c.use_of_funds.trim()) g.push("Use of funds not described");
-      if (!c.confirmed_by || !c.confirmed_at) g.push("Human confirmation missing");
     }
   }
   if (!c.recipient_name.trim()) g.push("Recipient name missing");

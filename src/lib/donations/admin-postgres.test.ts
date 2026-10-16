@@ -47,6 +47,7 @@ import {
   adminDonationOverview,
   adminImportCampaigns,
   adminSaveDonationSettings,
+  adminSaveDonationCollection,
   adminSaveBeneficiary,
   adminUpdateCampaign,
 } from "@/lib/donations.functions";
@@ -55,6 +56,7 @@ import { DEFAULT_SETTINGS } from "./rules";
 const STORE = "11000000-0000-4000-8000-000000000001";
 const OTHER = "11000000-0000-4000-8000-000000000002";
 const BENEFICIARY = "22000000-0000-4000-8000-000000000001";
+const INTEGRATION = "33000000-0000-4000-8000-000000000001";
 beforeAll(async () => {
   H.current = await makeTestDb();
 });
@@ -69,7 +71,7 @@ beforeEach(async () => {
 });
 
 describe("PostgreSQL donation administration", () => {
-  it("imports without approving, activating or replacing an existing reviewed campaign", async () => {
+  it("activates authenticated new imports without approval and preserves existing pauses and reviews", async () => {
     await adminImportCampaigns({
       data: { storeId: STORE, campaigns: [{ slug: "fixture", title: "Original" }] },
     });
@@ -78,16 +80,73 @@ describe("PostgreSQL donation administration", () => {
     expect(initial).toMatchObject({
       title: "Original",
       review_status: "UNREVIEWED",
-      active: false,
+      active: true,
     });
     await H.current!
-      .client`UPDATE donation_campaigns SET review_status='APPROVED', active=true WHERE store_id=${STORE}`;
+      .client`UPDATE donation_campaigns SET review_status='APPROVED', active=false WHERE store_id=${STORE}`;
     await adminImportCampaigns({
       data: { storeId: STORE, campaigns: [{ slug: "fixture", title: "Replacement" }] },
     });
     expect(
       await H.current!.client`SELECT title,review_status,active FROM donation_campaigns`,
-    ).toEqual([{ title: "Original", review_status: "APPROVED", active: true }]);
+    ).toEqual([{ title: "Original", review_status: "APPROVED", active: false }]);
+  });
+
+  it("saves the collection switch without a human signature or enabling deferred financial gates", async () => {
+    expect(await adminSaveDonationCollection({ data: { storeId: STORE, enabled: true } })).toEqual({ ok: true });
+    const [row] = await H.current!.client`SELECT donations_enabled, confirmed_by, confirmed_at,
+      stripe_fundraising_approved, connect_approved, legal_account_name_confirmed,
+      releases_enabled, onboarding_enabled FROM donation_settings WHERE store_id=${STORE}`;
+    expect(row).toEqual({
+      donations_enabled: true,
+      confirmed_by: null,
+      confirmed_at: null,
+      stripe_fundraising_approved: false,
+      connect_approved: false,
+      legal_account_name_confirmed: false,
+      releases_enabled: false,
+      onboarding_enabled: false,
+    });
+  });
+
+  it("changes only collection state while preserving historical settings and confirmations", async () => {
+    await H.current!.client`INSERT INTO donation_settings
+      (store_id, recipient_name, use_of_funds, allowed_recipient_countries,
+        adaptive_pricing_eligible, adaptive_pricing_enabled, ngo_fee_funding_cents,
+        confirmed_by, confirmed_at, donations_enabled)
+      VALUES (${STORE}, 'Historical recipient', 'Historical purpose', ARRAY['US','GB'],
+        true, true, 1234, 'Historical reviewer', '2026-01-01T00:00:00Z', false)`;
+    const [before] = await H.current!.client`SELECT * FROM donation_settings WHERE store_id=${STORE}`;
+    for (const enabled of [true, false]) {
+      expect(await adminSaveDonationCollection({ data: { storeId: STORE, enabled } })).toEqual({ ok: true });
+      const [after] = await H.current!.client`SELECT * FROM donation_settings WHERE store_id=${STORE}`;
+      const { updated_at: _beforeUpdated, donations_enabled: _beforeEnabled, ...historicalBefore } = before!;
+      const { updated_at: _afterUpdated, donations_enabled: actualEnabled, ...historicalAfter } = after!;
+      expect(actualEnabled).toBe(enabled);
+      expect(historicalAfter).toEqual(historicalBefore);
+    }
+  });
+
+  it("rejects hidden deferred settings, unknown stores and unauthorized switch writes", async () => {
+    const unsupportedSettings = { storeId: STORE, enabled: true, releases_enabled: true };
+    expect(() => adminSaveDonationCollection({ data: unsupportedSettings })).toThrow();
+    expect(await adminSaveDonationCollection({ data: { storeId: BENEFICIARY, enabled: true } })).toEqual({ ok: false, message: "Store not found." });
+    H.authorized = false;
+    await expect(adminSaveDonationCollection({ data: { storeId: STORE, enabled: true } })).rejects.toThrow("Unauthorized");
+    expect(await H.current!.client`SELECT id FROM donation_settings`).toHaveLength(0);
+  });
+
+  it("reports active unreviewed campaigns ready and keeps an explicit collection pause", async () => {
+    await H.current!.client`INSERT INTO stripe_integrations VALUES (${INTEGRATION},'ACTIVE','test','fixture-key','fixture-webhook','acct_fixture')`;
+    await H.current!.client`UPDATE stores SET stripe_integration_id=${INTEGRATION} WHERE id=${STORE}`;
+    await adminImportCampaigns({ data: { storeId: STORE, campaigns: [{ slug: "unreviewed", title: "Known campaign" }] } });
+    const overview = await adminDonationOverview();
+    expect(overview).toMatchObject({ collectionEnabled: true, environment: "TEST", collectionGaps: [], settings: null });
+    expect(overview?.campaigns).toEqual([expect.objectContaining({ review_status: "UNREVIEWED", active: true, reviewed_by: null, gaps: [] })]);
+    await adminSaveDonationCollection({ data: { storeId: STORE, enabled: false } });
+    expect(await adminDonationOverview()).toMatchObject({ collectionEnabled: false, collectionGaps: ["Donations switch is off"] });
+    await adminSaveDonationCollection({ data: { storeId: STORE, enabled: true } });
+    expect(await adminDonationOverview()).toMatchObject({ collectionEnabled: true, collectionGaps: [] });
   });
 
   it("requires named confirmation and preserves explicit country arrays and OFF gates", async () => {
@@ -206,6 +265,8 @@ describe("PostgreSQL donation administration", () => {
     expect(overview).toMatchObject({
       storeId: STORE,
       settings: null,
+      collectionEnabled: false,
+      environment: "TEST",
       testFallback: false,
       campaigns: [],
       beneficiaries: [],

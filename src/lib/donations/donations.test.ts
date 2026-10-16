@@ -827,16 +827,43 @@ describe("direct NGO collection (no beneficiary, no recipient read)", () => {
     await expect(create({ idempotencyKey: "key-inactive-1" })).rejects.toThrow(/configuration pending/);
     expect(stripe.calls.sessions).toHaveLength(0);
   });
-  it("no settings + LIVE never uses the fallback; LIVE missing whsec/approvals blocked", async () => {
+  it("LIVE without settings or a saved enabled switch still requires the signing secret", async () => {
     await noSettings();
     await H.pg.exec(`UPDATE stripe_integrations SET environment='live', webhook_secret_ciphertext=NULL WHERE id='${INT_ID}'`);
     const live = { ...STORE, environment: "live" };
     await expect(svc.createDonation({ store: live, body: body(), origin: "https://c" })).rejects.toThrow(/configuration pending/);
     await H.pg.exec(`INSERT INTO donation_settings (store_id, donations_enabled, recipient_name, recipient_country, use_of_funds) VALUES ('${STORE_ID}', true, 'Hope Human Foundation', 'US', 'x')`);
     const g = collectionGaps({ store: live, integration: { id: INT_ID, status: "ACTIVE", environment: "live", secret_key_ciphertext: "e", webhook_secret_ciphertext: null, stripe_account_id: "a" }, settings: { ...DEFAULT_SETTINGS, donations_enabled: true, use_of_funds: "x" } });
-    expect(g).toEqual(expect.arrayContaining(["Stripe webhook signing secret missing", "Stripe fundraising approval not confirmed", "Human confirmation missing"]));
+    expect(g).toEqual(["Stripe webhook signing secret missing"]);
     await expect(svc.createDonation({ store: live, body: body(), origin: "https://c" })).rejects.toThrow(/configuration pending/);
     expect(stripe.calls.sessions).toHaveLength(0);
+  });
+  it("usable LIVE integration defaults collection on without fabricating human or Stripe approvals", async () => {
+    await noSettings();
+    await H.pg.exec(`UPDATE stripe_integrations SET environment='live' WHERE id='${INT_ID}'`);
+    const live = { ...STORE, environment: "live" };
+    stripe = fakeStripe({ sessionPatch: { livemode: true } });
+    const r = await svc.createDonation({ store: live, body: body(), origin: "https://central" });
+    const d = await donation(r.donationId);
+    expect(d).toMatchObject({ status: "PENDING", livemode: true, beneficiary_id: null, payment_confirmed: false });
+    expect(await rows("SELECT * FROM donation_settings")).toHaveLength(0);
+    expect(stripe.calls.accounts).toBe(0);
+    expect(stripe.calls.transfers).toHaveLength(0);
+  });
+  it("saved LIVE collection needs no review or responsibility attestation and never enables releases", async () => {
+    await noSettings();
+    await H.pg.exec(`UPDATE stripe_integrations SET environment='live' WHERE id='${INT_ID}';
+      INSERT INTO donation_settings (store_id, donations_enabled) VALUES ('${STORE_ID}',true);
+      UPDATE donation_campaigns SET review_status='UNREVIEWED', reviewed_by=NULL WHERE id='${CAMP_PENDING}'`);
+    stripe = fakeStripe({ sessionPatch: { livemode: true } });
+    const r = await svc.createDonation({ store: { ...STORE, environment: "live" }, body: body({ campaignSlug: "mateo" }), origin: "https://central" });
+    expect((await donation(r.donationId)).status).toBe("PENDING");
+    expect((await rows("SELECT donations_enabled,stripe_fundraising_approved,legal_account_name_confirmed,confirmed_by,confirmed_at,releases_enabled,onboarding_enabled FROM donation_settings"))[0]).toEqual({
+      donations_enabled: true, stripe_fundraising_approved: false, legal_account_name_confirmed: false,
+      confirmed_by: null, confirmed_at: null, releases_enabled: false, onboarding_enabled: false,
+    });
+    expect((await rows(`SELECT review_status,reviewed_by FROM donation_campaigns WHERE id='${CAMP_PENDING}'`))[0]).toEqual({ review_status: "UNREVIEWED", reviewed_by: null });
+    expect(stripe.calls.transfers).toHaveLength(0);
   });
   it("Session: payment/donate, exact USD preset, no Connect params, no ebook items", async () => {
     await create({ amountCents: 5000 });
