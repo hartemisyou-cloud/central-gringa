@@ -127,6 +127,14 @@ export class StripeService {
     return this.request<StripeAccount>("GET", "/account");
   }
 
+  createCheckoutSession(params: StripeParams, idempotencyKey: string): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>("POST", "/checkout/sessions", params, idempotencyKey);
+  }
+
+  retrieveCheckoutSession(id: string): Promise<StripeCheckoutSession> {
+    return this.request<StripeCheckoutSession>("GET", `/checkout/sessions/${encodeURIComponent(id)}`);
+  }
+
   createPaymentIntent(
     params: {
       amount: number;
