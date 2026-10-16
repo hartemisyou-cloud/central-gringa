@@ -42,9 +42,21 @@ function ReceiptPage() {
   const paid = receipt?.status === "PAID";
   const failed = receipt ? ["PAYMENT_FAILED", "CANCELLED"].includes(receipt.status) : false;
   const presence = usePresence({ state: "CHECKOUT_VIEWED" });
+  const [fromFoundation, setFromFoundation] = useState(false);
+  useEffect(() => {
+    try { if (sessionStorage.getItem("hbb_from_hhf") === "1") setFromFoundation(true); } catch { /* Storage can be blocked. */ }
+  }, []);
   useEffect(() => {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
+  useEffect(() => {
+    if (!paid || !fromFoundation || !receipt) return;
+    const timer = setTimeout(() => {
+      try { sessionStorage.removeItem("hbb_from_hhf"); } catch { /* Storage can be blocked. */ }
+      window.location.replace(`https://www.hopehumanfoundation.org/thank-you?amount=${Math.round(receipt.totalCents / 100)}`);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [paid, fromFoundation, receipt]);
 
   return (
     <div className="min-h-screen">
