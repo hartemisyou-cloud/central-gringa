@@ -27,7 +27,7 @@ export function buildPurchaseSessionRequest(order: Order, product: Product, orig
   };
 }
 
-export async function startPurchase(slug: string, origin: string, publicToken?: string) {
+export async function startPurchase(slug: string, origin: string, publicToken?: string, viaHhf = false) {
   const expected = purchaseProduct(slug);
   if (!expected) throw new PaymentError("NOT_FOUND", "Book not found.");
   const storeResult = await supabaseAdmin.from("stores").select("*").eq("slug", HHB_STORE_SLUG).maybeSingle();
@@ -74,7 +74,7 @@ export async function startPurchase(slug: string, origin: string, publicToken?: 
     amount_cents: order.total_cents, currency: order.currency, attempt: 1, idempotency_key: key,
   }).select("id").single();
   if (paymentError || !payment) throw new PaymentError("INVALID_STATE", "Could not prepare payment.");
-  const session = await stripe.createCheckoutSession(buildPurchaseSessionRequest(order, product, origin), key);
+  const session = await stripe.createCheckoutSession(buildPurchaseSessionRequest(order, product, origin, viaHhf), key);
   if (session.livemode !== (store.environment === "live") || session.metadata?.["order_id"] !== order.id || session.status !== "open") throw new PaymentError("INVALID_STATE", "Checkout binding mismatch.");
   const url = safePurchaseCheckoutUrl(session.url);
   const saved = await supabaseAdmin.from("stripe_checkout_sessions").insert({ store_id: store.id, order_id: order.id, integration_id: integration.id,
