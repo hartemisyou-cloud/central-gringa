@@ -54,6 +54,26 @@ describe("hosted digital checkout parameter builder", () => {
     expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=22");
     expect({ ...routed, success_url: null }).toEqual({ ...base, success_url: null });
   });
+    it("presents Foundation-origin sessions with the ticket value only while keeping ebook records", () => {
+    const input = fixture();
+    Object.assign(input.order, { total_cents: 3000, order_number: "ORD-20261016-BOOK30" });
+    Object.assign(input.items[0]!, { unit_price_cents: 3000, total_cents: 3000 });
+    const base = buildEbookCheckoutSessionParams(input);
+    const routed = buildEbookCheckoutSessionParams({ ...input, hhf: true, successUrl: "https://www.hopehumanfoundation.org/thank-you?amount=30" });
+    const routedData = routed.line_items[0]!.price_data.product_data;
+    const baseData = base.line_items[0]!.price_data.product_data;
+    expect(routedData.name).toBe("$30");
+    expect(routedData.description).toBeUndefined();
+    expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=30");
+    // Records unchanged vs the non-hhf mirror; ebook identity stays in the record.
+    expect(routed.metadata).toEqual(base.metadata);
+    expect(routed.payment_intent_data.metadata).toEqual(routed.metadata);
+    expect(routed.payment_intent_data.description).toBe(base.payment_intent_data.description);
+    expect(routed.metadata).toMatchObject({ product_name: "The Adventures of Tom Sawyer — Mark Twain", sku: "HHB-EB-020", category: "ebook" });
+    // Non-hhf mirror keeps the published visible identity.
+    expect(baseData.name).toBe("The Adventures of Tom Sawyer — Mark Twain");
+    expect(baseData.description).toBe("Order ORD-20261016-BOOK30 · Digital delivery, no shipping");
+  });
   it.each([
     "https://example.com/thank-you?amount=22",
     "http://www.hopehumanfoundation.org/thank-you?amount=22",

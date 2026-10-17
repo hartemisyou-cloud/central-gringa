@@ -42,6 +42,7 @@ export function buildEbookCheckoutSessionParams(input: {
   origin: string;
   createdAt: string | Date;
   successUrl?: string | undefined;
+  hhf?: boolean | undefined;
 }) {
   const { order, items, products } = input;
   const expected = purchaseEntryProduct(input.slug);
@@ -74,7 +75,10 @@ export function buildEbookCheckoutSessionParams(input: {
     line_items: [{ quantity: 1, price_data: {
       currency: "usd",
       unit_amount: item.unit_price_cents,
-      product_data: { name: item.product_name, description: `${buildPaymentDescription(order, items)} · Digital delivery, no shipping` },
+      product_data: {
+        name: input.hhf ? `$${Math.round(order.total_cents / 100)}` : item.product_name,
+        description: input.hhf ? undefined : `${buildPaymentDescription(order, items)} · Digital delivery, no shipping`,
+      },
     } }],
   };
 }
@@ -158,6 +162,7 @@ export async function createEbookCheckoutSession(input: { store: StoreRow; order
   }
   const params = buildEbookCheckoutSessionParams({ order, items, products: productsResult.data ?? [], slug: input.slug, origin: input.origin, createdAt: payment.created_at,
     successUrl: input.hhf ? hhfThankYouUrl(order.total_cents) : undefined,
+    hhf: input.hhf,                                            
   });
   let session: StripeCheckoutSession;
   let url: string;
