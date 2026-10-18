@@ -19,8 +19,9 @@ export interface PurchaseEntryDeps {
 }
 
 /**
- * Reads ONLY `ref` and `fbclid` from the query. Tolerant: sanitized/truncated,
- * never rejected, never throws. Any other query key (utm_* included) is ignored.
+ * Reads ref, fbclid, the five utm_* fields and gclid from the query.
+ * ref feeds click_id and the campaign lookup fallback; nonempty query fields
+ * override that fallback individually. Values are sanitized/truncated, never rejected.
  */
 export async function entryAttribution(
   url: URL,
@@ -29,15 +30,25 @@ export async function entryAttribution(
   const raw = normalizeAttribution({
     click_id: url.searchParams.get("ref") ?? undefined,
     fbclid: url.searchParams.get("fbclid") ?? undefined,
+    utm_source: url.searchParams.get("utm_source") ?? undefined,
+    utm_medium: url.searchParams.get("utm_medium") ?? undefined,
+    utm_campaign: url.searchParams.get("utm_campaign") ?? undefined,
+    utm_content: url.searchParams.get("utm_content") ?? undefined,
+    utm_term: url.searchParams.get("utm_term") ?? undefined,
+    gclid: url.searchParams.get("gclid") ?? undefined,
   });
   const out: Attribution = {};
   if (raw.click_id) {
+    out.click_id = raw.click_id;
     try {
       const utm = await deps.resolveMarketingCode(raw.click_id);
       if (utm) Object.assign(out, normalizeAttribution(utm));
     } catch {
       // attribution is best effort; never fails the order
     }
+  }
+  for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid"] as const) {
+    if (raw[key]) out[key] = raw[key];
   }
   if (raw.fbclid) {
     out.fbclid = raw.fbclid;
