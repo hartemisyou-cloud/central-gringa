@@ -309,6 +309,7 @@ describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
   it("(e)(f) Stripe session form is byte-identical with and without attribution, with and without hhf", async () => {
     await seedCode();
     const normalize = (form: URLSearchParams) => [...form.entries()]
+      .map(([key, value]) => [key, value.replace(/ORD-\d{8}-[A-Z0-9]+/g, "ORD-X")] as const)
       .filter(([key]) => !/expires_at|client_reference_id|order|success_url|cancel_url|idempotency/.test(key)
         && !/^metadata\[(order_id|order_number|public_token)\]$/.test(key)
         && !/^payment_intent_data\[metadata\]\[(order_id|order_number|public_token)\]$/.test(key));
