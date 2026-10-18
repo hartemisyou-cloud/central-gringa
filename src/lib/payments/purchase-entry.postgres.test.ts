@@ -269,7 +269,7 @@ describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
     const rowsOut = await H.current!.client`SELECT utm_source, utm_medium, utm_campaign, fbclid, fbc, click_id FROM order_attribution`;
     expect(rowsOut).toHaveLength(1);
     expect(rowsOut[0]).toMatchObject({ utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "Spring Classics Real Name", fbclid: "IwAR0abc", click_id: null });
-    expect(String(rowsOut[0]!.fbc)).toMatch(/^fb\.1\.\d+\.IwAR0abc$/);
+    expect(String(rowsOut[0]!["fbc"])).toMatch(/^fb\.1\.\d+\.IwAR0abc$/);
     const serialized = JSON.stringify([...(await stripeForm()).entries()]);
     expect(serialized).not.toContain("Spring Classics Real Name");
     expect(serialized).not.toContain(CODE);
