@@ -5,6 +5,7 @@ import { isHhfEntryReferer, purchaseEntryProduct } from "./purchase-entry";
 import { CheckoutFailure, logCheckoutFailure } from "./checkout-log.server";
 import type { createOrder } from "./orders.server";
 import type { createEbookCheckoutSession } from "./checkout-session.server";
+import { normalizeAttribution, type Attribution } from "./attribution";
 
 export interface PurchaseEntryDeps {
   loadStore(): Promise<StoreRow | null>;
@@ -12,11 +13,42 @@ export interface PurchaseEntryDeps {
   clientIp(request: Request): string;
   createOrder: typeof createOrder;
   createCheckout: typeof createEbookCheckoutSession;
+  /** Active marketing code → UTM triple (server-only lookup). */
+  resolveMarketingCode(code: string): Promise<{ utm_source: string; utm_medium: string; utm_campaign: string } | null>;
+  now?(): number;
+}
+
+/**
+ * Reads ONLY `ref` and `fbclid` from the query. Tolerant: sanitized/truncated,
+ * never rejected, never throws. Any other query key (utm_* included) is ignored.
+ */
+export async function entryAttribution(
+  url: URL,
+  deps: Pick<PurchaseEntryDeps, "resolveMarketingCode" | "now">,
+): Promise<Attribution | undefined> {
+  const raw = normalizeAttribution({
+    click_id: url.searchParams.get("ref") ?? undefined,
+    fbclid: url.searchParams.get("fbclid") ?? undefined,
+  });
+  const out: Attribution = {};
+  if (raw.click_id) {
+    try {
+      const utm = await deps.resolveMarketingCode(raw.click_id);
+      if (utm) Object.assign(out, normalizeAttribution(utm));
+    } catch {
+      // attribution is best effort; never fails the order
+    }
+  }
+  if (raw.fbclid) {
+    out.fbclid = raw.fbclid;
+    out.fbc = normalizeAttribution({ fbc: `fb.1.${(deps.now ?? Date.now)()}.${raw.fbclid}` }).fbc;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 const headers = { "cache-control": "no-store", "x-robots-tag": "noindex" };
 
-/** Server-only entry: no customer data, prices or marketing fields from the URL. */
+/** Server-only entry: no customer data or prices from the URL; only `ref`/`fbclid` feed attribution. */
 export async function handlePurchaseEntry(
   request: Request,
   slug: string,
@@ -33,10 +65,12 @@ export async function handlePurchaseEntry(
       throw new PaymentError("CONFIG_ERROR", "The store is not set up yet.");
     }
     await deps.rateLimit(`orders:${store.id}:${deps.clientIp(request)}`, 20, 60);
+    const attribution = await entryAttribution(new URL(request.url), deps);
     const order = await deps.createOrder({
       store,
       items: [{ productId: product.id, quantity: 1 }],
       shippingOptionId: "no-shipping",
+      ...(attribution ? { attribution } : {}),
     });
     const checkout = await deps.createCheckout({
       store,
@@ -65,7 +99,9 @@ export async function defaultPurchaseEntryDeps(): Promise<PurchaseEntryDeps> {
   const { enforceRateLimit, clientIp } = await import("./store-auth.server");
   const { createOrder } = await import("./orders.server");
   const { createEbookCheckoutSession } = await import("./checkout-session.server");
+  const { resolveMarketingCode } = await import("@/lib/marketing/codes.server");
   return {
+    resolveMarketingCode,
     loadStore: async () => {
       const result = await one<StoreRow>(sql`select * from public.stores where id = ${HHB_STORE_ID}`, true);
       if (result.error) throw result.error;
