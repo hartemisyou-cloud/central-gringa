@@ -16,6 +16,9 @@ import { defaultPurchaseEntryDeps, handlePurchaseEntry } from "./purchase-entry.
 import type { StoreRow } from "./store-auth.server";
 import { encryptSecret } from "./crypto.server";
 import { createEbookCheckoutSession } from "./checkout-session.server";
+import { buildPayload, loadOrderContext } from "@/lib/meta/capi.server";
+import { buildSalePayload } from "@/lib/utmify/api.server";
+import type { Attribution } from "./attribution";
 
 const INTEGRATION = "c1000000-0000-4000-8000-000000000002";
 
@@ -60,7 +63,7 @@ beforeEach(async () => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 function request(slug: string, referer?: string): Request {
-  return new Request(`https://hopehumanbooks.com/comprar/${slug}?amount=1&campaignSlug=ignored&utm_source=ignored`, {
+  return new Request(`https://hopehumanbooks.com/comprar/${slug}?amount=1&campaignSlug=ignored`, {
     headers: { "x-forwarded-for": "1.2.3.4, 9.9.9.9", ...(referer ? { referer } : {}) },
   });
 }
@@ -189,14 +192,14 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     const [store] = await q`SELECT * FROM stores WHERE id = ${HHB_STORE_ID}`;
     const order = await createOrder({ store: store as StoreRow, items: [{ productId: purchaseEntryProduct("little-women")!.id, quantity: 1 }], shippingOptionId: "no-shipping" });
     await q`UPDATE products SET price_cents=3333 WHERE sku='HHB-EB-030'`;
-    const input = { store: store as StoreRow, orderId: order.order.id, slug: "little-women", origin: "https://hopehumanbooks.com" };
+    const input = { store: store as StoreRow, orderId: order.order["id"], slug: "little-women", origin: "https://hopehumanbooks.com" };
     const first = await createEbookCheckoutSession(input);
     const second = await createEbookCheckoutSession(input);
     expect(first).toEqual(second);
-    expect(H.fetch.mock.calls[0]![1].headers["Idempotency-Key"]).toBe(`checkout:create:${order.order.id}:1`);
+    expect(H.fetch.mock.calls[0]![1].headers["Idempotency-Key"]).toBe(`checkout:create:${order.order["id"]}:1`);
     expect(H.fetch.mock.calls[1]![1].method).toBe("GET");
     expect(H.fetch.mock.calls[1]![0]).toBe("https://api.stripe.com/v1/checkout/sessions/cs_test_Entry123");
-    const [persisted] = await q`SELECT created_at FROM payments WHERE order_id=${order.order.id}`;
+    const [persisted] = await q`SELECT created_at FROM payments WHERE order_id=${order.order["id"]}`;
     expect(new URLSearchParams(H.fetch.mock.calls[0]![1].body).get("expires_at")).toBe(String(Math.floor(new Date(persisted!["created_at"]).getTime() / 1000) + 1860));
     expect(new URLSearchParams(H.fetch.mock.calls[0]![1].body).get("line_items[0][price_data][unit_amount]")).toBe("3000");
     const payments = await q`SELECT attempt,provider_payment_id,status FROM payments`;
@@ -239,13 +242,13 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     const q = H.current!.client;
     const [store] = await q`SELECT * FROM stores WHERE id = ${HHB_STORE_ID}`;
     const order = await createOrder({ store: store as StoreRow, items: [{ productId: purchaseEntryProduct("little-women")!.id, quantity: 1 }], shippingOptionId: "no-shipping", customer: { firstName: "Test", lastName: "Reader", email: "reader@example.com" } });
-    const [saved] = await q`SELECT o.customer_id,c.email FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=${order.order.id}`;
+    const [saved] = await q`SELECT o.customer_id,c.email FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=${order.order["id"]}`;
     expect(saved!["customer_id"]).not.toBeNull();
     expect(saved!["email"]).toBe("reader@example.com");
   });
 });
 
-describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
+describe("GET /comprar marketing attribution (query overrides registry)", () => {
   const CODE = "48213097";
   async function seedCode(active = true) {
     await H.current!.db.exec("TRUNCATE marketing_codes;");
@@ -268,7 +271,7 @@ describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
     expect(response.status).toBe(302);
     const rowsOut = await H.current!.client`SELECT utm_source, utm_medium, utm_campaign, fbclid, fbc, click_id FROM order_attribution`;
     expect(rowsOut).toHaveLength(1);
-    expect(rowsOut[0]).toMatchObject({ utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "Spring Classics Real Name", fbclid: "IwAR0abc", click_id: null });
+    expect(rowsOut[0]).toMatchObject({ utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "Spring Classics Real Name", fbclid: "IwAR0abc", click_id: CODE });
     expect(String(rowsOut[0]!["fbc"])).toMatch(/^fb\.1\.\d+\.IwAR0abc$/);
     const serialized = JSON.stringify([...(await stripeForm()).entries()]);
     expect(serialized).not.toContain("Spring Classics Real Name");
@@ -276,14 +279,15 @@ describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
     expect(serialized).not.toMatch(/utm_|fbclid|campaign/);
   });
 
-  it("(b) unknown or inactive ref + fbclid persists only fbclid", async () => {
+  it("(b) unknown or inactive ref + fbclid retains click identifiers without registry UTMs", async () => {
     await seedCode(false);
     for (const ref of ["99999999", CODE, "<script>"]) {
       await handlePurchaseEntry(entry(`?ref=${encodeURIComponent(ref)}&fbclid=CLICK1`), "little-women", await defaultPurchaseEntryDeps());
     }
-    const rowsOut = await H.current!.client`SELECT utm_source, utm_medium, utm_campaign, fbclid FROM order_attribution`;
+    const rowsOut = await H.current!.client`SELECT utm_source, utm_medium, utm_campaign, fbclid, click_id FROM order_attribution ORDER BY created_at`;
     expect(rowsOut).toHaveLength(3);
-    for (const row of rowsOut) expect(row).toEqual({ utm_source: null, utm_medium: null, utm_campaign: null, fbclid: "CLICK1" });
+    expect(rowsOut.map(row => row["click_id"]).sort()).toEqual(["99999999", CODE, "<script>"].sort());
+    for (const row of rowsOut) expect(row).toMatchObject({ utm_source: null, utm_medium: null, utm_campaign: null, fbclid: "CLICK1" });
   });
 
   it("(c) no query creates the order without an attribution row", async () => {
@@ -294,9 +298,10 @@ describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
     expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
   });
 
-  it("(d) utm_* directly on the query stays ignored", async () => {
+  it("(d) empty and whitespace query attribution is ignored", async () => {
     await seedCode();
-    await handlePurchaseEntry(entry("?utm_source=x&utm_medium=y&utm_campaign=z&gclid=g"), "little-women", await defaultPurchaseEntryDeps());
+    const response = await handlePurchaseEntry(entry("?utm_source=&utm_medium=%20%20&utm_campaign=%09&utm_content=&utm_term=%20&gclid=%20"), "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
     expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
   });
 
@@ -321,5 +326,122 @@ describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
     }
     expect(forms[1]).toEqual(forms[0]);
     expect(forms[3]).toEqual(forms[2]);
+  });
+});
+
+
+describe("query UTM pass-through and downstream payloads", () => {
+  beforeEach(() => {
+    let sequence = 0;
+    H.fetch.mockImplementation(async (_url: string, init: RequestInit) => {
+      const form = new URLSearchParams(String(init.body));
+      const metadata = Object.fromEntries([...form.entries()].filter(([key]) => /^metadata\[/.test(key)).map(([key, value]) => [key.slice(9, -1), value]));
+      sequence += 1;
+      return Response.json({ id: `cs_test_Query${sequence}`, status: "open", mode: "payment", livemode: false, metadata,
+        amount_total: Number(form.get("line_items[0][price_data][unit_amount]")), currency: "usd", url: `https://checkout.stripe.com/c/pay/cs_test_Query${sequence}` });
+    });
+  });
+  const CODE = "48213097";
+  const utms = { utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "teste123", utm_content: "c1", utm_term: "kw1" };
+  function entry(values: Record<string, string>) {
+    return new Request(`https://hopehumanbooks.com/comprar/little-women?${new URLSearchParams(values)}`, { headers: { "x-forwarded-for": "1.2.3.4" } });
+  }
+  async function seed() {
+    const db = H.current;
+    if (!db) throw new Error("Test database unavailable");
+    await db.db.exec("TRUNCATE marketing_codes;");
+    await db.client`INSERT INTO marketing_codes (code,utm_source,utm_medium,utm_campaign) VALUES (${CODE},'registry-source','registry-medium','registry-campaign')`;
+    return db;
+  }
+  it.each([false, true])("persists five query UTMs, gclid and Meta click identifiers (registry=%s)", async (registry) => {
+    const db = await seed();
+    expect((await handlePurchaseEntry(entry({ ...utms, gclid: "GOOGLE1", fbclid: "META1", ...(registry ? { ref: CODE } : {}) }), "little-women", await defaultPurchaseEntryDeps())).status).toBe(302);
+    const records = await db.client`SELECT * FROM order_attribution`;
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ ...utms, gclid: "GOOGLE1", fbclid: "META1", click_id: registry ? CODE : null });
+    expect(records[0]?.["fbc"]).toMatch(/^fb\.1\.\d+\.META1$/);
+  });
+  it("preserves registry-only fallback and applies precedence field by field", async () => {
+    const db = await seed();
+    const deps = await defaultPurchaseEntryDeps();
+    expect((await handlePurchaseEntry(entry({ ref: CODE }), "little-women", deps)).status).toBe(302);
+    const nextResponse = await handlePurchaseEntry(entry({ ref: CODE, utm_source: " URL-source ", utm_medium: " ", utm_content: "c1" }), "little-women", deps);
+    expect(nextResponse.status).toBe(302);
+    const records = await db.client`SELECT utm_source,utm_medium,utm_campaign,utm_content,click_id FROM order_attribution ORDER BY created_at`;
+    expect(records[0]).toEqual({ utm_source: "registry-source", utm_medium: "registry-medium", utm_campaign: "registry-campaign", utm_content: null, click_id: CODE });
+    expect(records[1]).toEqual({ utm_source: "URL-source", utm_medium: "registry-medium", utm_campaign: "registry-campaign", utm_content: "c1", click_id: CODE });
+  });
+  it("sanitizes control characters and truncates every query field at 255 without failing checkout", async () => {
+    const db = await seed();
+    const values = Object.fromEntries([...Object.keys(utms), "gclid"].map(key => [key, `  abc\u0000def\u007f${"x".repeat(300)}  `]));
+    expect((await handlePurchaseEntry(entry(values), "little-women", await defaultPurchaseEntryDeps())).status).toBe(302);
+    const [record] = await db.client`SELECT * FROM order_attribution`;
+    for (const key of Object.keys(values)) expect(record?.[key]).toBe(`abc def ${"x".repeat(247)}`);
+  });
+  it("keeps the entire Stripe wire payload identical, including URLs and exact metadata allowlists", async () => {
+    const db = await seed();
+    const forms: string[] = [];
+    for (const values of [{}, { ...utms, gclid: "GOOGLE1", fbclid: "META1" }, { ...utms, gclid: "GOOGLE1", fbclid: "META1", ref: CODE }]) {
+      H.fetch.mockClear();
+      let orderId = "";
+      const deps = await defaultPurchaseEntryDeps();
+      const response = await handlePurchaseEntry(entry(values), "little-women", { ...deps, createOrder: async (input) => {
+        const result = await deps.createOrder(input);
+        orderId = result.order["id"];
+        return result;
+      } });
+      expect(response.status).toBe(302);
+      const call = H.fetch.mock.calls.find(([, init]) => (init as RequestInit).method === "POST");
+      if (!call) throw new Error("Stripe request missing");
+      const form = new URLSearchParams(String((call[1] as RequestInit).body));
+      const [order] = await db.client`SELECT id,order_number,public_token FROM orders WHERE id=${orderId}`;
+      if (!order) throw new Error("Order missing");
+      const allowed = ["store_id", "order_id", "order_number", "environment", "item_count", "product_type", "delivery_type", "sku", "product_name", "quantity", "category"].sort();
+      for (const prefix of ["metadata[", "payment_intent_data[metadata]["]) {
+        expect([...form.keys()].filter(key => key.startsWith(prefix)).map(key => key.slice(prefix.length, -1)).sort()).toEqual(allowed);
+      }
+      expect(form.get("success_url")).toBe(`https://hopehumanbooks.com/order/${order["public_token"]}`);
+      expect(form.get("cancel_url")).toBe("https://hopehumanbooks.com/comprar/little-women");
+      expect([...form.keys()].join(" ")).not.toMatch(/utm_|fbclid|fbc|gclid|click_id/);
+      expect([...form.values()]).not.toContain("teste123");
+      expect([...form.values()]).not.toContain("registry-campaign");
+      // Only independently generated order identity/time values are canonicalized;
+      // no field is removed, including both URLs, description and product_data.
+      const canonical = new URLSearchParams();
+      for (const [key, value] of form) {
+        canonical.append(key, key === "expires_at" ? "FIXED_EXPIRY" : value
+          .replaceAll(String(order["id"]), "FIXED_ID")
+          .replaceAll(String(order["order_number"]), "FIXED_NUMBER")
+          .replaceAll(String(order["public_token"]), "FIXED_TOKEN"));
+      }
+      forms.push(canonical.toString());
+    }
+    expect(forms[1]).toBe(forms[0]);
+    expect(forms[2]).toBe(forms[0]);
+  });
+  it("buildSalePayload carries the saved click_id and UTMs to UTMify", async () => {
+    const db = await seed();
+    await handlePurchaseEntry(entry({ ...utms, ref: CODE, fbclid: "META1", gclid: "GOOGLE1" }), "little-women", await defaultPurchaseEntryDeps());
+    const [record] = await db.client`SELECT * FROM order_attribution`;
+    if (!record) throw new Error("Attribution missing");
+    const product = purchaseEntryProduct("little-women");
+    if (!product) throw new Error("Product missing");
+    const payload = buildSalePayload({ orderId: record["order_id"], storeId: HHB_STORE_ID, orderNumber: "ORD-FIXTURE", currency: "USD", totalCents: 3000, status: "PAID", createdAt: "2026-10-18T21:00:00Z", paidAt: "2026-10-18T21:01:00Z", customerName: null, email: null, phone: null, document: null, country: null, paymentMethod: "card", items: [{ id: product.id, name: product.name, quantity: 1, priceInCents: 3000 }] }, record as Attribution, { isTest: true });
+    expect(payload.trackingParameters).toMatchObject({ ...utms, src: CODE, gclid: "GOOGLE1", fbclid: "META1", fbc: record["fbc"] });
+    expect(payload.commission).toMatchObject({ totalPriceInCents: 3000, currency: "USD" });
+  });
+  it("buildPayload reads saved UTMs into Meta custom_data and fbc into user_data", async () => {
+    const db = await seed();
+    await handlePurchaseEntry(entry({ ...utms, ref: CODE, fbclid: "META1" }), "little-women", await defaultPurchaseEntryDeps());
+    const [record] = await db.client`SELECT * FROM order_attribution`;
+    if (!record) throw new Error("Attribution missing");
+    const context = await loadOrderContext(record["order_id"], HHB_STORE_ID);
+    if (!context) throw new Error("Order context missing");
+    const callsBefore = H.fetch.mock.calls.length;
+    const payload = await buildPayload({ ...context, status: "PAID", paidAt: "2026-10-18T21:01:00Z" });
+    const events = payload["data"] as Array<{ custom_data: Record<string, unknown>; user_data: Record<string, unknown> }>;
+    expect(events[0]?.custom_data).toMatchObject({ ...utms, value: 30, currency: "USD" });
+    expect(events[0]?.user_data["fbc"]).toBe(record["fbc"]);
+    expect(H.fetch.mock.calls).toHaveLength(callsBefore);
   });
 });
