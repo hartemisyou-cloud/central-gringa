@@ -666,3 +666,12 @@ CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 AS $function$
 BEGIN NEW.updated_at = now(); RETURN NEW; END; $function$
 ;
+
+CREATE TABLE public."marketing_codes" (
+  "code" text PRIMARY KEY,
+  "utm_source" text NOT NULL,
+  "utm_medium" text NOT NULL,
+  "utm_campaign" text NOT NULL,
+  "active" boolean DEFAULT true NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL
+);

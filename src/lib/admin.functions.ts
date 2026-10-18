@@ -347,3 +347,38 @@ export const adminSaveStripeIntegration = createServerFn({ method: "POST" })
       return { ok: false as const, message: (error as Error).message };
     }
   });
+
+
+/* ------------------------------------------------------------------ */
+/* Tracking → Marketing codes (ref → UTM, resolved server-side only)    */
+/* ------------------------------------------------------------------ */
+
+const utmValue = z.string().trim().min(1).max(255);
+
+export const adminListMarketingCodes = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireAdmin } = await import("./admin/session.server");
+  await requireAdmin();
+  const { listActiveMarketingCodes } = await import("./marketing/codes.server");
+  return listActiveMarketingCodes();
+});
+
+export const adminCreateMarketingCode = createServerFn({ method: "POST" })
+  .inputValidator((data: { utmSource: string; utmMedium: string; utmCampaign: string }) =>
+    z.object({ utmSource: utmValue, utmMedium: utmValue, utmCampaign: utmValue }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { createMarketingCode } = await import("./marketing/codes.server");
+    return createMarketingCode(data);
+  });
+
+export const adminDeactivateMarketingCode = createServerFn({ method: "POST" })
+  .inputValidator((data: { code: string }) => z.object({ code: z.string().regex(/^\d{8}$/) }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin/session.server");
+    await requireAdmin();
+    const { deactivateMarketingCode } = await import("./marketing/codes.server");
+    await deactivateMarketingCode(data.code);
+    return { ok: true as const };
+  });

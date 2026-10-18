@@ -28,6 +28,7 @@ import {
   adminStatus,
 } from "@/lib/admin.functions";
 import { MetaTrackingSection } from "@/components/admin/meta-tracking-section";
+import { MarketingCodesSection } from "@/components/admin/marketing-codes-section";
 import { UtmifySection } from "@/components/admin/utmify-section";
 import { StripeSection } from "@/components/admin/stripe-section";
 import { DonationsSection } from "@/components/admin/donations-section";
@@ -349,6 +350,7 @@ function AdminDashboard() {
         <DonationsSection />
 
         <MetaTrackingSection />
+        <MarketingCodesSection />
 
         <UtmifySection />
 

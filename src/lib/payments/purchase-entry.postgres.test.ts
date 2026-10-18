@@ -244,3 +244,82 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(saved!["email"]).toBe("reader@example.com");
   });
 });
+
+describe("GET /comprar marketing attribution (ref + fbclid only)", () => {
+  const CODE = "48213097";
+  async function seedCode(active = true) {
+    await H.current!.db.exec("TRUNCATE marketing_codes;");
+    await H.current!.client`INSERT INTO marketing_codes (code,utm_source,utm_medium,utm_campaign,active)
+      VALUES (${CODE},'facebook','paid_social','Spring Classics Real Name',${active})`;
+  }
+  function entry(query: string, referer?: string) {
+    return new Request(`https://hopehumanbooks.com/comprar/little-women${query}`, {
+      headers: { "x-forwarded-for": "1.2.3.4", ...(referer ? { referer } : {}) },
+    });
+  }
+  async function stripeForm() {
+    const call = H.fetch.mock.calls.find(([, init]) => (init as RequestInit).method === "POST")!;
+    return new URLSearchParams(String((call[1] as RequestInit).body));
+  }
+
+  it("(a) valid ref + fbclid persists the real campaign name and fbclid", async () => {
+    await seedCode();
+    const response = await handlePurchaseEntry(entry(`?ref=${CODE}&fbclid=IwAR0abc`), "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
+    const rowsOut = await H.current!.client`SELECT utm_source, utm_medium, utm_campaign, fbclid, fbc, click_id FROM order_attribution`;
+    expect(rowsOut).toHaveLength(1);
+    expect(rowsOut[0]).toMatchObject({ utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "Spring Classics Real Name", fbclid: "IwAR0abc", click_id: null });
+    expect(String(rowsOut[0]!["fbc"])).toMatch(/^fb\.1\.\d+\.IwAR0abc$/);
+    const serialized = JSON.stringify([...(await stripeForm()).entries()]);
+    expect(serialized).not.toContain("Spring Classics Real Name");
+    expect(serialized).not.toContain(CODE);
+    expect(serialized).not.toMatch(/utm_|fbclid|campaign/);
+  });
+
+  it("(b) unknown or inactive ref + fbclid persists only fbclid", async () => {
+    await seedCode(false);
+    for (const ref of ["99999999", CODE, "<script>"]) {
+      await handlePurchaseEntry(entry(`?ref=${encodeURIComponent(ref)}&fbclid=CLICK1`), "little-women", await defaultPurchaseEntryDeps());
+    }
+    const rowsOut = await H.current!.client`SELECT utm_source, utm_medium, utm_campaign, fbclid FROM order_attribution`;
+    expect(rowsOut).toHaveLength(3);
+    for (const row of rowsOut) expect(row).toEqual({ utm_source: null, utm_medium: null, utm_campaign: null, fbclid: "CLICK1" });
+  });
+
+  it("(c) no query creates the order without an attribution row", async () => {
+    await seedCode();
+    const response = await handlePurchaseEntry(entry(""), "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
+    expect(await H.current!.client`SELECT count(*)::int AS n FROM orders`).toEqual([{ n: 1 }]);
+    expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
+  });
+
+  it("(d) utm_* directly on the query stays ignored", async () => {
+    await seedCode();
+    await handlePurchaseEntry(entry("?utm_source=x&utm_medium=y&utm_campaign=z&gclid=g"), "little-women", await defaultPurchaseEntryDeps());
+    expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
+  });
+
+  it("never fails the order when the code lookup throws", async () => {
+    const deps = { ...(await defaultPurchaseEntryDeps()), resolveMarketingCode: async () => { throw new Error("db down"); } };
+    const response = await handlePurchaseEntry(entry(`?ref=${CODE}`), "little-women", deps);
+    expect(response.status).toBe(302);
+  });
+
+  it("(e)(f) Stripe session form is byte-identical with and without attribution, with and without hhf", async () => {
+    await seedCode();
+    const normalize = (form: URLSearchParams) => [...form.entries()]
+      .map(([key, value]) => [key, value.replace(/ORD-\d{8}-[A-Z0-9]+/g, "ORD-X")] as const)
+      .filter(([key]) => !/expires_at|client_reference_id|order|success_url|cancel_url|idempotency/.test(key)
+        && !/^metadata\[(order_id|order_number|public_token)\]$/.test(key)
+        && !/^payment_intent_data\[metadata\]\[(order_id|order_number|public_token)\]$/.test(key));
+    const forms: Array<ReturnType<typeof normalize>> = [];
+    for (const [query, referer] of [["", undefined], [`?ref=${CODE}&fbclid=F1`, undefined], ["", "https://www.hopehumanfoundation.org/"], [`?ref=${CODE}&fbclid=F1`, "https://www.hopehumanfoundation.org/"]] as const) {
+      H.fetch.mockClear();
+      await handlePurchaseEntry(entry(query, referer), "little-women", await defaultPurchaseEntryDeps());
+      forms.push(normalize(await stripeForm()));
+    }
+    expect(forms[1]).toEqual(forms[0]);
+    expect(forms[3]).toEqual(forms[2]);
+  });
+});
