@@ -12,7 +12,7 @@ vi.mock("@/lib/db/client.server", async (original) => {
   }, { get(_target, key) { const value = Reflect.get(H.current!.client, key); return typeof value === "function" ? value.bind(H.current!.client) : value; } }) };
 });
 import { buildOrderPaymentMetadata, buildPaymentDescription, createOrder } from "./orders.server";
-import { defaultPurchaseEntryDeps, handlePurchaseEntry } from "./purchase-entry.server";
+import { defaultPurchaseEntryDeps, entryAttribution, handlePurchaseEntry } from "./purchase-entry.server";
 import type { StoreRow } from "./store-auth.server";
 import { encryptSecret } from "./crypto.server";
 import { createEbookCheckoutSession } from "./checkout-session.server";
@@ -248,7 +248,7 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
   });
 });
 
-describe("GET /comprar marketing attribution (query overrides registry)", () => {
+describe("GET /comprar marketing attribution (registry overrides query)", () => {
   const CODE = "48213097";
   async function seedCode(active = true) {
     await H.current!.db.exec("TRUNCATE marketing_codes;");
@@ -343,6 +343,7 @@ describe("query UTM pass-through and downstream payloads", () => {
   });
   const CODE = "48213097";
   const utms = { utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "teste123", utm_content: "c1", utm_term: "kw1" };
+  const registryUtms = { utm_source: "registry-source", utm_medium: "registry-medium", utm_campaign: "registry-campaign" };
   function entry(values: Record<string, string>) {
     return new Request(`https://hopehumanbooks.com/comprar/little-women?${new URLSearchParams(values)}`, { headers: { "x-forwarded-for": "1.2.3.4" } });
   }
@@ -358,18 +359,36 @@ describe("query UTM pass-through and downstream payloads", () => {
     expect((await handlePurchaseEntry(entry({ ...utms, gclid: "GOOGLE1", fbclid: "META1", ...(registry ? { ref: CODE } : {}) }), "little-women", await defaultPurchaseEntryDeps())).status).toBe(302);
     const records = await db.client`SELECT * FROM order_attribution`;
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ ...utms, gclid: "GOOGLE1", fbclid: "META1", click_id: registry ? CODE : null });
+    expect(records[0]).toMatchObject({ ...utms, ...(registry ? registryUtms : {}), gclid: "GOOGLE1", fbclid: "META1", click_id: registry ? CODE : null });
     expect(records[0]?.["fbc"]).toMatch(/^fb\.1\.\d+\.META1$/);
   });
   it("preserves registry-only fallback and applies precedence field by field", async () => {
     const db = await seed();
     const deps = await defaultPurchaseEntryDeps();
     expect((await handlePurchaseEntry(entry({ ref: CODE }), "little-women", deps)).status).toBe(302);
-    const nextResponse = await handlePurchaseEntry(entry({ ref: CODE, utm_source: " URL-source ", utm_medium: " ", utm_content: "c1" }), "little-women", deps);
+    const nextResponse = await handlePurchaseEntry(entry({ ref: CODE, utm_source: " URL-source ", utm_medium: " ", utm_campaign: "conflicting-campaign", utm_content: "c1" }), "little-women", deps);
     expect(nextResponse.status).toBe(302);
     const records = await db.client`SELECT utm_source,utm_medium,utm_campaign,utm_content,click_id FROM order_attribution ORDER BY created_at`;
     expect(records[0]).toEqual({ utm_source: "registry-source", utm_medium: "registry-medium", utm_campaign: "registry-campaign", utm_content: null, click_id: CODE });
-    expect(records[1]).toEqual({ utm_source: "URL-source", utm_medium: "registry-medium", utm_campaign: "registry-campaign", utm_content: "c1", click_id: CODE });
+    expect(records[1]).toEqual({ utm_source: "registry-source", utm_medium: "registry-medium", utm_campaign: "registry-campaign", utm_content: "c1", click_id: CODE });
+  });
+  it.each(["99999999", "<script>"])("retains query UTMs and gclid for invalid ref %s", async (ref) => {
+    const db = await seed();
+    expect((await handlePurchaseEntry(entry({ ...utms, gclid: "GOOGLE1", ref }), "little-women", await defaultPurchaseEntryDeps())).status).toBe(302);
+    const [record] = await db.client`SELECT * FROM order_attribution`;
+    expect(record).toMatchObject({ ...utms, gclid: "GOOGLE1", click_id: ref });
+  });
+  it("returns undefined for an empty query without looking up a code", async () => {
+    const resolveMarketingCode = vi.fn();
+    await expect(entryAttribution(new URL("https://hopehumanbooks.com/comprar/little-women"), { resolveMarketingCode })).resolves.toBeUndefined();
+    expect(resolveMarketingCode).not.toHaveBeenCalled();
+  });
+  it("retains query attribution when registry lookup fails", async () => {
+    const db = await seed();
+    const deps = { ...(await defaultPurchaseEntryDeps()), resolveMarketingCode: async () => { throw new Error("registry unavailable"); } };
+    expect((await handlePurchaseEntry(entry({ ...utms, gclid: "GOOGLE1", ref: CODE }), "little-women", deps)).status).toBe(302);
+    const [record] = await db.client`SELECT * FROM order_attribution`;
+    expect(record).toMatchObject({ ...utms, gclid: "GOOGLE1", click_id: CODE });
   });
   it("sanitizes control characters and truncates every query field at 255 without failing checkout", async () => {
     const db = await seed();
@@ -427,7 +446,7 @@ describe("query UTM pass-through and downstream payloads", () => {
     const product = purchaseEntryProduct("little-women");
     if (!product) throw new Error("Product missing");
     const payload = buildSalePayload({ orderId: record["order_id"], storeId: HHB_STORE_ID, orderNumber: "ORD-FIXTURE", currency: "USD", totalCents: 3000, status: "PAID", createdAt: "2026-10-18T21:00:00Z", paidAt: "2026-10-18T21:01:00Z", customerName: null, email: null, phone: null, document: null, country: null, paymentMethod: "card", items: [{ id: product.id, name: product.name, quantity: 1, priceInCents: 3000 }] }, record as Attribution, { isTest: true });
-    expect(payload.trackingParameters).toMatchObject({ ...utms, src: CODE, gclid: "GOOGLE1", fbclid: "META1", fbc: record["fbc"] });
+    expect(payload.trackingParameters).toMatchObject({ ...utms, ...registryUtms, src: CODE, gclid: "GOOGLE1", fbclid: "META1", fbc: record["fbc"] });
     expect(payload.commission).toMatchObject({ totalPriceInCents: 3000, currency: "USD" });
   });
   it("buildPayload reads saved UTMs into Meta custom_data and fbc into user_data", async () => {
@@ -440,7 +459,7 @@ describe("query UTM pass-through and downstream payloads", () => {
     const callsBefore = H.fetch.mock.calls.length;
     const payload = await buildPayload({ ...context, status: "PAID", paidAt: "2026-10-18T21:01:00Z" });
     const events = payload["data"] as Array<{ custom_data: Record<string, unknown>; user_data: Record<string, unknown> }>;
-    expect(events[0]?.custom_data).toMatchObject({ ...utms, value: 30, currency: "USD" });
+    expect(events[0]?.custom_data).toMatchObject({ ...utms, ...registryUtms, value: 30, currency: "USD" });
     expect(events[0]?.user_data["fbc"]).toBe(record["fbc"]);
     expect(H.fetch.mock.calls).toHaveLength(callsBefore);
   });
