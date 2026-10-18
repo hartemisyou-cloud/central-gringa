@@ -20,26 +20,29 @@ export interface PurchaseEntryDeps {
 
 /**
  * Reads ref, fbclid, the five utm_* fields and gclid from the query.
- * ref feeds click_id and the campaign lookup fallback; nonempty query fields
- * override that fallback individually. Values are sanitized/truncated, never rejected.
+ * Query values are applied first; a valid registry ref overrides its UTM fields
+ * individually. Values are sanitized/truncated, never rejected.
  */
 export async function entryAttribution(
   url: URL,
   deps: Pick<PurchaseEntryDeps, "resolveMarketingCode" | "now">,
 ): Promise<Attribution | undefined> {
   const raw = normalizeAttribution({
-    click_id: url.searchParams.get("ref") ?? undefined,
-    fbclid: url.searchParams.get("fbclid") ?? undefined,
     utm_source: url.searchParams.get("utm_source") ?? undefined,
     utm_medium: url.searchParams.get("utm_medium") ?? undefined,
     utm_campaign: url.searchParams.get("utm_campaign") ?? undefined,
     utm_content: url.searchParams.get("utm_content") ?? undefined,
     utm_term: url.searchParams.get("utm_term") ?? undefined,
     gclid: url.searchParams.get("gclid") ?? undefined,
+    click_id: url.searchParams.get("ref") ?? undefined,
+    fbclid: url.searchParams.get("fbclid") ?? undefined,
   });
-  const out: Attribution = {};
+  const out: Attribution = { ...raw };
+  if (raw.fbclid) {
+    out.fbclid = raw.fbclid;
+    out.fbc = normalizeAttribution({ fbc: `fb.1.${(deps.now ?? Date.now)()}.${raw.fbclid}` }).fbc;
+  }
   if (raw.click_id) {
-    out.click_id = raw.click_id;
     try {
       const utm = await deps.resolveMarketingCode(raw.click_id);
       if (utm) Object.assign(out, normalizeAttribution(utm));
@@ -47,19 +50,12 @@ export async function entryAttribution(
       // attribution is best effort; never fails the order
     }
   }
-  for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid"] as const) {
-    if (raw[key]) out[key] = raw[key];
-  }
-  if (raw.fbclid) {
-    out.fbclid = raw.fbclid;
-    out.fbc = normalizeAttribution({ fbc: `fb.1.${(deps.now ?? Date.now)()}.${raw.fbclid}` }).fbc;
-  }
   return Object.keys(out).length ? out : undefined;
 }
 
 const headers = { "cache-control": "no-store", "x-robots-tag": "noindex" };
 
-/** Server-only entry: no customer data or prices from the URL; only `ref`/`fbclid` feed attribution. */
+/** Server-only entry: no customer data or prices from the URL; only allowlisted tracking fields feed attribution. */
 export async function handlePurchaseEntry(
   request: Request,
   slug: string,
