@@ -4,6 +4,7 @@ import {
   consumeHhfEntry,
   checkoutEntryKey,
   HHF_RETURN_STORAGE_KEY,
+  hhfReceiptView,
   hhfThankYouUrl,
   scheduleHhfPaidReturn,
 } from "./hhf-return";
