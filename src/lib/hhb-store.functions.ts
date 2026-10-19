@@ -117,6 +117,24 @@ export const getReceipt = createServerFn({ method: "GET" })
         from public.orders o where o.public_token = ${data.token}
       `, true);
       if (!order) return { ok: false, message: "Order not found." };
+      // HHF-originated orders never expose items or works to the browser: the
+      // receipt page is a neutral support confirmation that returns the visitor
+      // to the foundation. Delivery stays page-only for regular store orders.
+      if (order.origin_hhf) {
+        return {
+          ok: true,
+          receipt: {
+            orderNumber: order.order_number,
+            status: order.status,
+            currency: order.currency,
+            totalCents: order.total_cents,
+            createdAt: order.created_at,
+            hhf: true,
+            items: [],
+            works: [],
+          },
+        };
+      }
       const { getOrderDeliverables } = await import("@/lib/payments/fulfillment.server");
       const deliverables = await getOrderDeliverables(data.token);
       return {
@@ -127,6 +145,7 @@ export const getReceipt = createServerFn({ method: "GET" })
           currency: order.currency,
           totalCents: order.total_cents,
           createdAt: order.created_at,
+          hhf: false,
           items: (order.order_items ?? []).map((i) => ({
             name: i.product_name,
             quantity: i.quantity,
