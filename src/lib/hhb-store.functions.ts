@@ -47,6 +47,7 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(
         priceCents: p.priceCents,
         currency: p.currency,
         category: p.category,
+        stock: p.available,
       }))
       .sort((a, b) => a.priceCents - b.priceCents);
   },
