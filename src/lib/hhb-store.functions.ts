@@ -87,6 +87,8 @@ export interface Receipt {
   currency: string;
   totalCents: number;
   createdAt: string;
+  /** Persisted HHF origin: the receipt page renders a neutral confirmation. */
+  hhf: boolean;
   items: Array<{ name: string; quantity: number; totalCents: number }>;
   works: Array<{
     workId: string;
@@ -106,9 +108,10 @@ export const getReceipt = createServerFn({ method: "GET" })
       const { sql, one } = await import("@/lib/db/client.server");
       const { data: order } = await one<{
         order_number: string; status: string; currency: string; total_cents: number; created_at: string;
+        origin_hhf: boolean;
         order_items: Array<{ product_name: string; quantity: number; total_cents: number }>;
       }>(sql`
-        select o.order_number, o.status, o.currency, o.total_cents, o.created_at,
+        select o.order_number, o.status, o.currency, o.total_cents, o.created_at, o.origin_hhf,
           coalesce((select jsonb_agg(jsonb_build_object('product_name', i.product_name, 'quantity', i.quantity,
             'total_cents', i.total_cents)) from public.order_items i where i.order_id = o.id), '[]'::jsonb) as order_items
         from public.orders o where o.public_token = ${data.token}
