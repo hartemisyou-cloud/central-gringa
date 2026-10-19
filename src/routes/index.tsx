@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { Download, ShieldCheck, BookOpen } from "lucide-react";
+import { Download, ShieldCheck, FileCheck } from "lucide-react";
 
 import { StoreFooter, BrandMark } from "@/components/policies/PolicyLinks";
 import { BookCover, splitName } from "@/components/BookCover";
