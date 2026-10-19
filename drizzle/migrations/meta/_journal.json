@@ -43,6 +43,13 @@
       "when": 1792373234565,
       "tag": "0005_orders_origin_hhf",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792381715875,
+      "tag": "0006_public_storefront_catalog_read",
+      "breakpoints": true
     }
   ]
 }
