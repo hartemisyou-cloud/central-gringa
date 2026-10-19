@@ -11,6 +11,7 @@ export interface PublicProduct {
   priceCents: number;
   currency: string;
   available: number;
+  weightGrams: number;
   imageUrl: string | null;
   category: string | null;
 }
@@ -34,6 +35,7 @@ export async function listStoreProducts(store: StoreRow): Promise<PublicProduct[
     priceCents: row.price_cents,
     currency: row.currency,
     available: Math.max(row.stock - row.reserved_stock, 0),
+    weightGrams: row.weight_grams,
     imageUrl: row.image_url,
     category: row.category,
   }));
