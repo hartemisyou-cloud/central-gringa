@@ -52,8 +52,8 @@ interface PublicProductRow {
  * every write path still require the PostgreSQL server connection.
  */
 async function loadPublicCatalog(): Promise<CatalogProduct[]> {
-  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+  const base = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
+  const key = import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] as string | undefined;
   if (!base || !key) throw new Error("Public catalog is not configured.");
   const { HHB_STORE_SLUG } = await import("@/lib/catalog/hhb");
   const headers = { apikey: key, Authorization: `Bearer ${key}` };
