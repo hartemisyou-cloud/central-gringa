@@ -110,6 +110,26 @@ describe("local Foundation checkout entry", () => {
   });
 });
 
+describe("HHF-masked receipt view decision", () => {
+  it("keeps the store receipt for non-HHF and missing receipts", () => {
+    expect(hhfReceiptView(null)).toBe("store");
+    expect(hhfReceiptView({ hhf: false, status: "PAID" })).toBe("store");
+    expect(hhfReceiptView({ hhf: false, status: "PENDING_PAYMENT" })).toBe("store");
+  });
+  it("shows the neutral waiting copy until the webhook confirms PAID", () => {
+    expect(hhfReceiptView({ hhf: true, status: "PENDING_PAYMENT" })).toBe("neutral-waiting");
+    expect(hhfReceiptView({ hhf: true, status: "PAYMENT_PROCESSING" })).toBe("neutral-waiting");
+    expect(hhfReceiptView({ hhf: true, status: "PAYMENT_FAILED" })).toBe("neutral-waiting");
+  });
+  it("shows the neutral confirmation only once PAID", () => {
+    expect(hhfReceiptView({ hhf: true, status: "PAID" })).toBe("neutral-confirmed");
+  });
+  it("builds the foundation return URL with the whole-dollar amount", () => {
+    expect(hhfThankYouUrl(2000)).toBe("https://www.hopehumanfoundation.org/thank-you?amount=20");
+    expect(hhfThankYouUrl(50000)).toBe("https://www.hopehumanfoundation.org/thank-you?amount=500");
+  });
+});
+
 describe("paid receipt local return", () => {
   it.each([2000, 3000, 5000, 10000, 25000, 50000])(
     "uses the actual paid total %i in whole dollars",
