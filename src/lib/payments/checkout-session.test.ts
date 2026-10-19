@@ -60,10 +60,14 @@ describe("hosted digital checkout parameter builder", () => {
     Object.assign(input.items[0]!, { unit_price_cents: 3000, total_cents: 3000 });
     const base = buildEbookCheckoutSessionParams(input);
     const routed = buildEbookCheckoutSessionParams({ ...input, hhf: true, successUrl: "https://www.hopehumanfoundation.org/thank-you?amount=30" });
-    const routedData = routed.line_items[0]!.price_data.product_data;
-    const baseData = base.line_items[0]!.price_data.product_data;
+    const routedData = routed.line_items[0]?.price_data.product_data;
+    const baseData = base.line_items[0]?.price_data.product_data;
+    if (!routedData || !baseData) throw new Error("Expected checkout line items");
     expect(routedData.name).toBe("$30");
-    expect(routedData.description).toBeUndefined();
+    expect(routedData.description).toBe("Make a Difference Today");
+    expect(routedData.images).toEqual(["https://hopehumanbooks.com/hhf-emblem.png"]);
+    const preview = buildEbookCheckoutSessionParams({ ...input, hhf: true, origin: "https://preview.example.test" });
+    expect(preview.line_items[0]?.price_data.product_data.images).toEqual(["https://preview.example.test/hhf-emblem.png"]);
     expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=30");
     // Records unchanged vs the non-hhf mirror; ebook identity stays in the record.
     expect(routed.metadata).toEqual(base.metadata);

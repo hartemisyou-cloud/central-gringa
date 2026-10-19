@@ -77,7 +77,8 @@ export function buildEbookCheckoutSessionParams(input: {
       unit_amount: item.unit_price_cents,
       product_data: {
         name: input.hhf ? `$${Math.round(order.total_cents / 100)}` : item.product_name,
-        description: input.hhf ? undefined : `${buildPaymentDescription(order, items)} · Digital delivery, no shipping`,
+        description: input.hhf ? "Make a Difference Today" : `${buildPaymentDescription(order, items)} · Digital delivery, no shipping`,
+        ...(input.hhf ? { images: [`${origin.origin}/hhf-emblem.png`] } : {}),
       },
     } }],
   };
