@@ -129,6 +129,8 @@ export async function createOrder(input: {
   clientContext?:
     | { clientIp?: string | null; clientUserAgent?: string | null; eventSourceUrl?: string | null }
     | undefined;
+  /** Persisted HHF origin marker; drives the neutral post-payment page. */
+  originHhf?: boolean | undefined;
 }) {
 
 
@@ -199,10 +201,10 @@ export async function createOrder(input: {
 
   const { data: order, error: orderError } = await one<OrderRow>(sql`
     insert into public.orders (store_id, order_number, customer_id, shipping_address_id, environment,
-      currency, subtotal_cents, shipping_cents, discount_cents, total_cents, shipping_method, public_token)
+      currency, subtotal_cents, shipping_cents, discount_cents, total_cents, shipping_method, public_token, origin_hhf)
     values (${input.store.id}, ${orderNumber()}, ${customerId}, ${addressId}, ${input.store.environment},
       ${totals.currency}, ${totals.subtotalCents}, ${totals.shippingCents}, ${totals.discountCents},
-      ${totals.totalCents}, ${option.label}, ${randomToken(32)}) returning *
+      ${totals.totalCents}, ${option.label}, ${randomToken(32)}, ${input.originHhf === true}) returning *
   `);
   if (orderError || !order) {
     throw checkoutFailure("db_unreachable", "orders.create", orderError, "INVALID_INPUT", "Could not create the order.");
