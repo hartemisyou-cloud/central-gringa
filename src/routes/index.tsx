@@ -160,9 +160,20 @@ function ProductGrid({
           const added = hydrated && inCart(p.id);
           return (
             <article key={p.id} className="surface-card flex flex-col overflow-hidden">
-              <BookCover title={t} author={author || `${sources.length} ebooks`} index={i + offset} className="mx-auto mt-5 w-40 rounded-sm shadow-md" />
+              <img
+                src={COVERS_BY_SKU[p.sku]}
+                alt={`Cover of ${t}`}
+                loading="lazy"
+                width={672}
+                height={992}
+                className="mx-auto mt-5 w-40 rounded-sm shadow-md"
+              />
               <div className="flex flex-1 flex-col gap-3 p-5">
                 <h3 className="font-display text-lg font-semibold">{p.name}</h3>
+                <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Package className="size-3.5 text-primary" />
+                  {p.stock > 0 ? `${p.stock.toLocaleString("en-US")} in stock` : "Out of stock"}
+                </p>
                 {sources.length > 1 ? (
                   <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
                     {sources.map((w) => (
