@@ -19,7 +19,7 @@ export interface PublicProduct {
 export async function listStoreProducts(store: StoreRow): Promise<PublicProduct[]> {
   const { data, error } = await rows<import("@/lib/db/types").Database["public"]["Tables"]["products"]["Row"]>(sql`
     select id, name, slug, description, sku, price_cents, currency, stock,
-           reserved_stock, image_url, category
+           reserved_stock, weight_grams, image_url, category
     from public.products where store_id = ${store.id} and active = true order by name asc
   `);
 

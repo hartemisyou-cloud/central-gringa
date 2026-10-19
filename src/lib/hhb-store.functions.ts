@@ -20,6 +20,7 @@ export interface CatalogProduct {
   currency: string;
   category: string | null;
   stock: number;
+  weightGrams: number;
 }
 
 async function loadStore() {
