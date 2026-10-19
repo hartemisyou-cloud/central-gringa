@@ -21,7 +21,7 @@ function Page() {
           body: (
             <p>
               Hope Human Books sells curated digital editions and collections of classic American
-              works. These are purchases, not charitable donations, and are not tax-deductible.
+              works.
             </p>
           ),
         },
