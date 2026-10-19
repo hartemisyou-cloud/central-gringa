@@ -1,15 +1,42 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { Download, ShieldCheck, FileCheck } from "lucide-react";
+import { Download, ShieldCheck, FileCheck, Package } from "lucide-react";
 
 import { StoreFooter, BrandMark } from "@/components/policies/PolicyLinks";
-import { BookCover, splitName } from "@/components/BookCover";
+import { splitName } from "@/components/BookCover";
 import { getCatalog, type CatalogProduct } from "@/lib/hhb-store.functions";
 import { HHB_PRODUCTS, workById } from "@/lib/catalog/hhb";
 import { formatMoney } from "@/lib/format";
 import { useCart } from "@/hooks/useCart";
 import { useStorefrontTracking } from "@/hooks/useStorefrontTracking";
 import { Button } from "@/components/ui/button";
+
+import coverYellowWallpaper from "@/assets/covers/yellow-wallpaper.jpg";
+import coverCallOfTheWild from "@/assets/covers/call-of-the-wild.jpg";
+import coverFourMillion from "@/assets/covers/four-million.jpg";
+import coverTomSawyer from "@/assets/covers/tom-sawyer.jpg";
+import coverLittleWomen from "@/assets/covers/little-women.jpg";
+import coverHuckleberryFinn from "@/assets/covers/huckleberry-finn.jpg";
+import coverWalden from "@/assets/covers/walden.jpg";
+import coverMobyDick from "@/assets/covers/moby-dick.jpg";
+import coverWizardOfOz from "@/assets/covers/wizard-of-oz.jpg";
+import coverClassicsCollection from "@/assets/covers/classics-collection.jpg";
+import coverClassicsLibrary from "@/assets/covers/classics-library.jpg";
+
+/** Generated cover artwork per catalog SKU — original art, no historical edition artwork. */
+const COVERS_BY_SKU: Record<string, string> = {
+  "HHB-EB-005": coverYellowWallpaper,
+  "HHB-EB-010": coverCallOfTheWild,
+  "HHB-EB-015": coverFourMillion,
+  "HHB-EB-020": coverTomSawyer,
+  "HHB-EB-030": coverLittleWomen,
+  "HHB-EB-050": coverHuckleberryFinn,
+  "HHB-EB-075": coverWalden,
+  "HHB-EB-100": coverMobyDick,
+  "HHB-EB-150": coverWizardOfOz,
+  "HHB-COL-250": coverClassicsCollection,
+  "HHB-LIB-500": coverClassicsLibrary,
+};
 
 // Fail closed but never blank the page: a backend without its database
 // configured shows an empty catalog (nothing purchasable) instead of crashing.
