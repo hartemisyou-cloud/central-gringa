@@ -208,6 +208,7 @@ CREATE TABLE public."orders" (
   "shipping_method" text,
   "stock_reserved" boolean DEFAULT false NOT NULL,
   "stock_committed" boolean DEFAULT false NOT NULL,
+  "origin_hhf" boolean DEFAULT false NOT NULL,
   "public_token" text NOT NULL,
   "paid_at" timestamp with time zone,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,

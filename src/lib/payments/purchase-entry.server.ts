@@ -73,18 +73,20 @@ export async function handlePurchaseEntry(
     }
     await deps.rateLimit(`orders:${store.id}:${deps.clientIp(request)}`, 20, 60);
     const attribution = await entryAttribution(new URL(request.url), deps);
+    const hhf = isHhfEntryReferer(request.headers.get("referer"));
     const order = await deps.createOrder({
       store,
       items: [{ productId: product.id, quantity: 1 }],
       shippingOptionId: "no-shipping",
       ...(attribution ? { attribution } : {}),
+      originHhf: hhf,
     });
     const checkout = await deps.createCheckout({
       store,
       orderId: order.order.id,
       slug,
       origin: new URL(request.url).origin,
-      hhf: isHhfEntryReferer(request.headers.get("referer")),
+      hhf,
     });
     return new Response(null, {
       status: 302,

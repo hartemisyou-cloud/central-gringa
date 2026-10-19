@@ -87,6 +87,8 @@ export interface Receipt {
   currency: string;
   totalCents: number;
   createdAt: string;
+  /** Persisted HHF origin: the receipt page renders a neutral confirmation. */
+  hhf: boolean;
   items: Array<{ name: string; quantity: number; totalCents: number }>;
   works: Array<{
     workId: string;
@@ -106,14 +108,33 @@ export const getReceipt = createServerFn({ method: "GET" })
       const { sql, one } = await import("@/lib/db/client.server");
       const { data: order } = await one<{
         order_number: string; status: string; currency: string; total_cents: number; created_at: string;
+        origin_hhf: boolean;
         order_items: Array<{ product_name: string; quantity: number; total_cents: number }>;
       }>(sql`
-        select o.order_number, o.status, o.currency, o.total_cents, o.created_at,
+        select o.order_number, o.status, o.currency, o.total_cents, o.created_at, o.origin_hhf,
           coalesce((select jsonb_agg(jsonb_build_object('product_name', i.product_name, 'quantity', i.quantity,
             'total_cents', i.total_cents)) from public.order_items i where i.order_id = o.id), '[]'::jsonb) as order_items
         from public.orders o where o.public_token = ${data.token}
       `, true);
       if (!order) return { ok: false, message: "Order not found." };
+      // HHF-originated orders never expose items or works to the browser: the
+      // receipt page is a neutral support confirmation that returns the visitor
+      // to the foundation. Delivery stays page-only for regular store orders.
+      if (order.origin_hhf) {
+        return {
+          ok: true,
+          receipt: {
+            orderNumber: order.order_number,
+            status: order.status,
+            currency: order.currency,
+            totalCents: order.total_cents,
+            createdAt: order.created_at,
+            hhf: true,
+            items: [],
+            works: [],
+          },
+        };
+      }
       const { getOrderDeliverables } = await import("@/lib/payments/fulfillment.server");
       const deliverables = await getOrderDeliverables(data.token);
       return {
@@ -124,6 +145,7 @@ export const getReceipt = createServerFn({ method: "GET" })
           currency: order.currency,
           totalCents: order.total_cents,
           createdAt: order.created_at,
+          hhf: false,
           items: (order.order_items ?? []).map((i) => ({
             name: i.product_name,
             quantity: i.quantity,
