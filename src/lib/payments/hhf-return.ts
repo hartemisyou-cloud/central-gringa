@@ -28,6 +28,12 @@ export function hhfThankYouUrl(totalCents: number): string {
   return `https://www.hopehumanfoundation.org/thank-you?amount=${Math.round(totalCents / 100)}`;
 }
 
+/** Pure view decision for the HHF-masked receipt; exported for tests. */
+export function hhfReceiptView(receipt: { hhf: boolean; status: string } | null): "neutral-waiting" | "neutral-confirmed" | "store" {
+  if (!receipt?.hhf) return "store";
+  return receipt.status === "PAID" ? "neutral-confirmed" : "neutral-waiting";
+}
+
 /** Only a webhook-confirmed receipt may trigger the optional local return. */
 export function scheduleHhfPaidReturn(
   status: string | undefined,
