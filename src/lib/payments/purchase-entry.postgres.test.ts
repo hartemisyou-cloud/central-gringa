@@ -127,7 +127,7 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(response.status).toBe(302);
     const rows = await H.current!.client`SELECT origin_hhf FROM orders ORDER BY created_at DESC LIMIT 1`;
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.origin_hhf).toBe(expectedFlag);
+    expect(rows[0]!["origin_hhf"]).toBe(expectedFlag);
   });
   it("uses the database price, quantity one, null customer and no attribution", async () => {
     const q = H.current!.client;
