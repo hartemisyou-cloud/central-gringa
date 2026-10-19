@@ -9,7 +9,7 @@ import { getReceipt } from "@/lib/hhb-store.functions";
 import { formatMoney, ORDER_STATUS_LABEL } from "@/lib/format";
 import { usePresence } from "@/hooks/usePresence";
 import { Button } from "@/components/ui/button";
-import { scheduleHhfPaidReturn } from "@/lib/payments/hhf-return";
+import { hhfReceiptView, hhfThankYouUrl, scheduleHhfPaidReturn } from "@/lib/payments/hhf-return";
 
 export const Route = createFileRoute("/order/$token")({
   head: () => ({
@@ -43,10 +43,20 @@ function ReceiptPage() {
   const paid = receipt?.status === "PAID";
   const receiptStatus = receipt?.status;
   const receiptTotalCents = receipt?.totalCents;
+  const receiptHhf = receipt?.hhf === true;
   useEffect(
     () => scheduleHhfPaidReturn(receiptStatus, receiptTotalCents),
     [token, receiptStatus, receiptTotalCents],
   );
+  // HHF-masked orders return to the foundation only after the webhook-confirmed
+  // PAID status; the short delay just lets the neutral paint stabilize.
+  useEffect(() => {
+    if (!receiptHhf || !paid || receiptTotalCents === undefined) return;
+    const timer = window.setTimeout(() => {
+      window.location.replace(hhfThankYouUrl(receiptTotalCents));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [receiptHhf, paid, receiptTotalCents]);
   const failed = receipt ? ["PAYMENT_FAILED", "CANCELLED"].includes(receipt.status) : false;
   const presence = usePresence({ state: "CHECKOUT_VIEWED" });
   useEffect(() => {
