@@ -19,6 +19,7 @@ export interface CatalogProduct {
   priceCents: number;
   currency: string;
   category: string | null;
+  stock: number;
 }
 
 async function loadStore() {
@@ -31,23 +32,81 @@ async function loadStore() {
   return store;
 }
 
+interface PublicProductRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  sku: string;
+  price_cents: number;
+  currency: string;
+  category: string | null;
+  stock: number;
+  reserved_stock: number;
+}
+
+/**
+ * Read-only storefront fallback for environments without DATABASE_URL
+ * (e.g. the Lovable preview): the public catalog is served through the
+ * backend's anonymous read-only policy on active products. Checkout and
+ * every write path still require the PostgreSQL server connection.
+ */
+async function loadPublicCatalog(): Promise<CatalogProduct[]> {
+  const base = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
+  const key = import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] as string | undefined;
+  if (!base || !key) throw new Error("Public catalog is not configured.");
+  const { HHB_STORE_SLUG } = await import("@/lib/catalog/hhb");
+  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  const storesRes = await fetch(
+    `${base}/rest/v1/stores?select=id&slug=eq.${encodeURIComponent(HHB_STORE_SLUG)}&limit=1`,
+    { headers },
+  );
+  if (!storesRes.ok) throw new Error(`Public catalog store lookup failed (${storesRes.status}).`);
+  const stores = (await storesRes.json()) as { id: string }[];
+  if (!stores[0]) throw new Error("The store is not set up yet.");
+  const productsRes = await fetch(
+    `${base}/rest/v1/products?select=id,name,slug,description,sku,price_cents,currency,category,stock,reserved_stock&store_id=eq.${stores[0].id}&active=eq.true`,
+    { headers },
+  );
+  if (!productsRes.ok) throw new Error(`Public catalog read failed (${productsRes.status}).`);
+  const rows = (await productsRes.json()) as PublicProductRow[];
+  return rows
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      description: p.description,
+      sku: p.sku,
+      priceCents: p.price_cents,
+      currency: p.currency,
+      category: p.category,
+      stock: Math.max(p.stock - p.reserved_stock, 0),
+    }))
+    .sort((a, b) => a.priceCents - b.priceCents);
+}
+
 export const getCatalog = createServerFn({ method: "GET" }).handler(
   async (): Promise<CatalogProduct[]> => {
-    const store = await loadStore();
-    const { listStoreProducts } = await import("@/lib/payments/catalog.server");
-    const products = await listStoreProducts(store);
-    return products
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        description: p.description,
-        sku: p.sku,
-        priceCents: p.priceCents,
-        currency: p.currency,
-        category: p.category,
-      }))
-      .sort((a, b) => a.priceCents - b.priceCents);
+    try {
+      const store = await loadStore();
+      const { listStoreProducts } = await import("@/lib/payments/catalog.server");
+      const products = await listStoreProducts(store);
+      return products
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          description: p.description,
+          sku: p.sku,
+          priceCents: p.priceCents,
+          currency: p.currency,
+          category: p.category,
+          stock: p.available,
+        }))
+        .sort((a, b) => a.priceCents - b.priceCents);
+    } catch {
+      return loadPublicCatalog();
+    }
   },
 );
 
