@@ -1241,6 +1241,7 @@ export type Database = {
           environment: Database["public"]["Enums"]["payment_environment"]
           id: string
           order_number: string
+          origin_hhf: boolean
           paid_at: string | null
           public_token: string
           shipping_address_id: string | null
@@ -1262,6 +1263,7 @@ export type Database = {
           environment: Database["public"]["Enums"]["payment_environment"]
           id?: string
           order_number: string
+          origin_hhf?: boolean
           paid_at?: string | null
           public_token: string
           shipping_address_id?: string | null
@@ -1283,6 +1285,7 @@ export type Database = {
           environment?: Database["public"]["Enums"]["payment_environment"]
           id?: string
           order_number?: string
+          origin_hhf?: boolean
           paid_at?: string | null
           public_token?: string
           shipping_address_id?: string | null

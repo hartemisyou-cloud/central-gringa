@@ -11,7 +11,19 @@ import { useCart } from "@/hooks/useCart";
 import { useStorefrontTracking } from "@/hooks/useStorefrontTracking";
 import { Button } from "@/components/ui/button";
 
-export const catalogQuery = queryOptions({ queryKey: ["hhb", "catalog"], queryFn: () => getCatalog() });
+// Fail closed but never blank the page: a backend without its database
+// configured shows an empty catalog (nothing purchasable) instead of crashing.
+export const catalogQuery = queryOptions({
+  queryKey: ["hhb", "catalog"],
+  queryFn: async (): Promise<CatalogProduct[]> => {
+    try {
+      return await getCatalog();
+    } catch (error) {
+      console.error("Catalog unavailable:", (error as Error).message);
+      return [];
+    }
+  },
+});
 
 const TITLE = "Hope Human Books — Curated American classics as ebooks";
 const DESCRIPTION =
