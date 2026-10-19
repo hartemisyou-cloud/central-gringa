@@ -11,6 +11,7 @@ export interface PublicProduct {
   priceCents: number;
   currency: string;
   available: number;
+  weightGrams: number;
   imageUrl: string | null;
   category: string | null;
 }
@@ -19,7 +20,7 @@ export interface PublicProduct {
 export async function listStoreProducts(store: StoreRow): Promise<PublicProduct[]> {
   const { data, error } = await rows<import("@/lib/db/types").Database["public"]["Tables"]["products"]["Row"]>(sql`
     select id, name, slug, description, sku, price_cents, currency, stock,
-           reserved_stock, image_url, category
+           reserved_stock, weight_grams, image_url, category
     from public.products where store_id = ${store.id} and active = true order by name asc
   `);
 
@@ -34,6 +35,7 @@ export async function listStoreProducts(store: StoreRow): Promise<PublicProduct[
     priceCents: row.price_cents,
     currency: row.currency,
     available: Math.max(row.stock - row.reserved_stock, 0),
+    weightGrams: row.weight_grams,
     imageUrl: row.image_url,
     category: row.category,
   }));

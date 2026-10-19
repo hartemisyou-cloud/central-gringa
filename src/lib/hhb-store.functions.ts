@@ -20,6 +20,7 @@ export interface CatalogProduct {
   currency: string;
   category: string | null;
   stock: number;
+  weightGrams: number;
 }
 
 async function loadStore() {
@@ -43,6 +44,7 @@ interface PublicProductRow {
   category: string | null;
   stock: number;
   reserved_stock: number;
+  weight_grams: number;
 }
 
 /**
@@ -65,7 +67,7 @@ async function loadPublicCatalog(): Promise<CatalogProduct[]> {
   const stores = (await storesRes.json()) as { id: string }[];
   if (!stores[0]) throw new Error("The store is not set up yet.");
   const productsRes = await fetch(
-    `${base}/rest/v1/products?select=id,name,slug,description,sku,price_cents,currency,category,stock,reserved_stock&store_id=eq.${stores[0].id}&active=eq.true`,
+    `${base}/rest/v1/products?select=id,name,slug,description,sku,price_cents,currency,category,stock,reserved_stock,weight_grams&store_id=eq.${stores[0].id}&active=eq.true`,
     { headers },
   );
   if (!productsRes.ok) throw new Error(`Public catalog read failed (${productsRes.status}).`);
@@ -81,6 +83,7 @@ async function loadPublicCatalog(): Promise<CatalogProduct[]> {
       currency: p.currency,
       category: p.category,
       stock: Math.max(p.stock - p.reserved_stock, 0),
+      weightGrams: p.weight_grams,
     }))
     .sort((a, b) => a.priceCents - b.priceCents);
 }
@@ -102,6 +105,7 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(
           currency: p.currency,
           category: p.category,
           stock: p.available,
+          weightGrams: p.weightGrams,
         }))
         .sort((a, b) => a.priceCents - b.priceCents);
     } catch {
