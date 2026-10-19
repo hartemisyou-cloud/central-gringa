@@ -127,7 +127,7 @@ function Storefront() {
 
       <main className="mx-auto max-w-6xl space-y-14 px-5 py-12">
         <ProductGrid title="Single titles" products={singles} onAdd={handleAdd} inCart={inCart} hydrated={hydrated} />
-        <ProductGrid title="Collections" products={collections} onAdd={handleAdd} inCart={inCart} hydrated={hydrated} offset={singles.length} />
+        <ProductGrid title="Collections" products={collections} onAdd={handleAdd} inCart={inCart} hydrated={hydrated} />
       </main>
       <StoreFooter />
     </div>
@@ -140,14 +140,12 @@ function ProductGrid({
   onAdd,
   inCart,
   hydrated,
-  offset = 0,
 }: {
   title: string;
   products: CatalogProduct[];
   onAdd: (p: CatalogProduct) => void;
   inCart: (id: string) => boolean;
   hydrated: boolean;
-  offset?: number;
 }) {
   if (products.length === 0) return null;
   return (
