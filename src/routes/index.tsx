@@ -154,8 +154,8 @@ function ProductGrid({
     <section>
       <h2 className="font-display text-2xl font-semibold">{title}</h2>
       <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {products.map((p, i) => {
-          const { title: t, author } = splitName(p.name);
+        {products.map((p) => {
+          const { title: t } = splitName(p.name);
           const sources = sourcesFor(p.sku);
           const added = hydrated && inCart(p.id);
           return (
