@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { Download, ShieldCheck, FileCheck, Package } from "lucide-react";
+import { Download, ShieldCheck, FileCheck, Package, BookOpen, Truck } from "lucide-react";
 
 import { StoreFooter, BrandMark } from "@/components/policies/PolicyLinks";
 import { splitName } from "@/components/BookCover";
@@ -22,6 +22,13 @@ import coverMobyDick from "@/assets/covers/moby-dick.jpg";
 import coverWizardOfOz from "@/assets/covers/wizard-of-oz.jpg";
 import coverClassicsCollection from "@/assets/covers/classics-collection.jpg";
 import coverClassicsLibrary from "@/assets/covers/classics-library.jpg";
+import coverPrideAndPrejudice from "@/assets/covers/pride-and-prejudice.jpg";
+import coverJaneEyre from "@/assets/covers/jane-eyre.jpg";
+import coverFrankenstein from "@/assets/covers/frankenstein.jpg";
+import coverDracula from "@/assets/covers/dracula.jpg";
+import coverDorianGray from "@/assets/covers/dorian-gray.jpg";
+import coverTaleOfTwoCities from "@/assets/covers/tale-of-two-cities.jpg";
+import coverEmma from "@/assets/covers/emma.jpg";
 
 /** Generated cover artwork per catalog SKU — original art, no historical edition artwork. */
 const COVERS_BY_SKU: Record<string, string> = {
@@ -36,6 +43,13 @@ const COVERS_BY_SKU: Record<string, string> = {
   "HHB-EB-150": coverWizardOfOz,
   "HHB-COL-250": coverClassicsCollection,
   "HHB-LIB-500": coverClassicsLibrary,
+  "HHB-PH-200": coverPrideAndPrejudice,
+  "HHB-PH-210": coverJaneEyre,
+  "HHB-PH-220": coverFrankenstein,
+  "HHB-EB-160": coverDracula,
+  "HHB-EB-170": coverDorianGray,
+  "HHB-EB-180": coverTaleOfTwoCities,
+  "HHB-EB-190": coverEmma,
 };
 
 // Fail closed but never blank the page: a backend without its database
@@ -91,7 +105,8 @@ function Storefront() {
     tracking.addToCart({ value, currency: p.currency, contents: [{ id: p.id, quantity: 1, item_price: value }], contentName: p.name });
   };
 
-  const singles = products.filter((p) => p.category !== "collection");
+  const singles = products.filter((p) => p.category !== "collection" && p.category !== "physical");
+  const physical = products.filter((p) => p.category === "physical");
   const collections = products.filter((p) => p.category === "collection");
 
   return (
@@ -126,7 +141,8 @@ function Storefront() {
       </section>
 
       <main className="mx-auto max-w-6xl space-y-14 px-5 py-12">
-        <ProductGrid title="Single titles" products={singles} onAdd={handleAdd} inCart={inCart} hydrated={hydrated} />
+        <ProductGrid title="Ebooks" products={singles} onAdd={handleAdd} inCart={inCart} hydrated={hydrated} />
+        <ProductGrid title="Printed books" products={physical} onAdd={handleAdd} inCart={inCart} hydrated={hydrated} />
         <ProductGrid title="Collections" products={collections} onAdd={handleAdd} inCart={inCart} hydrated={hydrated} />
       </main>
       <StoreFooter />
@@ -168,6 +184,15 @@ function ProductGrid({
               />
               <div className="flex flex-1 flex-col gap-3 p-5">
                 <h3 className="font-display text-lg font-semibold">{p.name}</h3>
+                {p.weightGrams === 0 ? (
+                  <p className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+                    <BookOpen className="size-3.5" /> Ebook · Instant download
+                  </p>
+                ) : (
+                  <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <Truck className="size-3.5" /> Printed book · Shipped to your address
+                  </p>
+                )}
                 <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <Package className="size-3.5 text-primary" />
                   {p.stock > 0 ? `${p.stock.toLocaleString("en-US")} in stock` : "Out of stock"}
