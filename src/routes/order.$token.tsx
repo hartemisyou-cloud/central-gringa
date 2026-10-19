@@ -63,6 +63,33 @@ function ReceiptPage() {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
 
+  // HHF-originated orders render a neutral support confirmation from the first
+  // paint: no items, no works, no downloads, no shop navigation.
+  if (receipt?.hhf) {
+    const view = hhfReceiptView(receipt);
+    return (
+      <div className="min-h-screen">
+        <header className="border-b border-border"><div className="mx-auto max-w-2xl px-5 py-4"><BrandMark /></div></header>
+        <main className="mx-auto max-w-2xl px-5 py-12">
+          <div className="surface-card p-8 text-center">
+            {view === "neutral-confirmed"
+              ? <CheckCircle2 className="mx-auto size-10 text-primary" />
+              : <Loader2 className="mx-auto size-9 animate-spin text-muted-foreground" />}
+            <h1 className="mt-4 font-display text-2xl font-semibold">
+              {view === "neutral-confirmed" ? "Thank you for your support" : "Confirming your support…"}
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {view === "neutral-confirmed"
+                ? "Your contribution was confirmed. You will be redirected shortly."
+                : "We are confirming your contribution. This page updates on its own."}
+            </p>
+          </div>
+          <PolicyLinks className="mt-6 text-muted-foreground" />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-border"><div className="mx-auto max-w-2xl px-5 py-4"><BrandMark /></div></header>
