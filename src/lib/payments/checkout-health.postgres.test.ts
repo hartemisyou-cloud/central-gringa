@@ -77,7 +77,7 @@ describe("protected PostgreSQL/Blob checkout diagnostic", () => {
     expect(form.get("mode")).toBe("payment"); expect(form.get("line_items[0][quantity]")).toBe("1");
     expect(form.get("line_items[0][price_data][unit_amount]")).toBe("3000");
     expect(form.get("line_items[0][price_data][product_data][name]")).toBe(purchaseName());
-    expect(form.get("line_items[0][price_data][product_data][description]")).toBe(`Order ${form.get("metadata[order_number]")} · Digital delivery, no shipping`);
+    expect(form.get("line_items[0][price_data][product_data][description]")).toBe("E-book · Louisa May Alcott");
     expect(form.get("submit_type")).toBe("pay");
     expect(form.get("success_url")).toMatch(/^https:\/\/books\.example\.test\/order\/[A-Za-z0-9]+$/);
     expect(form.get("cancel_url")).toBe("https://books.example.test/comprar/little-women");

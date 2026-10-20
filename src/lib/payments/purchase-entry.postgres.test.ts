@@ -108,16 +108,12 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(response.headers.get("location")).toBe("https://checkout.stripe.com/c/pay/cs_test_Entry123");
     const body = String(H.fetch.mock.calls[0]![1].body);
     const form = new URLSearchParams(body);
-    if (referer?.includes("hopehumanfoundation.org")) {
-      expect(form.get("success_url")).toBe("https://www.hopehumanfoundation.org/thank-you?amount=30");
-      expect(body.match(/hopehumanfoundation\.org/g)).toHaveLength(1);
-    } else {
-      expect(form.get("success_url")).toMatch(/^https:\/\/hopehumanbooks\.com\/order\/[^/?#]+$/);
-      expect(body).not.toContain("hopehumanfoundation.org");
-    }
-    expect(body).not.toMatch(/via|campaign|utm_source/);
-    const metadata = [...form.entries()].filter(([key]) => key.startsWith("metadata[") || key.startsWith("payment_intent_data[metadata]["));
-    expect(JSON.stringify(metadata)).not.toMatch(/via|hhf|foundation|campaign|utm_|referrer|tracking/);
+    const [order] = await H.current!.client`SELECT public_token FROM orders`;
+    const suffix = referer?.includes("hopehumanfoundation.org") ? "?ret=1" : "";
+    expect(form.get("success_url")).toBe(`https://hopehumanbooks.com/order/${order!["public_token"]}${suffix}`);
+    expect(form.get("line_items[0][price_data][product_data][name]")).toBe(purchaseEntryProduct("little-women")!.name);
+    expect(form.get("line_items[0][price_data][product_data][description]")).toBe("E-book · Louisa May Alcott");
+    expect(JSON.stringify(Object.fromEntries(form))).not.toMatch(/fundação|foundation|doação|donation|campanha|campaign|mateo|hopehumanfoundation|utm_|referr|tracking|hhf|via=/i);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-robots-tag")).toBe("noindex");
     expect(await response.text()).toBe("");
@@ -128,6 +124,27 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     const rows = await H.current!.client`SELECT origin_hhf FROM orders ORDER BY created_at DESC LIMIT 1`;
     expect(rows).toHaveLength(1);
     expect(rows[0]!["origin_hhf"]).toBe(expectedFlag);
+  });
+  it.each([
+    [{ "x-forwarded-for": " 203.0.113.7 , 198.51.100.9", "x-real-ip": "192.0.2.3", "cf-connecting-ip": "192.0.2.99" }, "203.0.113.7"],
+    [{ "x-real-ip": " 192.0.2.3 " }, "192.0.2.3"],
+    [{ "x-forwarded-for": " ", "x-real-ip": "192.0.2.4" }, "192.0.2.4"],
+    [{ "x-forwarded-for": ", 198.51.100.9", "x-real-ip": "192.0.2.5" }, "192.0.2.5"],
+    [{ "cf-connecting-ip": "192.0.2.99" }, null],
+    [{}, null],
+  ] as const)("persists only the first forwarded hop or real IP, with absent values null (%j)", async (headers, expectedIp) => {
+    const incoming = new Request("https://hopehumanbooks.com/comprar/little-women", { headers });
+    const response = await handlePurchaseEntry(incoming, "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
+    const [order] = await H.current!.client`SELECT client_ip FROM orders`;
+    expect(order!["client_ip"]).toBe(expectedIp);
+    expect(await H.current!.client`SELECT * FROM order_attribution`).toHaveLength(0);
+    const form = new URLSearchParams(String(H.fetch.mock.calls[0]![1].body));
+    const serialized = JSON.stringify(Object.fromEntries(form));
+    expect(serialized).not.toMatch(/client_ip|ip_address|x-forwarded-for|x-real-ip/i);
+    for (const ip of ["203.0.113.7", "198.51.100.9", "192.0.2.3", "192.0.2.4", "192.0.2.5", "192.0.2.99"]) {
+      expect(serialized).not.toContain(ip);
+    }
   });
   it("uses the database price, quantity one, null customer and no attribution", async () => {
     const q = H.current!.client;

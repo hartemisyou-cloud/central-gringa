@@ -3,14 +3,17 @@
 This change targets `vercel-migration`, the existing Vercel + Neon PostgreSQL +
 private Blob deployment. It replaces only `/comprar/{slug}` payment collection:
 the server creates the same digital order and redirects directly to Stripe
-Checkout. The embedded `/pay` page, public API v1/v2, receipt/downloads,
-donations, catalog and tracking modules are unchanged.
+Checkout. HHF and native purchases share the ebook identity, receipt and
+authorized downloads. The verified webhook also supplies delivery email and
+customer data for Meta/UTMify. The embedded `/pay` entry, public API v1/v2,
+donation subsystem and existing catalog prices/files are retained.
 
 ## Purchase parameters
 
 The six existing slug/product mappings and shared `orders:{store}:{IP}` quota
-remain. Order prices, quantities and displayed names come from the persisted
-database order snapshot, never query parameters or the local manifest price.
+remain. Order prices and quantities come from the persisted database order
+snapshot, never query parameters or the local manifest price. Displayed names
+use the approved native catalog identity for the selected slug.
 Only one digital product, quantity one, in USD is accepted. A bundle is one
 product and still unlocks its existing catalog files after PAID.
 
@@ -20,19 +23,27 @@ Production and the protected health diagnostic use the same
 - `mode=payment`; Stripe API `submit_type=pay` identifies a purchase submission.
   Stripe controls the localized button label. Literal `Buy` is not a supported
   API enum.
-- One `line_items` entry, quantity one, with the database price and the existing
-  displayed `Title — Author` name. Its description is
-  `Order {order_number} · Digital delivery, no shipping`.
+- One `line_items` entry, quantity one, with the database price and existing
+  native full product name, including the collection name/count for bundles.
+  Description is `E-book · {unique authors}`. Descriptions over 90 characters
+  use the first two authors plus ` e outros`; only `american-classics-library`
+  needs this abbreviation. Both origins use the same six existing storefront
+  covers; no replacement artwork is added.
 - `payment_intent_data.description=Order {order_number}`.
 - Session and PaymentIntent metadata use exactly the existing operational
   allowlist: `store_id`, `order_id`, `order_number`, `environment`,
   `product_name`, `product_type`, `category`, `quantity`, `sku`, `item_count`,
   `delivery_type`. No customer, campaign, attribution or marker fields are added.
 - `customer_email` is omitted; Stripe collects contact information on its page.
-  This change adds no contact synchronization to local customers or tracking.
-- Success returns to `/order/{publicToken}` with no query parameters. Cancel
-  returns to `/comprar/{slug}`. Origins come from the request, following the
-  existing deployment architecture; production resolves to hopehumanbooks.com.
+  A verified, locally bound Session supplies an allowlisted customer snapshot
+  in `orders.checkout_customer_details` for delivery email and conversion data.
+  `orders.client_ip` captures the first `x-forwarded-for` hop, otherwise
+  `x-real-ip`, on entry. That IP is never added to a Stripe Session field.
+- A persisted HHF order uses exactly
+  `https://hopehumanbooks.com/order/{publicToken}?ret=1`; native success uses
+  the request origin and `/order/{publicToken}` without a marker. Cancel returns
+  to `/comprar/{slug}` on the request origin. No Session field contains the
+  foundation domain; the previous success-URL exception is removed.
 - Idempotency key: `checkout:create:{order_id}:{attempt}`. Creation parameters
   use the persisted attempt timestamp and order snapshot so retries stay stable.
 
@@ -77,6 +88,14 @@ from committing stock twice. Repeated events preserve `paid_at` and refund
 states. The signed webhook is still the only source of PAID; success URLs and
 browser claims never unlock a file.
 
+Both origins render the standard receipt with purchased items and Downloads.
+The browser returns to the foundation after 600 ms only when all three hold:
+the current URL contains `ret=1`, the receipt confirms persisted `origin_hhf`,
+and its status is `PAID`. The marker alone and legacy browser storage cannot
+trigger a return. Without the marker, including after PAID, the receipt stays
+on Books. Delivery email lists the purchased ebooks and always links to
+`https://hopehumanbooks.com/order/{publicToken}` without a query parameter.
+
 `checkout.session.expired` is not implemented or required by this change. A
 cancel returns to the requested GET entry, which creates another order and
 Session and immediately redirects to Stripe again. It is not a stationary
@@ -86,10 +105,14 @@ this PR does not add an order cleanup process.
 
 ## Configuration and diagnostic
 
-No environment variable, credential, schema, ACL or Stripe API version changes
-are needed. Keys remain encrypted in PostgreSQL and use the unchanged
-`PAYMENTS_ENCRYPTION_KEY`; there is no environment-key fallback. Existing Neon,
-private Blob and admin session configuration is preserved.
+Run the owner SQL in `migrations/0006_orders_client_ip.sql` and confirm its
+`information_schema` result before publishing. It adds nullable `client_ip`,
+`checkout_customer_details` and `delivery_email_sent_at` columns to `orders`.
+Delivery email requires server-only `RESEND_API_KEY` and a verified sender in
+`DELIVERY_EMAIL_FROM`; missing configuration is logged as `not_configured`.
+Stripe keys remain encrypted in PostgreSQL with the existing
+`PAYMENTS_ENCRYPTION_KEY`; there is no Stripe environment-key fallback. Existing
+Neon, private Blob, admin session, ACL and Stripe API version are preserved.
 
 `/admin/health-checkout` uses the same admin gate and reports the same JSON
 shape as before. Its one unpaid TEST Session now uses the production builder,
@@ -100,28 +123,32 @@ the diagnostic Session. Expected successful fields include HTTP 200,
 
 ## Verification in TEST after publication
 
-1. Use a clean browser session for this purchase test. The unchanged legacy
-   `hhf-return` helper is session-scoped; a flag left by another legacy flow can
-   still affect an order page. This entry neither reads a Referer nor appends
-   `via` nor writes that flag, and this change does not modify that helper.
-2. Open
-   `https://hopehumanbooks.com/comprar/the-adventures-of-tom-sawyer`.
+1. Follow **ALTER → publish → probe**. After confirming the schema and
+   publication, GET `/comprar/little-women` must return 302 to Stripe, never
+   400. Little Women costs US$30; this probe is separate from the US$20 payment.
+2. For the US$20 HHF purchase, follow a Foundation link to
+   `https://hopehumanbooks.com/comprar/the-adventures-of-tom-sawyer?utm_source=test&utm_medium=manual&utm_campaign=livecheck-fix1&fbclid=IwARlivecheck`.
    Expect HTTP 302 directly to checkout.stripe.com in TEST, with
    `The Adventures of Tom Sawyer — Mark Twain`, US$20 and
-   `Order ORD-... · Digital delivery, no shipping`.
+   `E-book · Mark Twain`, plus the existing Tom Sawyer cover.
 3. Pay with test card `4242 4242 4242 4242`, a future expiry and CVC `123`.
-   Expect `/order/{token}`. Pending receipts keep waiting until the signed
-   webhook confirms PAID; then the existing purchase confirmation and private
-   download appear. No new marker or redirect is introduced.
+   Use cardholder `Hope Human` and a reachable test email. Expect
+   `/order/{token}?ret=1`. The standard receipt waits for the signed webhook;
+   once PAID, it shows the purchase and returns to
+   `https://www.hopehumanfoundation.org/thank-you?amount=20`.
 4. Cancel a separate unpaid Checkout. Inspect the intermediate return to
    `/comprar/{slug}` and its new 302 to another Session, as required above.
 5. In Stripe TEST, confirm the Session and PaymentIntent have the same
    operational metadata, and the PaymentIntent description is `Order ORD-...`.
-   Stripe's built-in object fields are distinct from this metadata allowlist.
+   Apply the full forbidden-string regex to the entire serialized Session
+   parameters for both HHF and native: zero matches, with no field exceptions.
 6. Verify a repeated completed event and a PaymentIntent success event do not
    repeat the stock commit, change the paid timestamp or revoke downloads.
-7. Verify an existing embedded `/pay` purchase still works. No new Checkout
-   behavior applies to storefront/API orders.
+7. Confirm the delivery email lists the purchased work. Its unmarked order
+   link must show items and a working Download without any bounce, including
+   with stale legacy browser storage. A native order never returns to the
+   foundation, even if `ret=1` is added manually. Verify an existing embedded
+   `/pay` purchase still works; it remains a separate payment entry.
 
 The hosted page's eligible wallets, Link/Amazon Pay and displayed business name
 come from Stripe and the existing account profile, not new application UI.

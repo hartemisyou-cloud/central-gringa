@@ -9,6 +9,7 @@ const db: Record<string, Row[]> = {};
 const failOn = new Set<string>();
 const rpcCalls: string[] = [];
 let orderReadGate: (() => Promise<void>) | undefined;
+const dispatch = vi.hoisted(() => ({ email: vi.fn(), meta: vi.fn(), sale: vi.fn() }));
 
 // Execute the production parameterized statements against real PostgreSQL.
 // Only connection transport, external Stripe/analytics calls, and injected
@@ -20,7 +21,7 @@ tag.json = (value: unknown) => JSON.stringify(value);
 
 async function execute(query: Query) {
   const statement = query.text.replace(/\s+/g, " ").trim();
-  const mutation = /^(update|insert into) public\.(\w+)/.exec(statement);
+  const mutation = /\b(update|insert into) public\.(\w+)/.exec(statement);
   const rpc = /select public\.(\w+)\(/.exec(statement)?.[1];
   const key = rpc ? `rpc:${rpc}` : mutation ? `${mutation[1] === "update" ? "update" : "insert"}:${mutation[2]}` : "";
   const completion = statement.includes("processing_status = 'PROCESSED'");
@@ -57,8 +58,9 @@ vi.mock("./crypto.server", () => ({ decryptSecret: async () => "whsec_test" }));
 vi.mock("./stripe.server", () => ({ constructStripeEvent: async (raw: string) => JSON.parse(raw) }));
 vi.mock("@/lib/donations/service.server", () => ({ handleDonationEvent: async () => null }));
 vi.mock("@/lib/analytics/ingest.server", () => ({ recordServerEvent: async () => {} }));
-vi.mock("@/lib/meta/capi.server", () => ({ sendPurchaseForOrder: async () => {} }));
-vi.mock("@/lib/utmify/api.server", () => ({ sendSaleForOrder: async () => {} }));
+vi.mock("@/lib/meta/capi.server", () => ({ sendPurchaseForOrder: dispatch.meta }));
+vi.mock("@/lib/utmify/api.server", () => ({ sendSaleForOrder: dispatch.sale }));
+vi.mock("./delivery-email.server", () => ({ sendDeliveryEmailForOrder: dispatch.email }));
 
 import { processStripeWebhook } from "./webhooks.server";
 
@@ -68,7 +70,7 @@ beforeAll(async () => {
     create table stripe_integrations (id text primary key, environment text, webhook_secret_ciphertext text);
     create table orders (id text primary key, status text, stock_committed boolean default false, paid_at timestamptz,
       store_id text default 's', environment text default 'test', total_cents integer default 2000,
-      currency text default 'USD', order_number text default 'ORD-FIXTURE');
+      currency text default 'USD', order_number text default 'ORD-FIXTURE', checkout_customer_details jsonb);
     create table payments (id text primary key, order_id text, store_id text, integration_id text, provider text,
       provider_payment_id text, status text, amount_cents integer, refunded_cents integer, currency text,
       payment_method text, last_error text, environment text default 'test', attempt integer default 1,
@@ -109,6 +111,9 @@ const order = () => db.orders![0]!;
 const webhook = (raw: string) => db.webhook_events!.find((row) => row.stripe_event_id === JSON.parse(raw).id);
 
 beforeEach(async () => {
+  dispatch.email.mockReset().mockResolvedValue({ sent: true });
+  dispatch.meta.mockReset().mockResolvedValue({ ok: true });
+  dispatch.sale.mockReset().mockResolvedValue({ ok: true });
   failOn.clear();
   rpcCalls.length = 0;
   orderReadGate = undefined;
@@ -280,6 +285,56 @@ describe("hosted ebook Checkout Session webhook", () => {
     const rows = (await pg.query("select type, metadata from payment_events order by type")).rows;
     expect(rows.map((row) => row.type)).toEqual(["CHECKOUT_SESSION_CREATED", "PAYMENT_SUCCEEDED"]);
     expect(rows[0].metadata).toEqual({ checkout_session_id: "cs_test_1", attempt: 1 });
+  });
+
+  it("persists only real contact fields from a bound signed Session before analytics and delivery", async () => {
+    const expected = { name: "Hope Human", email: "reader@example.com", address: { country: "br", city: "Salvador" } };
+    dispatch.meta.mockImplementation(async () => {
+      const [saved] = (await pg.query("select status, checkout_customer_details from orders")).rows;
+      expect(saved).toMatchObject({ status: "PAID", checkout_customer_details: expected });
+    });
+    await send(event("checkout.session.completed", session({ customer_details: {
+      name: " Hope Human ", email: " Reader@EXAMPLE.COM ", address: { country: "BR", city: "Salvador", line1: "unneeded" },
+      tax_ids: [{ value: "discarded" }],
+    } })));
+    expect(order().checkout_customer_details).toEqual(expected);
+    expect(dispatch.meta).toHaveBeenCalledOnce();
+    expect(dispatch.sale).toHaveBeenCalledOnce();
+    expect(dispatch.email).toHaveBeenCalledWith("ord_1", "s");
+  });
+
+  it("does not store contact data from a mismatched Session", async () => {
+    await send(event("checkout.session.completed", session({ amount_total: 1,
+      customer_details: { name: "Wrong", email: "wrong@example.com", address: { country: "US" } } })));
+    expect(order().checkout_customer_details).toBeNull();
+    expect(dispatch.email).not.toHaveBeenCalled();
+  });
+
+  it("delivery failure leaves PAID intact and webhook replay retries without repeating stock", async () => {
+    dispatch.email.mockRejectedValueOnce(new Error("E-book delivery provider HTTP 503."));
+    const raw = event("checkout.session.completed", session());
+    await expect(send(raw)).rejects.toThrow("HTTP 503");
+    expect(order().status).toBe("PAID");
+    expect(webhook(raw).processing_status).toBe("FAILED");
+    expect(dispatch.meta).toHaveBeenCalledOnce();
+    expect(dispatch.sale).toHaveBeenCalledOnce();
+    await send(raw);
+    expect(webhook(raw).processing_status).toBe("PROCESSED");
+    expect(dispatch.email).toHaveBeenCalledTimes(2);
+    expect(rpcCalls).toEqual(["commit_order_stock"]);
+  });
+
+  it("still attempts UTMify and delivery when Meta dispatch rejects", async () => {
+    dispatch.meta.mockRejectedValueOnce(new Error("Tracker unavailable"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const result = await send(event("checkout.session.completed", session()));
+      expect(result.status).toBe(200);
+      expect(order().status).toBe("PAID");
+      expect(dispatch.meta).toHaveBeenCalledOnce();
+      expect(dispatch.sale).toHaveBeenCalledOnce();
+      expect(dispatch.email).toHaveBeenCalledOnce();
+    } finally { log.mockRestore(); }
   });
 
   it("repeated completed deliveries, distinct events and later PI success never repeat fulfillment or reset paid_at", async () => {

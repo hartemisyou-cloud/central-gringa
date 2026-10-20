@@ -129,8 +129,10 @@ export async function createOrder(input: {
   clientContext?:
     | { clientIp?: string | null; clientUserAgent?: string | null; eventSourceUrl?: string | null }
     | undefined;
-  /** Persisted HHF origin marker; drives the neutral post-payment page. */
+  /** Persisted HHF origin; a return also requires the explicit marker and PAID. */
   originHhf?: boolean | undefined;
+  /** Server-captured address retained in the order, never sent to Stripe. */
+  clientIp?: string | null | undefined;
 }) {
 
 
@@ -201,10 +203,10 @@ export async function createOrder(input: {
 
   const { data: order, error: orderError } = await one<OrderRow>(sql`
     insert into public.orders (store_id, order_number, customer_id, shipping_address_id, environment,
-      currency, subtotal_cents, shipping_cents, discount_cents, total_cents, shipping_method, public_token, origin_hhf)
+      currency, subtotal_cents, shipping_cents, discount_cents, total_cents, shipping_method, public_token, origin_hhf, client_ip)
     values (${input.store.id}, ${orderNumber()}, ${customerId}, ${addressId}, ${input.store.environment},
       ${totals.currency}, ${totals.subtotalCents}, ${totals.shippingCents}, ${totals.discountCents},
-      ${totals.totalCents}, ${option.label}, ${randomToken(32)}, ${input.originHhf === true}) returning *
+      ${totals.totalCents}, ${option.label}, ${randomToken(32)}, ${input.originHhf === true}, ${input.clientIp ?? null}) returning *
   `);
   if (orderError || !order) {
     throw checkoutFailure("db_unreachable", "orders.create", orderError, "INVALID_INPUT", "Could not create the order.");

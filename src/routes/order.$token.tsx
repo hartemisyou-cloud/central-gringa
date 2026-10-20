@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect } from "react";
@@ -9,7 +9,7 @@ import { getReceipt } from "@/lib/hhb-store.functions";
 import { formatMoney, ORDER_STATUS_LABEL } from "@/lib/format";
 import { usePresence } from "@/hooks/usePresence";
 import { Button } from "@/components/ui/button";
-import { hhfReceiptView, hhfThankYouUrl, scheduleHhfPaidReturn } from "@/lib/payments/hhf-return";
+import { scheduleHhfPaidReturn } from "@/lib/payments/hhf-return";
 
 export const Route = createFileRoute("/order/$token")({
   head: () => ({
@@ -30,6 +30,7 @@ const FINAL = ["PAID", "REFUNDED", "PARTIALLY_REFUNDED", "CANCELLED", "PAYMENT_F
 
 function ReceiptPage() {
   const { token } = Route.useParams();
+  const receiptSearch = useLocation({ select: location => location.searchStr });
   const fetchReceipt = useServerFn(getReceipt);
   const { data, isPending } = useQuery({
     queryKey: ["receipt", token],
@@ -45,50 +46,14 @@ function ReceiptPage() {
   const receiptTotalCents = receipt?.totalCents;
   const receiptHhf = receipt?.hhf === true;
   useEffect(
-    () => scheduleHhfPaidReturn(receiptStatus, receiptTotalCents),
-    [token, receiptStatus, receiptTotalCents],
+    () => scheduleHhfPaidReturn(receiptStatus, receiptTotalCents, receiptHhf),
+    [token, receiptStatus, receiptTotalCents, receiptHhf, receiptSearch],
   );
-  // HHF-masked orders return to the foundation only after the webhook-confirmed
-  // PAID status; the short delay just lets the neutral paint stabilize.
-  useEffect(() => {
-    if (!receiptHhf || !paid || receiptTotalCents === undefined) return;
-    const timer = window.setTimeout(() => {
-      window.location.replace(hhfThankYouUrl(receiptTotalCents));
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [receiptHhf, paid, receiptTotalCents]);
   const failed = receipt ? ["PAYMENT_FAILED", "CANCELLED"].includes(receipt.status) : false;
   const presence = usePresence({ state: "CHECKOUT_VIEWED" });
   useEffect(() => {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
-
-  // HHF-originated orders render a neutral support confirmation from the first
-  // paint: no items, no works, no downloads, no shop navigation.
-  if (receipt?.hhf) {
-    const view = hhfReceiptView(receipt);
-    return (
-      <div className="min-h-screen">
-        <header className="border-b border-border"><div className="mx-auto max-w-2xl px-5 py-4"><BrandMark /></div></header>
-        <main className="mx-auto max-w-2xl px-5 py-12">
-          <div className="surface-card p-8 text-center">
-            {view === "neutral-confirmed"
-              ? <CheckCircle2 className="mx-auto size-10 text-primary" />
-              : <Loader2 className="mx-auto size-9 animate-spin text-muted-foreground" />}
-            <h1 className="mt-4 font-display text-2xl font-semibold">
-              {view === "neutral-confirmed" ? "Thank you for your support" : "Confirming your support…"}
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {view === "neutral-confirmed"
-                ? "Your contribution was confirmed. You will be redirected shortly."
-                : "We are confirming your contribution. This page updates on its own."}
-            </p>
-          </div>
-          <PolicyLinks className="mt-6 text-muted-foreground" />
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen">

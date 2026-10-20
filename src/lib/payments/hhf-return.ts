@@ -28,34 +28,23 @@ export function hhfThankYouUrl(totalCents: number): string {
   return `https://www.hopehumanfoundation.org/thank-you?amount=${Math.round(totalCents / 100)}`;
 }
 
-/** Pure view decision for the HHF-masked receipt; exported for tests. */
-export function hhfReceiptView(receipt: { hhf: boolean; status: string } | null): "neutral-waiting" | "neutral-confirmed" | "store" {
-  if (!receipt?.hhf) return "store";
-  return receipt.status === "PAID" ? "neutral-confirmed" : "neutral-waiting";
-}
-
-/** Only a webhook-confirmed receipt may trigger the optional local return. */
+/** All three conditions are required; a stale local storage flag grants nothing. */
 export function scheduleHhfPaidReturn(
   status: string | undefined,
   totalCents: number | undefined,
+  originHhf: boolean,
 ): () => void {
   const idle = () => {};
-  if (typeof window === "undefined" || status !== "PAID" || totalCents === undefined) return idle;
-
-  try {
-    if (!window.sessionStorage.getItem(HHF_RETURN_STORAGE_KEY)) return idle;
-  } catch {
-    return idle;
-  }
+  if (typeof window === "undefined" || !originHhf || status !== "PAID" || totalCents === undefined) return idle;
+  const marked = () => new URL(window.location.href).searchParams.getAll("ret").includes("1");
+  if (!marked()) return idle;
 
   const timer = window.setTimeout(() => {
-    try {
-      // Recheck so that remounts or another completed receipt cannot return twice.
-      if (!window.sessionStorage.getItem(HHF_RETURN_STORAGE_KEY)) return;
-      window.sessionStorage.removeItem(HHF_RETURN_STORAGE_KEY);
-    } catch {
-      return;
-    }
+    // Navigation or another effect may have consumed the marker while waiting.
+    if (!marked()) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("ret");
+    window.history.replaceState(window.history.state, "", url.toString());
     window.location.replace(hhfThankYouUrl(totalCents));
   }, 600);
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { HHB_STORE_ID } from "@/lib/catalog/hhb";
 import { buildEbookCheckoutSessionParams, checkoutIdempotencyKey, validateEbookCheckoutSession } from "./checkout-session.server";
 import { purchaseEntryProduct } from "./purchase-entry";
@@ -25,7 +26,8 @@ describe("hosted digital checkout parameter builder", () => {
       metadata: expect.any(Object),
       payment_intent_data: { description: "Order ORD-20261016-BOOK20", metadata: expect.any(Object) },
       line_items: [{ quantity: 1, price_data: { currency: "usd", unit_amount: 2199, product_data: {
-        name: "The Adventures of Tom Sawyer — Mark Twain", description: "Order ORD-20261016-BOOK20 · Digital delivery, no shipping",
+        name: "The Adventures of Tom Sawyer — Mark Twain", description: "E-book · Mark Twain",
+        images: [expect.stringMatching(/^https:\/\/hopehumanbooks\.com\/.*tom-sawyer.*\.jpg$/)],
       } } }],
     });
     expect(params).not.toHaveProperty("customer_email");
@@ -47,45 +49,17 @@ describe("hosted digital checkout parameter builder", () => {
     expect(params.payment_intent_data.metadata).toEqual(params.metadata);
     expect(JSON.stringify(params)).not.toMatch(/via|hhf|foundation|campaign|utm_|referrer|tracking/);
   });
-  it("changes only the success URL when the Foundation return destination is requested", () => {
+  it("changes only the receipt marker for HHF and keeps every product field identical", () => {
     const input = fixture();
     const base = buildEbookCheckoutSessionParams(input);
-    const routed = buildEbookCheckoutSessionParams({ ...input, successUrl: "https://www.hopehumanfoundation.org/thank-you?amount=22" });
-    expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=22");
+    const routed = buildEbookCheckoutSessionParams({ ...input, hhf: true });
+    expect(routed.success_url).toBe("https://hopehumanbooks.com/order/public-token?ret=1");
     expect({ ...routed, success_url: null }).toEqual({ ...base, success_url: null });
   });
-    it("presents Foundation-origin sessions with the ticket value only while keeping ebook records", () => {
-    const input = fixture();
-    Object.assign(input.order, { total_cents: 3000, order_number: "ORD-20261016-BOOK30" });
-    Object.assign(input.items[0]!, { unit_price_cents: 3000, total_cents: 3000 });
-    const base = buildEbookCheckoutSessionParams(input);
-    const routed = buildEbookCheckoutSessionParams({ ...input, hhf: true, successUrl: "https://www.hopehumanfoundation.org/thank-you?amount=30" });
-    const routedData = routed.line_items[0]?.price_data.product_data;
-    const baseData = base.line_items[0]?.price_data.product_data;
-    if (!routedData || !baseData) throw new Error("Expected checkout line items");
-    expect(routedData.name).toBe("$30");
-    expect(routedData.description).toBe("Make a Difference Today");
-    expect(routedData.images).toEqual(["https://hopehumanbooks.com/hhf-emblem.png"]);
-    const preview = buildEbookCheckoutSessionParams({ ...input, hhf: true, origin: "https://preview.example.test" });
-    expect(preview.line_items[0]?.price_data.product_data.images).toEqual(["https://preview.example.test/hhf-emblem.png"]);
-    expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=30");
-    // Records unchanged vs the non-hhf mirror; ebook identity stays in the record.
-    expect(routed.metadata).toEqual(base.metadata);
-    expect(routed.payment_intent_data.metadata).toEqual(routed.metadata);
-    expect(routed.payment_intent_data.description).toBe(base.payment_intent_data.description);
-    expect(routed.metadata).toMatchObject({ product_name: "The Adventures of Tom Sawyer — Mark Twain", sku: "HHB-EB-020", category: "ebook" });
-    // Non-hhf mirror keeps the published visible identity.
-    expect(baseData.name).toBe("The Adventures of Tom Sawyer — Mark Twain");
-    expect(baseData.description).toBe("Order ORD-20261016-BOOK30 · Digital delivery, no shipping");
-  });
-  it.each([
-    "https://example.com/thank-you?amount=22",
-    "http://www.hopehumanfoundation.org/thank-you?amount=22",
-    "https://www.hopehumanfoundation.org/thank-you",
-    "https://www.hopehumanfoundation.org/thank-you?amount=0",
-    "https://www.hopehumanfoundation.org/thank-you?amount=22&extra=1",
-  ])("rejects invalid return destination %s", (successUrl) => {
-    expect(() => buildEbookCheckoutSessionParams({ ...fixture(), successUrl })).toThrow();
+  it("keeps the approved HHF success origin even on a preview while deriving its cover origin", () => {
+    const preview = buildEbookCheckoutSessionParams({ ...fixture(), hhf: true, origin: "https://preview.example.test" });
+    expect(preview.success_url).toBe("https://hopehumanbooks.com/order/public-token?ret=1");
+    expect(preview.line_items[0]!.price_data.product_data.images[0]).toMatch(/^https:\/\/preview\.example\.test\/.*tom-sawyer.*\.jpg$/);
   });
   it("keeps the request-derived origin and stable creation-time expiry", () => {
     const input = { ...fixture(), origin: "https://preview.example.test", createdAt: new Date("2026-10-16T12:00:00Z") };
@@ -115,5 +89,38 @@ describe("hosted digital checkout parameter builder", () => {
     expect(() => validateEbookCheckoutSession({ ...session, metadata: { ...metadata, campaign: "unexpected" } }, input.order, metadata)).toThrow();
     expect(() => validateEbookCheckoutSession({ ...session, livemode: true }, input.order, metadata)).toThrow();
     expect(() => validateEbookCheckoutSession({ ...session, url: "https://checkout.stripe.com.evil.example/" }, input.order, metadata)).toThrow();
+  });
+});
+
+const identities = [
+  ["the-adventures-of-tom-sawyer", "The Adventures of Tom Sawyer — Mark Twain", "E-book · Mark Twain", "tom-sawyer"],
+  ["little-women", "Little Women — Louisa May Alcott", "E-book · Louisa May Alcott", "little-women"],
+  ["adventures-of-huckleberry-finn", "Adventures of Huckleberry Finn — Mark Twain", "E-book · Mark Twain", "huckleberry-finn"],
+  ["moby-dick", "Moby-Dick — Herman Melville", "E-book · Herman Melville", "moby-dick"],
+  ["american-classics-collection", "American Classics Collection — 6 ebooks", "E-book · Mark Twain, Louisa May Alcott, Herman Melville, Jack London, Henry David Thoreau", "classics-collection"],
+  ["american-classics-library", "American Classics Library — 10 ebooks", "E-book · Charlotte Perkins Gilman, Jack London e outros", "classics-library"],
+] as const;
+
+describe.each([false, true])("complete serialized checkout audit (HHF=%s)", hhf => {
+  it.each(identities)("preserves the approved native identity, existing cover and clean wire for %s", (slug, name, description, cover) => {
+    const product = purchaseEntryProduct(slug)!;
+    const input = fixture();
+    const params = buildEbookCheckoutSessionParams({ ...input, slug, hhf,
+      order: { ...input.order, total_cents: product.priceCents },
+      items: [{ product_id: product.id, product_name: product.name, sku: product.sku, quantity: 1,
+        unit_price_cents: product.priceCents, total_cents: product.priceCents }],
+      products: [{ id: product.id, category: product.category, weight_grams: 0 }],
+    });
+    const visible = params.line_items[0]!.price_data.product_data;
+    expect(visible.name).toBe(name);
+    expect(visible.description).toBe(description);
+    expect(visible.description.length).toBeLessThanOrEqual(90);
+    expect(visible.images).toHaveLength(1);
+    expect(visible.images[0]).toMatch(new RegExp(`^https://hopehumanbooks\\.com/.*${cover}.*\\.jpg$`));
+    const bytes = readFileSync(new URL(`../../assets/covers/${cover}.jpg`, import.meta.url));
+    expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+    expect(bytes.length).toBeGreaterThan(1000);
+    expect(JSON.stringify(params)).not.toMatch(/fundação|foundation|doação|donation|campanha|campaign|mateo|hopehumanfoundation|utm_|referr|tracking|hhf|via=/i);
+    expect(params.success_url).toBe(`https://hopehumanbooks.com/order/public-token${hhf ? "?ret=1" : ""}`);
   });
 });

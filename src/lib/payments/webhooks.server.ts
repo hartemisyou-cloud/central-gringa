@@ -3,6 +3,7 @@ import { PaymentError } from "./errors";
 import { decryptSecret } from "./crypto.server";
 import { constructStripeEvent, type StripeEvent } from "./stripe.server";
 import type { Database } from "@/lib/db/types";
+import { normalizeCheckoutCustomerDetails } from "./checkout-customer.server";
 
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 
@@ -110,13 +111,23 @@ async function bindCheckoutSession(
   // provider_payment_id starts as the real cs_ ID. Once bound, a signed repeat
   // must match the same pi_ ID. Session IDs remain in the append-only audit log;
   // no SELECT on payment_events or schema/ACL change is required.
+  const details = normalizeCheckoutCustomerDetails(object["customer_details"]);
   const { data: bound } = must(await one<PaymentRow>(sql`
-    update public.payments set provider_payment_id = ${paymentIntentId}
-    where id = ${payment.id} and integration_id = ${ctx.integrationId}
-      and (provider_payment_id = ${sessionId} or provider_payment_id = ${paymentIntentId})
-      and status not in ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELLED') returning *
+    with bound as (
+      update public.payments set provider_payment_id = ${paymentIntentId}
+      where id = ${payment.id} and integration_id = ${ctx.integrationId}
+        and (provider_payment_id = ${sessionId} or provider_payment_id = ${paymentIntentId})
+        and status not in ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELLED') returning *
+    ), contact as (
+      update public.orders o set checkout_customer_details = ${sql.json(details)}
+      from bound b where o.id = b.order_id and o.store_id = b.store_id and ${details !== null}
+      returning o.id
+    ) select * from bound
   `, true), "Checkout payment binding");
-  return bound ? { paymentIntentId, paid: object["payment_status"] === "paid" } : null;
+  if (!bound) return null;
+  // The binding and allowlisted snapshot commit atomically. A concurrent PI
+  // webhook cannot observe the new binding before its buyer facts are available.
+  return { paymentIntentId, paid: object["payment_status"] === "paid" };
 }
 
 export async function applyEvent(
@@ -174,21 +185,21 @@ export async function applyEvent(
         await logEvent(payment, "PAYMENT_SUCCEEDED", "Payment confirmed by Stripe");
         await trackPayment(payment, "payment_succeeded", { paymentMethod: method?.type ?? null });
       }
-      // Ebook delivery is gated on orders.status = PAID (see fulfillment.server.ts):
-      // no extra write is needed, so delivery is naturally idempotent.
-      // Meta CAPI / UTMify keep their own idempotency keys and never affect payment state.
-      try {
-        const { sendPurchaseForOrder } = await import("@/lib/meta/capi.server");
-        await sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id });
-      } catch (error) {
-        console.error("[meta-capi] purchase dispatch failed", (error as Error).message);
-      }
-      try {
-        const { sendSaleForOrder } = await import("@/lib/utmify/api.server");
-        await sendSaleForOrder({ orderId: payment.order_id, storeId: payment.store_id });
-      } catch (error) {
-        console.error("[utmify] sale dispatch failed", (error as Error).message);
-      }
+      // Each delivery has its own idempotency. All are attempted independently
+      // after PAID; a slow tracker cannot prevent the e-mail from being tried.
+      const [metaResult, saleResult, emailResult] = await Promise.allSettled([
+        import("@/lib/meta/capi.server").then(({ sendPurchaseForOrder }) =>
+          sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id })),
+        import("@/lib/utmify/api.server").then(({ sendSaleForOrder }) =>
+          sendSaleForOrder({ orderId: payment.order_id, storeId: payment.store_id })),
+        import("./delivery-email.server").then(({ sendDeliveryEmailForOrder }) =>
+          sendDeliveryEmailForOrder(payment.order_id, payment.store_id)),
+      ]);
+      if (metaResult.status === "rejected") console.error("[meta-capi] purchase dispatch failed", (metaResult.reason as Error).message);
+      if (saleResult.status === "rejected") console.error("[utmify] sale dispatch failed", (saleResult.reason as Error).message);
+      // Preserve the existing Stripe retry mechanism for a configured mail
+      // transport failure, after both trackers have had their own attempt.
+      if (emailResult.status === "rejected") throw emailResult.reason;
       return "Payment confirmed.";
     }
     case "payment_intent.payment_failed": {

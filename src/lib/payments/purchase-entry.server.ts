@@ -80,6 +80,9 @@ export async function handlePurchaseEntry(
       shippingOptionId: "no-shipping",
       ...(attribution ? { attribution } : {}),
       originHhf: hhf,
+      clientIp: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+        || request.headers.get("x-real-ip")?.trim()
+        || null,
     });
     const checkout = await deps.createCheckout({
       store,

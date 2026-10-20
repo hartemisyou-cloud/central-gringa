@@ -4,7 +4,6 @@ import {
   consumeHhfEntry,
   checkoutEntryKey,
   HHF_RETURN_STORAGE_KEY,
-  hhfReceiptView,
   hhfThankYouUrl,
   scheduleHhfPaidReturn,
 } from "./hhf-return";
@@ -110,30 +109,10 @@ describe("local Foundation checkout entry", () => {
   });
 });
 
-describe("HHF-masked receipt view decision", () => {
-  it("keeps the store receipt for non-HHF and missing receipts", () => {
-    expect(hhfReceiptView(null)).toBe("store");
-    expect(hhfReceiptView({ hhf: false, status: "PAID" })).toBe("store");
-    expect(hhfReceiptView({ hhf: false, status: "PENDING_PAYMENT" })).toBe("store");
-  });
-  it("shows the neutral waiting copy until the webhook confirms PAID", () => {
-    expect(hhfReceiptView({ hhf: true, status: "PENDING_PAYMENT" })).toBe("neutral-waiting");
-    expect(hhfReceiptView({ hhf: true, status: "PAYMENT_PROCESSING" })).toBe("neutral-waiting");
-    expect(hhfReceiptView({ hhf: true, status: "PAYMENT_FAILED" })).toBe("neutral-waiting");
-  });
-  it("shows the neutral confirmation only once PAID", () => {
-    expect(hhfReceiptView({ hhf: true, status: "PAID" })).toBe("neutral-confirmed");
-  });
-  it("builds the foundation return URL with the whole-dollar amount", () => {
-    expect(hhfThankYouUrl(2000)).toBe("https://www.hopehumanfoundation.org/thank-you?amount=20");
-    expect(hhfThankYouUrl(50000)).toBe("https://www.hopehumanfoundation.org/thank-you?amount=500");
-  });
-});
-
-describe("paid receipt local return", () => {
+describe("marked paid receipt return", () => {
   it.each([2000, 3000, 5000, 10000, 25000, 50000])(
     "uses the actual paid total %i in whole dollars",
-    (totalCents) => {
+    totalCents => {
       expect(hhfThankYouUrl(totalCents)).toBe(
         `https://www.hopehumanfoundation.org/thank-you?amount=${totalCents / 100}`,
       );
@@ -149,79 +128,108 @@ describe("paid receipt local return", () => {
     },
   );
 
-  it("waits 600 ms after PAID and clears the local flag before replace", () => {
-    const current = browser();
+  it.each([
+    [false, false, "PENDING_PAYMENT", false],
+    [false, false, "PAID", false],
+    [false, true, "PENDING_PAYMENT", false],
+    [false, true, "PAID", false],
+    [true, false, "PENDING_PAYMENT", false],
+    [true, false, "PAID", false],
+    [true, true, "PENDING_PAYMENT", false],
+    [true, true, "PAID", true],
+  ] as const)("requires all conditions: marker=%s HHF=%s status=%s", (marker, hhf, status, returns) => {
+    const current = browser(`https://hopehumanbooks.com/order/receipt-token${marker ? "?ret=1" : ""}`);
+    // Old local state is deliberately present in every combination; it cannot authorize a return.
     current.stored.set(HHF_RETURN_STORAGE_KEY, "1");
-    current.location.replace.mockImplementation(() => {
-      expect(current.stored.has(HHF_RETURN_STORAGE_KEY)).toBe(false);
-    });
-    scheduleHhfPaidReturn("PAID", 3000);
+    scheduleHhfPaidReturn(status, 3000, hhf);
+    vi.advanceTimersByTime(600);
+    expect(current.location.replace).toHaveBeenCalledTimes(returns ? 1 : 0);
+  });
+
+  it("shows the purchase for 600 ms, consumes only ret, then replaces with the correct destination", () => {
+    const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1&view=receipt#downloads");
+    scheduleHhfPaidReturn("PAID", 3000, true);
     vi.advanceTimersByTime(599);
     expect(current.location.replace).not.toHaveBeenCalled();
-    expect(current.stored.get(HHF_RETURN_STORAGE_KEY)).toBe("1");
+    expect(new URL(current.location.href).searchParams.get("ret")).toBe("1");
     vi.advanceTimersByTime(1);
     expect(current.location.replace).toHaveBeenCalledExactlyOnceWith(
       "https://www.hopehumanfoundation.org/thank-you?amount=30",
     );
+    expect(current.location.href).toBe("https://hopehumanbooks.com/order/receipt-token?view=receipt#downloads");
+    expect(current.history.replaceState).toHaveBeenCalledWith(current.historyState, "", current.location.href);
   });
 
-  it.each([undefined, "PENDING", "AWAITING_PAYMENT", "PAYMENT_FAILED", "CANCELLED", "REFUNDED", "PARTIALLY_REFUNDED"])(
-    "never redirects a %s receipt or removes its flag",
-    (status) => {
-      const current = browser();
-      current.stored.set(HHF_RETURN_STORAGE_KEY, "1");
-      scheduleHhfPaidReturn(status, 3000);
+  it.each([undefined, "PENDING_PAYMENT", "PAYMENT_PROCESSING", "PAYMENT_FAILED", "CANCELLED", "REFUNDED", "PARTIALLY_REFUNDED"])(
+    "never returns a marked HHF receipt with status %s",
+    status => {
+      const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
+      scheduleHhfPaidReturn(status, 3000, true);
       vi.advanceTimersByTime(1000);
       expect(current.location.replace).not.toHaveBeenCalled();
-      expect(current.stored.get(HHF_RETURN_STORAGE_KEY)).toBe("1");
       expect(vi.getTimerCount()).toBe(0);
     },
   );
 
-  it("keeps an ordinary paid receipt on the Books site", () => {
-    const current = browser();
-    scheduleHhfPaidReturn("PAID", 3000);
-    expect(vi.getTimerCount()).toBe(0);
+  it.each(["", "?ret=0", "?ret=true", "?ret=01", "?via=hhf", "?utm_source=hhf"])(
+    "keeps a paid HHF receipt on its standard download view without ret=1 (%s)",
+    query => {
+      const current = browser(`https://hopehumanbooks.com/order/receipt-token${query}`);
+      current.stored.set(HHF_RETURN_STORAGE_KEY, "1");
+      scheduleHhfPaidReturn("PAID", 3000, true);
+      vi.advanceTimersByTime(1000);
+      expect(current.location.replace).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("keeps the unmarked email link after pending becomes PAID", () => {
+    const current = browser("https://hopehumanbooks.com/order/receipt-token");
+    current.stored.set(HHF_RETURN_STORAGE_KEY, "1");
+    scheduleHhfPaidReturn("PAYMENT_PROCESSING", 3000, true);
+    scheduleHhfPaidReturn("PAID", 3000, true);
+    vi.advanceTimersByTime(1000);
     expect(current.location.replace).not.toHaveBeenCalled();
   });
 
   it("cancels the scheduled return when the receipt unmounts or changes", () => {
-    const current = browser();
-    current.stored.set(HHF_RETURN_STORAGE_KEY, "1");
-    const cancel = scheduleHhfPaidReturn("PAID", 3000);
+    const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
+    const cancel = scheduleHhfPaidReturn("PAID", 3000, true);
     cancel();
     vi.advanceTimersByTime(1000);
     expect(current.location.replace).not.toHaveBeenCalled();
-    expect(current.stored.get(HHF_RETURN_STORAGE_KEY)).toBe("1");
+    expect(new URL(current.location.href).searchParams.get("ret")).toBe("1");
   });
 
-  it("cannot return twice when another effect already consumed the flag", () => {
-    const current = browser();
-    current.stored.set(HHF_RETURN_STORAGE_KEY, "1");
-    scheduleHhfPaidReturn("PAID", 3000);
-    scheduleHhfPaidReturn("PAID", 3000);
+  it("rechecks the current URL before returning", () => {
+    const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
+    scheduleHhfPaidReturn("PAID", 3000, true);
+    current.location.href = "https://hopehumanbooks.com/order/receipt-token";
+    vi.advanceTimersByTime(600);
+    expect(current.location.replace).not.toHaveBeenCalled();
+  });
+
+  it("cannot return twice when another effect already consumed the marker", () => {
+    const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
+    scheduleHhfPaidReturn("PAID", 3000, true);
+    scheduleHhfPaidReturn("PAID", 3000, true);
     vi.advanceTimersByTime(600);
     expect(current.location.replace).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the normal receipt when storage cannot be read or cleared", () => {
-    const current = browser();
-    current.sessionStorage.getItem.mockImplementation(() => { throw new Error("SecurityError"); });
-    expect(() => scheduleHhfPaidReturn("PAID", 3000)).not.toThrow();
-    expect(vi.getTimerCount()).toBe(0);
-    current.sessionStorage.getItem.mockImplementation(() => "1");
-    current.sessionStorage.removeItem.mockImplementation(() => { throw new Error("SecurityError"); });
-    scheduleHhfPaidReturn("PAID", 3000);
+  it("does not require browser storage for an authorized return", () => {
+    const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
+    Object.defineProperty(window, "sessionStorage", { get: () => { throw new Error("SecurityError"); } });
+    expect(() => scheduleHhfPaidReturn("PAID", 3000, true)).not.toThrow();
     vi.advanceTimersByTime(600);
-    expect(current.location.replace).not.toHaveBeenCalled();
+    expect(current.location.replace).toHaveBeenCalledOnce();
   });
 
   it("does not schedule server-side navigation or a receipt without a total", () => {
-    browser();
-    window.sessionStorage.setItem(HHF_RETURN_STORAGE_KEY, "1");
-    scheduleHhfPaidReturn("PAID", undefined);
+    browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
+    scheduleHhfPaidReturn("PAID", undefined, true);
     vi.stubGlobal("window", undefined);
-    expect(() => scheduleHhfPaidReturn("PAID", 3000)).not.toThrow();
+    expect(() => scheduleHhfPaidReturn("PAID", 3000, true)).not.toThrow();
     expect(vi.getTimerCount()).toBe(0);
   });
 });

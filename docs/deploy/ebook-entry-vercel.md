@@ -18,6 +18,8 @@ variables. Never put credentials in Git, chat, logs or a `VITE_*` variable.
 | `BLOB_READ_WRITE_TOKEN` | Alternative Blob authentication when OIDC is unavailable. Optional when `BLOB_STORE_ID` and deployment OIDC work. | Vercel → Storage → existing private Blob store → access tokens/project connection. Use only the existing store's server-side token if this alternative is needed; do not expose it to the browser. |
 | `ADMIN_PANEL_PASSWORD` | Required. Password for the existing `/admin` gate. | The password chosen by the administrator and saved in Vercel. Preserve it; it cannot be recovered from the application. |
 | `ADMIN_SESSION_SECRET` | Required. Encrypts the secure, httpOnly `admin-gate` cookie; at least 32 characters. | Preserve the random secret already saved in Vercel or the administrator's secure backup. Replacing it invalidates current admin sessions. |
+| `RESEND_API_KEY` | Required for automatic ebook delivery email after PAID; server-only. | The owner's Resend account, using its existing verified sender/domain. |
+| `DELIVERY_EMAIL_FROM` | Required with the email key. Verified delivery sender. | The sender address verified in that account; never invent a sender address. |
 
 Vercel supplies the rotating OIDC identity (`VERCEL_OIDC_TOKEN`) automatically;
 it is not a user-created static credential. The installed Blob SDK uses an
@@ -33,6 +35,12 @@ There is no `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` environment fallback.
 If a credential genuinely needs secure reconfiguration, enter it in `/admin`
 from the same Stripe account and TEST environment; changing credentials is not
 part of this entry-flow change.
+
+Before publishing, execute the owner SQL in
+`migrations/0006_orders_client_ip.sql` against the existing Neon database and
+confirm the three nullable `orders` columns through its `information_schema`
+query. This manual migration is separate from the historical Drizzle migration
+with a `0006` prefix. Required order: **ALTER → publish → GET probe**.
 
 ## Entry and payment audit
 
@@ -51,14 +59,20 @@ always one, including a collection sold as one product.
 | `american-classics-library` | `000000000111` | `HHB-LIB-500` | US$500 | 10 |
 
 All six IDs have prefix `b0b5e000-4848-4b00-8000-`. An unknown slug returns
-404. The route creates an ebook order without campaign/Foundation data or
-marketing attribution and returns a 302 to `/pay/{publicToken}`. A Referer
-containing `hopehumanfoundation.org` adds `?via=hhf`; it grants no payment or
-download permission.
+404. The route creates an ebook order and returns a 302 directly to
+`checkout.stripe.com`. A Foundation Referer records `orders.origin_hhf`; it
+does not change the ebook identity or authorize a download. Allowlisted UTMs,
+`fbclid` and registry `ref` are persisted in `order_attribution`, never Stripe
+metadata. The first `x-forwarded-for` hop, otherwise `x-real-ip`, is saved in
+`orders.client_ip` and never added to any Stripe Session field.
 
-The normal `/pay` flow in this branch uses **Stripe Elements + PaymentIntent**,
-including eligible card, Apple Pay, Google Pay and Link methods. It is not a
-Stripe-hosted Checkout Session. The existing PaymentIntent description is
+These six GET entries use **Stripe-hosted Checkout Sessions**. The separate
+legacy `/pay` flow still uses Stripe Elements + PaymentIntent for existing
+storefront/API entries. The hosted line item uses the approved full native
+catalog name, `E-book · {unique authors}` and the corresponding existing
+storefront cover in both origins. Only the library's author description needs
+the over-90-character abbreviation: first two authors plus ` e outros`.
+The existing PaymentIntent description is
 `Order {orderNumber}`. Its operational metadata includes `environment`,
 `store_id`, `order_id`, `order_number`, `item_count`, `product_type`,
 `delivery_type`, `sku`, `product_name`, `quantity` and `category`. For this
@@ -69,15 +83,23 @@ categories are `collection`. For the new anonymous six-product entry only,
 the two bundles' payment metadata is normalized to `category=ebook` as requested.
 Catalog rows and existing customer/API v1/v2 purchases retain their categories.
 
-`via=hhf` is consumed locally before the hosted checkout's browser events and
-stored as `sessionStorage["hbb_from_hhf"] = "1"`; it is not added to Stripe,
-Meta, UTMify or order attribution. Only a receipt whose **database** status is
-`PAID` can return to the Foundation. After 600 ms, the local flag is cleared
-immediately before `location.replace` to
-`https://www.hopehumanfoundation.org/thank-you?amount={Math.round(totalCents/100)}`.
-Without the local flag, the existing receipt and private downloads remain.
-Payment confirmation and download authorization still depend exclusively on
-the verified existing webhook.
+HHF Session success uses exactly
+`https://hopehumanbooks.com/order/{publicToken}?ret=1`. Native success uses the
+request origin and `/order/{publicToken}` without the parameter. The entire
+serialized Session parameters must pass the forbidden-string regex without
+exceptions; there is no foundation domain in a success URL or any other field.
+
+Every receipt uses the standard items and Download view. After 600 ms,
+`location.replace` may return to
+`https://www.hopehumanfoundation.org/thank-you?amount={Math.round(totalCents/100)}`
+only if **all three** conditions hold: current URL has `ret=1`, the loaded
+receipt confirms persisted `origin_hhf`, and database status is `PAID`.
+The marker alone and old `hbb_from_hhf` browser storage cannot trigger it.
+Without `ret=1`, there is no bounce, even after PAID. The verified webhook
+records the allowlisted Checkout contact snapshot for conversion matching and
+sends delivery email listing the ebooks. That email always links to
+`https://hopehumanbooks.com/order/{publicToken}` without a parameter. Payment
+confirmation and download authorization still depend on the verified webhook.
 
 ## Protected diagnostic
 
@@ -101,7 +123,8 @@ private ebook content, session secrets or checkout session URLs.
 The dry-run is a real **unpaid TEST Checkout Session** for Little Women at the
 current database price (catalog US$30), using the decrypted database integration.
 It is a diagnostic only: it does not insert an order, reserve stock or mark
-anything PAID, and it does not replace the normal Elements/PaymentIntent flow.
+anything PAID. It exercises the same hosted builder used by `/comprar`; the
+legacy Elements/PaymentIntent entry remains separate.
 Each complete diagnostic invocation attempts at most one session. Do not pay
 that diagnostic session; use the normal flow below to verify the webhook.
 
@@ -155,28 +178,34 @@ credentials rather than creating a live payment session.
 
 ## Manual verification
 
-1. Confirm this change's deployment uses `vercel-migration` as its base and the
-   existing Neon database, private Blob store and TEST Stripe integration.
-2. Open a real link from the Foundation to
-   `https://hopehumanbooks.com/comprar/little-women`. Expect a 302 to
-   `/pay/{publicToken}?via=hhf` and a local `hbb_from_hhf` flag. A direct visit
-   without that Referer returns a 302 without `via=hhf`.
-3. Expect the existing `/pay` Elements page for Little Women at US$30, quantity
-   one. Its robots metadata remains `noindex`. Enter a test email and card
-   `4242 4242 4242 4242`, any future expiry and any three-digit CVC, then Pay now.
-4. Expect `/order/{publicToken}`. If the webhook has not yet arrived, the receipt
-   remains pending and polls; neither the URL nor a client flag can set PAID.
-5. After the signed existing webhook makes the order PAID, the flagged browser
-   waits 600 ms, clears `hbb_from_hhf`, and replaces the current page with
-   `https://www.hopehumanfoundation.org/thank-you?amount=30`.
-6. Open the receipt link again or repeat a direct Books entry without the flag:
-   expect the normal receipt and the purchased ebook's private download. An
-   unpaid order must not download a file.
+1. Confirm this change uses `vercel-migration`, the existing Neon database,
+   private Blob store and TEST Stripe integration. Execute ALTER and confirm
+   the schema before publish; after publication probe
+   `GET https://hopehumanbooks.com/comprar/little-women` for 302 to Stripe,
+   never 400. This US$30 probe is separate from the US$20 test purchase.
+2. For the US$20 test, follow a real Foundation link to
+   `https://hopehumanbooks.com/comprar/the-adventures-of-tom-sawyer?utm_source=test&utm_medium=manual&utm_campaign=livecheck-fix1&fbclid=IwARlivecheck`.
+   Expect a 302 directly to Stripe TEST Checkout with title
+   `The Adventures of Tom Sawyer — Mark Twain`, `E-book · Mark Twain`, US$20
+   and the existing cover. No `/pay?via=hhf` hop is part of this entry.
+3. Use cardholder `Hope Human`, a reachable test email and card
+   `4242 4242 4242 4242`, any future expiry and any three-digit CVC, then pay.
+4. Expect `/order/{publicToken}?ret=1`. The standard receipt remains pending
+   and polls until the verified webhook confirms PAID; neither the URL nor
+   browser storage can set PAID.
+5. After PAID, the marked HHF receipt shows the purchase, waits 600 ms, consumes
+   `ret` and replaces the page with
+   `https://www.hopehumanfoundation.org/thank-you?amount=20`.
+6. Confirm delivery email lists the work and its link has no marker. Open that
+   link: expect the normal receipt and a working private Download without a
+   bounce. Adding `ret=1` to a native order cannot redirect it. An unpaid order
+   must not download a file.
 7. Test an unknown `/comprar` slug (404). Check the Vercel server logs if a valid
    entry fails: structured stages distinguish `missing_env`, `db_unreachable`,
    `no_stripe_integration`, `decrypt_failed`, `blob_error` and `stripe_error`.
    Do not paste raw secrets or private receipt tokens into reports.
 
-Donations, storefront/cart, policy pages, analytics/presence, Meta CAPI/UTMify
-webhook processing, API v1/v2 contracts and the webhook URL/identity are outside
-this change. Keep TEST mode; this guide does not activate LIVE payments.
+The donation subsystem, storefront/cart, policy pages, API v1/v2 contracts and
+webhook URL/identity are retained. Meta CAPI and UTMify use the captured order
+IP and verified Checkout contact snapshot, preserving server values and event
+identity. Keep TEST mode; this guide does not activate LIVE payments.

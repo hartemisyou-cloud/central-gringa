@@ -7,6 +7,7 @@ import {
 import { isPublicPageUrl, type Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
 import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
+import { normalizeCheckoutCustomerDetails } from "@/lib/payments/checkout-customer.server";
 
 /**
  * Meta Conversions API — Purchase server-side.
@@ -51,6 +52,7 @@ export interface OrderContext {
   paidAt: string | null;
   status: string;
   publicToken: string;
+  clientIp: string | null;
   email: string | null;
   phone: string | null;
   firstName: string | null;
@@ -77,7 +79,7 @@ export async function loadOrderContext(
   const { data: order } = await one<JoinedOrder>(
     sql`
     SELECT o.id, o.store_id, o.order_number, o.currency, o.total_cents, o.paid_at,
-      o.status, o.environment, o.public_token,
+      o.status, o.environment, o.public_token, o.client_ip, o.checkout_customer_details,
       CASE WHEN c.id IS NULL THEN NULL ELSE jsonb_build_object(
         'email', c.email, 'phone', c.phone, 'first_name', c.first_name, 'last_name', c.last_name) END AS customers,
       CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object(
@@ -105,6 +107,7 @@ export async function loadOrderContext(
     country?: string | null;
   } | null;
   const store = order.stores as { domain?: string | null } | null;
+  const checkout = normalizeCheckoutCustomerDetails(order.checkout_customer_details);
 
   return {
     orderId: order.id,
@@ -116,14 +119,16 @@ export async function loadOrderContext(
     paidAt: order.paid_at,
     status: order.status,
     publicToken: order.public_token,
-    email: customer?.email ?? null,
+    clientIp: order.client_ip ?? null,
+    email: checkout ? checkout.email : customer?.email ?? null,
     phone: customer?.phone ?? null,
     firstName: customer?.first_name ?? null,
     lastName: customer?.last_name ?? null,
-    city: address?.city ?? null,
+    // ct is emitted only for a city actually supplied by Stripe Checkout.
+    city: checkout?.address.city ?? null,
     state: address?.state ?? null,
     postalCode: address?.postal_code ?? null,
-    country: address?.country ?? null,
+    country: checkout?.address.country ?? null,
     items: (order.order_items ?? []).map((item) => ({
       productId: item.product_id,
       quantity: item.quantity,
@@ -163,7 +168,6 @@ function eventSourceUrl(
 export async function buildPayload(
   context: OrderContext,
   extra: {
-    clientIp?: string | null;
     userAgent?: string | null;
     /** Só usado pelo modo de teste do painel; produção nunca passa isto. */
     eventIdOverride?: string;
@@ -189,15 +193,17 @@ export async function buildPayload(
   if (ct) userData["ct"] = [ct];
   const st = await hashName(context.state);
   if (st) userData["st"] = [st];
-  const country = await hashName(context.country);
-  if (country) userData["country"] = [country];
+  // Meta PII contract: normalize ISO-2 to lowercase and SHA-256 hash, like email.
+  if (context.country && /^[a-z]{2}$/i.test(context.country)) {
+    userData["country"] = [await hashCountry(context.country)];
+  }
   const zp = await hashZip(context.postalCode);
   if (zp) userData["zp"] = [zp];
   if (attribution.fbc) userData["fbc"] = attribution.fbc;
   if (attribution.fbp) userData["fbp"] = attribution.fbp;
-  // IP e User-Agent do contexto real da compra: o webhook da Stripe não os
-  // possui, então usamos o que foi capturado no checkout e persistido.
-  const clientIp = extra.clientIp ?? record.client_ip ?? null;
+  // The purchase-entry IP is persisted on the order; never use the webhook IP
+  // or a later attribution write as the source for this financial conversion.
+  const clientIp = context.clientIp;
   const userAgent = extra.userAgent ?? record.client_user_agent ?? null;
   if (clientIp) userData["client_ip_address"] = clientIp;
   if (userAgent) userData["client_user_agent"] = userAgent;
@@ -253,20 +259,23 @@ async function postToMeta(
   body: Record<string, unknown>,
 ): Promise<MetaSendResult> {
   let response: Response;
+  let text: string;
+  console.debug(`[meta-capi] token_suffix=${accessToken.slice(-4).replace(/[^A-Za-z0-9_-]/g, "")}`);
   try {
     response = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`, {
       method: "POST",
+      signal: AbortSignal.timeout(10000),
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify(body),
     });
+    text = await response.text();
   } catch (error) {
     return { ok: false, error: sanitizeError((error as Error).message) };
   }
 
-  const text = await response.text();
   if (response.ok) {
     let metaEventId: string | null = null;
     try {
@@ -290,7 +299,6 @@ async function postToMeta(
 export async function sendPurchaseForOrder(input: {
   orderId: string;
   storeId: string;
-  clientIp?: string | null;
   userAgent?: string | null;
 }): Promise<MetaSendResult> {
   try {
@@ -338,7 +346,6 @@ export async function sendPurchaseForOrder(input: {
     }
 
     const payload = await buildPayload(context, {
-      clientIp: input.clientIp ?? null,
       userAgent: input.userAgent ?? null,
       testEventCode,
     });

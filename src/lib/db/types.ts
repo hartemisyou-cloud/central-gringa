@@ -1236,13 +1236,17 @@ export type Database = {
       }
       orders: {
         Row: {
+          checkout_customer_details: Json | null
+          client_ip: string | null
           created_at: string
           currency: string
           customer_id: string | null
+          delivery_email_sent_at: string | null
           discount_cents: number
           environment: Database["public"]["Enums"]["payment_environment"]
           id: string
           order_number: string
+          origin_hhf: boolean
           paid_at: string | null
           public_token: string
           shipping_address_id: string | null
@@ -1257,13 +1261,17 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          checkout_customer_details?: Json | null
+          client_ip?: string | null
           created_at?: string
           currency?: string
           customer_id?: string | null
+          delivery_email_sent_at?: string | null
           discount_cents?: number
           environment: Database["public"]["Enums"]["payment_environment"]
           id?: string
           order_number: string
+          origin_hhf?: boolean
           paid_at?: string | null
           public_token: string
           shipping_address_id?: string | null
@@ -1278,13 +1286,17 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          checkout_customer_details?: Json | null
+          client_ip?: string | null
           created_at?: string
           currency?: string
           customer_id?: string | null
+          delivery_email_sent_at?: string | null
           discount_cents?: number
           environment?: Database["public"]["Enums"]["payment_environment"]
           id?: string
           order_number?: string
+          origin_hhf?: boolean
           paid_at?: string | null
           public_token?: string
           shipping_address_id?: string | null

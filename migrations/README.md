@@ -1,5 +1,20 @@
 # Migração da Central para PostgreSQL comum
 
+## Atualização manual 0006 — antes do publish
+
+Executar `migrations/0006_orders_client_ip.sql` no Neon com a conexão de owner
+antes de publicar a versão que grava os novos campos de `orders`. A alteração
+aditiva preserva pedidos existentes e adiciona três colunas opcionais:
+`client_ip` (`text`), `checkout_customer_details` (`jsonb`, snapshot mínimo dos
+dados recebidos no webhook Stripe verificado) e `delivery_email_sent_at`
+(`timestamptz`, confirmação de envio pelo transporte atual).
+
+A consulta `information_schema.columns` incluída no arquivo deve devolver as
+três colunas com `is_nullable = YES` e os tipos acima. A ordem operacional é
+**ALTER → confirmação do esquema → publish → sonda GET /comprar/little-women**
+(esperado 302). A numeração é independente de `drizzle/migrations/`; não
+renumerar nem reaplicar o histórico `0006_public_storefront_catalog_read.sql`.
+
 O esquema vem do backup oficial do Lovable Cloud, exportado com `pg_restore --schema-only --schema=public --no-owner --no-privileges`. A referência integral está em `reference/export-public-schema.sql`; `schema-adaptations.json` registra hashes, objetos preservados e todas as adaptações. Não há linhas de dados, credenciais ou conteúdo de ebooks neste diretório.
 
 Foram preservadas35 tabelas,480 colunas,10 enums,17 funções,21 triggers e89índices. Das135 constraints originais,133 continuam no destino: foram retiradas somente `profiles_id_fkey` e `user_roles_user_id_fkey`, que apontavam para `auth.users`. O snapshot auditado tinha zero usuários em `auth.users`, `profiles` e `user_roles`; essa condição deve ser conferida novamente no backup que será importado. Nenhuma tabela ou linha histórica é descartada por esses ajustes.

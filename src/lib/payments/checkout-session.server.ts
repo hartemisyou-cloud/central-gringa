@@ -3,7 +3,7 @@ import type { Database } from "@/lib/db/types";
 import type { StoreRow } from "./store-auth.server";
 import { buildOrderPaymentMetadata, buildPaymentDescription, type OrderItemRow } from "./orders.server";
 import { purchaseEntryProduct } from "./purchase-entry";
-import { hhfThankYouUrl } from "./hhf-return";
+import { ebookCheckoutIdentity } from "@/lib/catalog/checkout-identity";
 import { decryptSecret } from "./crypto.server";
 import { CheckoutFailure, classifyCheckoutFailure, logCheckoutFailure, safeCheckoutError } from "./checkout-log.server";
 import { PaymentError } from "./errors";
@@ -21,18 +21,6 @@ export function checkoutIdempotencyKey(orderId: string, attempt: number): string
   return `checkout:create:${orderId}:${attempt}`;
 }
 
-function resolveSuccessUrl(provided: string | undefined, storeOrigin: string, publicToken: string): string {
-  if (provided === undefined) return `${storeOrigin}/order/${encodeURIComponent(publicToken)}`;
-  const destination = new URL(provided);
-  const amount = Number(destination.searchParams.get("amount"));
-  if (destination.protocol !== "https:" || destination.hostname !== "www.hopehumanfoundation.org" ||
-      destination.pathname !== "/thank-you" || destination.searchParams.size !== 1 ||
-      !Number.isSafeInteger(amount) || amount < 1) {
-    throw new PaymentError("INVALID_INPUT", "Invalid return destination.");
-  }
-  return provided;
-}
-
 /** Production and diagnostic use the same snapshots and operational metadata allowlist. */
 export function buildEbookCheckoutSessionParams(input: {
   order: EbookCheckoutOrder;
@@ -41,7 +29,6 @@ export function buildEbookCheckoutSessionParams(input: {
   slug: string;
   origin: string;
   createdAt: string | Date;
-  successUrl?: string | undefined;
   hhf?: boolean | undefined;
 }) {
   const { order, items, products } = input;
@@ -65,7 +52,10 @@ export function buildEbookCheckoutSessionParams(input: {
     mode: "payment" as const,
     // Stripe's wire value is "pay"; Checkout renders its localized purchase button.
     submit_type: "pay" as const,
-    success_url: resolveSuccessUrl(input.successUrl, input.origin, order.public_token),
+    // Approved return destination: the receipt alone decides whether to return.
+    success_url: input.hhf
+      ? `https://hopehumanbooks.com/order/${encodeURIComponent(order.public_token)}?ret=1`
+      : `${origin.origin}/order/${encodeURIComponent(order.public_token)}`,
     cancel_url: `${origin.origin}/comprar/${encodeURIComponent(input.slug)}`,
     // Stripe requires at least 30 minutes remaining when it receives the request.
     // A fixed 60-second transport margin keeps retries deterministic for this attempt.
@@ -75,11 +65,7 @@ export function buildEbookCheckoutSessionParams(input: {
     line_items: [{ quantity: 1, price_data: {
       currency: "usd",
       unit_amount: item.unit_price_cents,
-      product_data: {
-        name: input.hhf ? `$${Math.round(order.total_cents / 100)}` : item.product_name,
-        description: input.hhf ? "Make a Difference Today" : `${buildPaymentDescription(order, items)} · Digital delivery, no shipping`,
-        ...(input.hhf ? { images: [`${origin.origin}/hhf-emblem.png`] } : {}),
-      },
+      product_data: ebookCheckoutIdentity(expected, origin.origin),
     } }],
   };
 }
@@ -162,8 +148,7 @@ export async function createEbookCheckoutSession(input: { store: StoreRow; order
     payment = created.data;
   }
   const params = buildEbookCheckoutSessionParams({ order, items, products: productsResult.data ?? [], slug: input.slug, origin: input.origin, createdAt: payment.created_at,
-    successUrl: input.hhf ? hhfThankYouUrl(order.total_cents) : undefined,
-    hhf: input.hhf,                                            
+    hhf: order.origin_hhf,
   });
   let session: StripeCheckoutSession;
   let url: string;

@@ -6,6 +6,7 @@ import {
 } from "@/lib/payments/attribution.server";
 import type { Attribution } from "@/lib/payments/attribution";
 import { getUtmifySettingsWithToken, recordUtmifyHealth } from "./config.server";
+import { normalizeCheckoutCustomerDetails } from "@/lib/payments/checkout-customer.server";
 
 /**
  * Integração server-side com a API oficial da UTMify.
@@ -75,6 +76,7 @@ export interface OrderContext {
   phone: string | null;
   document: string | null;
   country: string | null;
+  clientIp?: string | null;
   paymentMethod: string | null;
   items: Array<{ id: string; name: string; quantity: number; priceInCents: number }>;
 }
@@ -84,7 +86,6 @@ type JoinedOrder = Row<"orders"> & {
     Row<"customers">,
     "email" | "phone" | "first_name" | "last_name" | "document"
   > | null;
-  addresses: Pick<Row<"addresses">, "country"> | null;
   order_items: Pick<
     Row<"order_items">,
     "product_id" | "product_name" | "quantity" | "unit_price_cents"
@@ -95,13 +96,13 @@ async function loadOrderContext(orderId: string, storeId: string): Promise<Order
   const { data: order } = await one<JoinedOrder>(
     sql`
     SELECT o.id, o.store_id, o.order_number, o.currency, o.total_cents, o.status, o.created_at, o.paid_at,
+      o.client_ip, o.checkout_customer_details,
       CASE WHEN c.id IS NULL THEN NULL ELSE jsonb_build_object('email', c.email, 'phone', c.phone,
         'first_name', c.first_name, 'last_name', c.last_name, 'document', c.document) END AS customers,
-      CASE WHEN a.id IS NULL THEN NULL ELSE jsonb_build_object('country', a.country) END AS addresses,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('product_id', i.product_id, 'product_name', i.product_name,
         'quantity', i.quantity, 'unit_price_cents', i.unit_price_cents)) FROM order_items i
         WHERE i.order_id = o.id), '[]'::jsonb) AS order_items
-    FROM orders o LEFT JOIN customers c ON c.id = o.customer_id LEFT JOIN addresses a ON a.id = o.shipping_address_id
+    FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
     WHERE o.id = ${orderId} AND o.store_id = ${storeId}`,
     true,
   );
@@ -114,7 +115,6 @@ async function loadOrderContext(orderId: string, storeId: string): Promise<Order
     last_name?: string | null;
     document?: string | null;
   } | null;
-  const address = order.addresses as { country?: string | null } | null;
 
   const { data: payment } = await one<Row<"payments">>(
     sql`SELECT payment_method FROM payments WHERE order_id = ${order.id} AND status = ${"SUCCEEDED"} ORDER BY created_at DESC LIMIT 1`,
@@ -122,6 +122,7 @@ async function loadOrderContext(orderId: string, storeId: string): Promise<Order
   );
 
   const name = [customer?.first_name, customer?.last_name].filter(Boolean).join(" ").trim();
+  const checkout = normalizeCheckoutCustomerDetails(order.checkout_customer_details);
 
   return {
     orderId: order.id,
@@ -132,11 +133,12 @@ async function loadOrderContext(orderId: string, storeId: string): Promise<Order
     status: order.status,
     createdAt: order.created_at,
     paidAt: order.paid_at,
-    customerName: name || null,
-    email: customer?.email ?? null,
+    customerName: checkout ? checkout.name : name || null,
+    email: checkout ? checkout.email : customer?.email ?? null,
     phone: customer?.phone ?? null,
     document: customer?.document ?? null,
-    country: address?.country ?? null,
+    country: checkout?.address.country ?? null,
+    clientIp: order.client_ip ?? null,
     paymentMethod: payment?.payment_method ?? null,
     items: (order.order_items ?? []).map((item) => ({
       id: item.product_id,
@@ -193,7 +195,7 @@ export function buildSalePayload(
       phone: context.phone,
       document: context.document,
       country: context.country,
-      ip: options.clientIp ?? null,
+      ip: context.clientIp ?? options.clientIp ?? null,
     },
     products: context.items.map((item) => ({
       id: item.id,
@@ -216,16 +218,18 @@ export function buildSalePayload(
 
 async function postToUtmify(apiToken: string, body: unknown): Promise<UtmifySendResult> {
   let response: Response;
+  let text: string;
   try {
     response = await fetch(UTMIFY_ORDERS_URL, {
       method: "POST",
+      signal: AbortSignal.timeout(10000),
       headers: { "content-type": "application/json", "x-api-token": apiToken },
       body: JSON.stringify(body),
     });
+    text = await response.text();
   } catch (error) {
     return { ok: false, error: sanitizeError((error as Error).message) };
   }
-  const text = await response.text();
   if (response.ok) return { ok: true, httpStatus: response.status };
   const permanent = response.status >= 400 && response.status < 500 && response.status !== 429;
   return {
@@ -240,7 +244,6 @@ async function postToUtmify(apiToken: string, body: unknown): Promise<UtmifySend
 export async function sendSaleForOrder(input: {
   orderId: string;
   storeId: string;
-  clientIp?: string | null;
 }): Promise<UtmifySendResult> {
   try {
     const settings = await getUtmifySettingsWithToken(input.storeId);
@@ -273,16 +276,21 @@ export async function sendSaleForOrder(input: {
       rowId = inserted.id;
     }
 
-    // Atribuição + telemetria do navegador (IP real do comprador persistido em
-    // order_attribution.client_ip). Nunca usamos o IP do worker/servidor.
+    // Marketing attribution stays separate; the order is the source of the
+    // purchase-entry IP, including when attribution has no row.
     const attributionRecord = await getOrderAttributionRecord(input.orderId).catch(
       () => ({}) as OrderAttributionRecord,
     );
     const attribution: Attribution = attributionRecord;
     const payload = buildSalePayload(context, attribution, {
       isTest: settings.isTest,
-      clientIp: input.clientIp ?? attributionRecord.client_ip ?? null,
+      clientIp: context.clientIp ?? null,
     });
+    const missing = (["name", "email", "ip", "country"] as const)
+      .filter(field => payload.customer[field] === null);
+    if (missing.length) {
+      console.warn(`[utmify] order=${input.orderId} missing_customer_fields=${missing.join(",")} sending_nulls=true`);
+    }
     const result = await postToUtmify(settings.apiToken, payload);
     const attempt = (existing?.attempt_count ?? 0) + 1;
 
@@ -435,7 +443,7 @@ export async function resendUtmifySaleForOrderNumber(orderNumber: string): Promi
   const attributionRecord = await getOrderAttributionRecord(order.id).catch(
     () => ({}) as OrderAttributionRecord,
   );
-  const clientIp = attributionRecord.client_ip ?? null;
+  const clientIp = context.clientIp ?? null;
   const payload = buildSalePayload(context, attributionRecord as Attribution, {
     isTest: settings.isTest,
     clientIp,
