@@ -1,0 +1,6 @@
+{
+  "error": {
+    "message": "Invalid API Key provided: PLACEHOL********************ACED",
+    "type": "invalid_request_error"
+  }
+}
