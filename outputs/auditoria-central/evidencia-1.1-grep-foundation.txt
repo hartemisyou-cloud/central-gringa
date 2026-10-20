@@ -1,0 +1,37 @@
+src/lib/donations/start.test.ts:27:function req({ method = "POST", origin = "https://www.hopehumanfoundation.org", body, ctype = "application/x-www-form-urlencoded" } = {}) {
+src/lib/donations/start.test.ts:58:  it.each([null, "https://evil.com", "https://hopehumanfoundation.org.evil.com", "https://x.hopehumanfoundation.org", "http://hopehumanfoundation.org"])(
+src/lib/donations/start.test.ts:95:    const r0 = new Request(`${SELF}/donations/start`, { method: "POST", body: stream, duplex: "half", headers: { origin: "https://hopehumanfoundation.org", "content-type": "application/x-www-form-urlencoded" } });
+src/lib/donations/start.test.ts:110:    const h = new Headers({ origin: "https://hopehumanfoundation.org", "content-type": "application/x-www-form-urlencoded", "content-length": cl });
+src/lib/donations/start.test.ts:120:    const r = await handleDonationStart(new Request(`${SELF}/donations/start`, { method, headers: { origin: "https://hopehumanfoundation.org" } }), d);
+src/lib/donations/start.test.ts:130:    expect(r.headers.get("location")).toBe("https://www.hopehumanfoundation.org/donate?slug=help-maria&amount=20&checkout_error=unavailable");
+src/lib/donations/start.server.ts:10:  "https://hopehumanfoundation.org",
+src/lib/donations/start.server.ts:11:  "https://www.hopehumanfoundation.org",
+src/lib/donations/start.server.ts:15:export const START_ERROR_BASE = "https://www.hopehumanfoundation.org/donate";
+src/lib/donations/pay-bridge.test.ts:10:    expect(JSON.stringify(DONATION_BRANDING)).not.toMatch(/hopehumanfoundations?\.org/);
+src/lib/donations/pay-bridge.test.ts:28:    expect(JSON.stringify(p)).not.toMatch(/hopehumanfoundations?\.org/i);
+src/lib/donations/donations.test.ts:232:    expect(json).not.toMatch(/hopehumanfoundations?\.org/);
+src/lib/payments/checkout-session.test.ts:53:    const routed = buildEbookCheckoutSessionParams({ ...input, successUrl: "https://www.hopehumanfoundation.org/thank-you?amount=22" });
+src/lib/payments/checkout-session.test.ts:54:    expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=22");
+src/lib/payments/checkout-session.test.ts:62:    const routed = buildEbookCheckoutSessionParams({ ...input, hhf: true, successUrl: "https://www.hopehumanfoundation.org/thank-you?amount=30" });
+src/lib/payments/checkout-session.test.ts:71:    expect(routed.success_url).toBe("https://www.hopehumanfoundation.org/thank-you?amount=30");
+src/lib/payments/checkout-session.test.ts:83:    "http://www.hopehumanfoundation.org/thank-you?amount=22",
+src/lib/payments/checkout-session.test.ts:84:    "https://www.hopehumanfoundation.org/thank-you",
+src/lib/payments/checkout-session.test.ts:85:    "https://www.hopehumanfoundation.org/thank-you?amount=0",
+src/lib/payments/checkout-session.test.ts:86:    "https://www.hopehumanfoundation.org/thank-you?amount=22&extra=1",
+src/lib/payments/purchase-entry.ts:25:  return `/pay/${encodeURIComponent(publicToken)}${referer?.includes("hopehumanfoundation.org") ? "?via=hhf" : ""}`;
+src/lib/payments/purchase-entry.ts:30:  return referer?.includes("hopehumanfoundation.org") ?? false;
+src/lib/payments/checkout-session.server.ts:28:  if (destination.protocol !== "https:" || destination.hostname !== "www.hopehumanfoundation.org" ||
+src/lib/payments/purchase-entry.postgres.test.ts:105:  it.each([undefined, "https://hopehumanbooks.com/", "https://example.com/", "https://hopehumanfoundation.org/", "https://www.hopehumanfoundation.org/campaign"])("302 directly to Stripe without a local marker for Referer %s", async (referer) => {
+src/lib/payments/purchase-entry.postgres.test.ts:111:    if (referer?.includes("hopehumanfoundation.org")) {
+src/lib/payments/purchase-entry.postgres.test.ts:112:      expect(form.get("success_url")).toBe("https://www.hopehumanfoundation.org/thank-you?amount=30");
+src/lib/payments/purchase-entry.postgres.test.ts:113:      expect(body.match(/hopehumanfoundation\.org/g)).toHaveLength(1);
+src/lib/payments/purchase-entry.postgres.test.ts:116:      expect(body).not.toContain("hopehumanfoundation.org");
+src/lib/payments/purchase-entry.postgres.test.ts:125:  it.each([[undefined, false], ["https://hopehumanbooks.com/", false], ["https://hopehumanfoundation.org/", true], ["https://www.hopehumanfoundation.org/campaign", true]] as const)("persists origin_hhf=%s for Referer %s", async (referer, expectedFlag) => {
+src/lib/payments/purchase-entry.postgres.test.ts:136:    const response = await handlePurchaseEntry(request("little-women", "https://www.hopehumanfoundation.org/?campaign=ignored"), "little-women", await defaultPurchaseEntryDeps());
+src/lib/payments/purchase-entry.postgres.test.ts:329:    for (const [query, referer] of [["", undefined], [`?ref=${CODE}&fbclid=F1`, undefined], ["", "https://www.hopehumanfoundation.org/"], [`?ref=${CODE}&fbclid=F1`, "https://www.hopehumanfoundation.org/"]] as const) {
+src/lib/payments/hhf-return.ts:28:  return `https://www.hopehumanfoundation.org/thank-you?amount=${Math.round(totalCents / 100)}`;
+src/lib/payments/hhf-return.test.ts:128:    expect(hhfThankYouUrl(2000)).toBe("https://www.hopehumanfoundation.org/thank-you?amount=20");
+src/lib/payments/hhf-return.test.ts:129:    expect(hhfThankYouUrl(50000)).toBe("https://www.hopehumanfoundation.org/thank-you?amount=500");
+src/lib/payments/hhf-return.test.ts:138:        `https://www.hopehumanfoundation.org/thank-you?amount=${totalCents / 100}`,
+src/lib/payments/hhf-return.test.ts:147:        `https://www.hopehumanfoundation.org/thank-you?amount=${amount}`,
+src/lib/payments/hhf-return.test.ts:164:      "https://www.hopehumanfoundation.org/thank-you?amount=30",
