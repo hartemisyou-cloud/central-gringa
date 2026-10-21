@@ -110,9 +110,11 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     const form = new URLSearchParams(body);
     const [order] = await H.current!.client`SELECT public_token FROM orders`;
     const suffix = referer?.includes("hopehumanfoundation.org") ? "?ret=1" : "";
+    const themeB = Boolean(referer?.includes("hopehumanfoundation.org"));
     expect(form.get("success_url")).toBe(`https://hopehumanbooks.com/order/${order!["public_token"]}${suffix}`);
-    expect(form.get("line_items[0][price_data][product_data][name]")).toBe(purchaseEntryProduct("little-women")!.name);
-    expect(form.get("line_items[0][price_data][product_data][description]")).toBe("E-book · Louisa May Alcott");
+    expect(form.get("line_items[0][price_data][product_data][name]")).toBe(themeB ? "$30" : purchaseEntryProduct("little-women")!.name);
+    expect(form.get("line_items[0][price_data][product_data][description]")).toBe(themeB ? "Make a Difference Today" : "E-book · Louisa May Alcott");
+    if (themeB) expect(form.get("line_items[0][price_data][product_data][images][0]")).toBe("https://hopehumanbooks.com/emblem.png");
     expect(JSON.stringify(Object.fromEntries(form))).not.toMatch(/fundação|foundation|doação|donation|campanha|campaign|mateo|hopehumanfoundation|utm_|referr|tracking|hhf|via=/i);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-robots-tag")).toBe("noindex");
