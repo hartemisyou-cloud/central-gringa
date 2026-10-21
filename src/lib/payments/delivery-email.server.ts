@@ -53,6 +53,10 @@ export async function sendDeliveryEmailForOrder(orderId: string, storeId: string
   if (error) throw new Error("Delivery order lookup failed.");
   if (!order || order.status !== "PAID") return { skipped: "not_paid" };
   if (order.delivery_email_sent_at) return { skipped: "already_sent" };
+  if (order.origin_hhf) {
+    console.info("[ebook-delivery] skipped_origin_hhf", { orderId });
+    return { skipped: "origin_hhf" };
+  }
   if (!worksForSkus(order.items.map(item => item.sku)).length) return { skipped: "no_ebooks" };
   const details = normalizeCheckoutCustomerDetails(order.checkout_customer_details);
   const recipient = details ? details.email : order.customer_email?.trim().toLowerCase();

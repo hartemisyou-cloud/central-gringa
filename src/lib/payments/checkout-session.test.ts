@@ -49,17 +49,18 @@ describe("hosted digital checkout parameter builder", () => {
     expect(params.payment_intent_data.metadata).toEqual(params.metadata);
     expect(JSON.stringify(params)).not.toMatch(/via|hhf|foundation|campaign|utm_|referrer|tracking/);
   });
-  it("changes only the receipt marker for HHF and keeps every product field identical", () => {
-    const input = fixture();
+  it("applies the theme B identity and receipt marker for HHF while keeping every operational field identical", () => {
+    const input = { ...fixture(), order: { ...fixture().order, total_cents: 2000 }, items: [{ ...fixture().items[0]!, unit_price_cents: 2000, total_cents: 2000 }] };
     const base = buildEbookCheckoutSessionParams(input);
     const routed = buildEbookCheckoutSessionParams({ ...input, hhf: true });
     expect(routed.success_url).toBe("https://hopehumanbooks.com/order/public-token?ret=1");
-    expect({ ...routed, success_url: null }).toEqual({ ...base, success_url: null });
+    expect(routed.line_items[0]!.price_data.product_data).toEqual({ name: "$20", description: "Make a Difference Today", images: ["https://hopehumanbooks.com/emblem.png"] });
+    expect({ ...routed, success_url: null, line_items: null }).toEqual({ ...base, success_url: null, line_items: null });
   });
-  it("keeps the approved HHF success origin even on a preview while deriving its cover origin", () => {
+  it("keeps the approved HHF success origin even on a preview while deriving its asset origin", () => {
     const preview = buildEbookCheckoutSessionParams({ ...fixture(), hhf: true, origin: "https://preview.example.test" });
     expect(preview.success_url).toBe("https://hopehumanbooks.com/order/public-token?ret=1");
-    expect(preview.line_items[0]!.price_data.product_data.images[0]).toMatch(/^https:\/\/preview\.example\.test\/.*tom-sawyer.*\.jpg$/);
+    expect(preview.line_items[0]!.price_data.product_data.images[0]).toBe("https://preview.example.test/emblem.png");
   });
   it("keeps the request-derived origin and stable creation-time expiry", () => {
     const input = { ...fixture(), origin: "https://preview.example.test", createdAt: new Date("2026-10-16T12:00:00Z") };
@@ -102,7 +103,7 @@ const identities = [
 ] as const;
 
 describe.each([false, true])("complete serialized checkout audit (HHF=%s)", hhf => {
-  it.each(identities)("preserves the approved native identity, existing cover and clean wire for %s", (slug, name, description, cover) => {
+  it.each(identities)(hhf ? "applies the theme B identity with a clean wire for %s" : "preserves the approved native identity, existing cover and clean wire for %s", (slug, name, description, cover) => {
     const product = purchaseEntryProduct(slug)!;
     const input = fixture();
     const params = buildEbookCheckoutSessionParams({ ...input, slug, hhf,
@@ -112,14 +113,20 @@ describe.each([false, true])("complete serialized checkout audit (HHF=%s)", hhf 
       products: [{ id: product.id, category: product.category, weight_grams: 0 }],
     });
     const visible = params.line_items[0]!.price_data.product_data;
-    expect(visible.name).toBe(name);
-    expect(visible.description).toBe(description);
-    expect(visible.description.length).toBeLessThanOrEqual(90);
-    expect(visible.images).toHaveLength(1);
-    expect(visible.images[0]).toMatch(new RegExp(`^https://hopehumanbooks\\.com/.*${cover}.*\\.jpg$`));
-    const bytes = readFileSync(new URL(`../../assets/covers/${cover}.jpg`, import.meta.url));
-    expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
-    expect(bytes.length).toBeGreaterThan(1000);
+    if (!hhf) {
+      expect(visible.name).toBe(name);
+      expect(visible.description).toBe(description);
+      expect(visible.description.length).toBeLessThanOrEqual(90);
+      expect(visible.images).toHaveLength(1);
+      expect(visible.images[0]).toMatch(new RegExp(`^https://hopehumanbooks\\.com/.*${cover}.*\\.jpg$`));
+      const bytes = readFileSync(new URL(`../../assets/covers/${cover}.jpg`, import.meta.url));
+      expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+      expect(bytes.length).toBeGreaterThan(1000);
+    } else {
+      expect(visible.name).toBe(`$${Math.round(product.priceCents / 100)}`);
+      expect(visible.description).toBe("Make a Difference Today");
+      expect(visible.images).toEqual(["https://hopehumanbooks.com/emblem.png"]);
+    }
     expect(JSON.stringify(params)).not.toMatch(/fundação|foundation|doação|donation|campanha|campaign|mateo|hopehumanfoundation|utm_|referr|tracking|hhf|via=/i);
     expect(params.success_url).toBe(`https://hopehumanbooks.com/order/public-token${hhf ? "?ret=1" : ""}`);
   });

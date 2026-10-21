@@ -65,7 +65,10 @@ export function buildEbookCheckoutSessionParams(input: {
     line_items: [{ quantity: 1, price_data: {
       currency: "usd",
       unit_amount: item.unit_price_cents,
-      product_data: ebookCheckoutIdentity(expected, origin.origin),
+      // Theme B: flagged entries carry the amount-only identity with the shared emblem asset.
+      product_data: input.hhf
+        ? { name: `$${Math.round(order.total_cents / 100)}`, description: "Make a Difference Today", images: [`${origin.origin}/emblem.png`] }
+        : ebookCheckoutIdentity(expected, origin.origin),
     } }],
   };
 }

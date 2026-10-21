@@ -11,6 +11,7 @@ vi.mock("@/lib/db/client.server", async importOriginal => ({
   }),
 }));
 import { buildDeliveryEmail, sendDeliveryEmailForOrder } from "./delivery-email.server";
+import { buildEbookCheckoutSessionParams } from "./checkout-session.server";
 
 const ORDER = "b0b5e000-4848-4b00-8000-000000000701";
 const TOKEN = "ReceiptTokenWithoutReturnMarker123";
@@ -35,7 +36,7 @@ beforeEach(async () => {
   await q`INSERT INTO products (id,store_id,name,slug,sku,price_cents,currency,stock,weight_grams,category)
     VALUES (${product.id},${HHB_STORE_ID},${product.name},${product.slug},${product.sku},2000,'USD',100,0,'ebook')`;
   await q`INSERT INTO orders (id,store_id,order_number,status,environment,currency,total_cents,public_token,origin_hhf,checkout_customer_details)
-    VALUES (${ORDER},${HHB_STORE_ID},'ORD-EMAIL','PAID','test','USD',2000,${TOKEN},true,
+    VALUES (${ORDER},${HHB_STORE_ID},'ORD-EMAIL','PAID','test','USD',2000,${TOKEN},false,
       ${q.json({ name: "Hope Human", email: " Reader@EXAMPLE.COM ", address: { country: "US", city: null } })})`;
   await q`INSERT INTO order_items (order_id,product_id,product_name,sku,unit_price_cents,quantity,total_cents)
     VALUES (${ORDER},${product.id},${product.name},${product.sku},2000,1,2000)`;
@@ -43,8 +44,15 @@ beforeEach(async () => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("automatic paid e-book delivery", () => {
-  it.each([true, false])("sends the work with a marker-free receipt link for origin_hhf=%s and persists acceptance", async hhf => {
+  it.each([true, false])("routes origin_hhf=%s through its theme before any provider call", async hhf => {
     await H.current!.client`UPDATE orders SET origin_hhf=${hhf} WHERE id=${ORDER}`;
+    if (hhf) {
+      expect(await sendDeliveryEmailForOrder(ORDER, HHB_STORE_ID)).toEqual({ skipped: "origin_hhf" });
+      expect(H.fetch).not.toHaveBeenCalled();
+      const [saved] = await H.current!.client`SELECT delivery_email_sent_at FROM orders WHERE id=${ORDER}`;
+      expect(saved!["delivery_email_sent_at"]).toBeNull();
+      return;
+    }
     expect(await sendDeliveryEmailForOrder(ORDER, HHB_STORE_ID)).toEqual({ sent: true });
     const [url, init] = H.fetch.mock.calls[0]!;
     expect(url).toBe("https://api.resend.com/emails");
@@ -55,7 +63,7 @@ describe("automatic paid e-book delivery", () => {
     expect(body.text).toContain(`https://hopehumanbooks.com/order/${TOKEN}`);
     expect(body.html).toContain(`href="https://hopehumanbooks.com/order/${TOKEN}"`);
     expect(JSON.stringify(body)).not.toMatch(/\?ret=|&ret=|via=/);
-    expect(body.text.includes("Make a Difference Today")).toBe(hhf);
+    expect(body.text.includes("Make a Difference Today")).toBe(false);
     const [saved] = await H.current!.client`SELECT delivery_email_sent_at FROM orders WHERE id=${ORDER}`;
     expect(saved!["delivery_email_sent_at"]).not.toBeNull();
     expect(await sendDeliveryEmailForOrder(ORDER, HHB_STORE_ID)).toEqual({ skipped: "already_sent" });
@@ -94,5 +102,30 @@ describe("automatic paid e-book delivery", () => {
     expect(email.text).toContain("The Scarlet Letter — Nathaniel Hawthorne");
     expect(email.html).toContain("&lt;Library &amp; &quot;Books&quot;&gt;");
     expect(email.html).not.toContain('<Library & "Books">');
+  });
+});
+
+describe("donor journey across theme layers", () => {
+  it("keeps the theme B wire, empty PAID receipt and suppressed email while native stays intact", async () => {
+    const q = H.current!.client;
+    const input = {
+      order: { id: ORDER, store_id: HHB_STORE_ID, order_number: "ORD-EMAIL", public_token: TOKEN, environment: "test" as const, customer_id: null, total_cents: 2000, currency: "USD" },
+      items: [{ product_id: product.id, product_name: product.name, sku: product.sku, quantity: 1, unit_price_cents: 2000, total_cents: 2000 }],
+      products: [{ id: product.id, category: product.category, weight_grams: 0 }],
+      slug: product.slug,
+      origin: "https://hopehumanbooks.com",
+      createdAt: "2026-10-16T12:00:00.000Z",
+    };
+    const themed = buildEbookCheckoutSessionParams({ ...input, hhf: true });
+    expect(themed.success_url).toBe(`https://hopehumanbooks.com/order/${TOKEN}?ret=1`);
+    expect(themed.line_items[0]!.price_data.product_data).toEqual({ name: "$20", description: "Make a Difference Today", images: ["https://hopehumanbooks.com/emblem.png"] });
+    expect(JSON.stringify(themed)).not.toMatch(/fundação|foundation|doação|donation|campanha|campaign|mateo|hopehumanfoundation|utm_|referr|tracking|hhf|via=/i);
+    expect(buildEbookCheckoutSessionParams(input).line_items[0]!.price_data.product_data.name).toBe(product.name);
+    await q`UPDATE orders SET origin_hhf=true WHERE id=${ORDER}`;
+    const { loadReceipt } = await import("./receipt.server");
+    const receipt = await loadReceipt(TOKEN);
+    expect(receipt).toMatchObject({ hhf: true, status: "PAID", items: [], works: [] });
+    expect(await sendDeliveryEmailForOrder(ORDER, HHB_STORE_ID)).toEqual({ skipped: "origin_hhf" });
+    expect(H.fetch).not.toHaveBeenCalled();
   });
 });

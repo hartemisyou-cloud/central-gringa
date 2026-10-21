@@ -3,7 +3,7 @@ import type { Receipt } from "@/lib/hhb-store.functions";
 import { getOrderDeliverables } from "./fulfillment.server";
 import { PaymentError } from "./errors";
 
-/** Both entry origins receive the same receipt; PAID alone unlocks works. */
+/** Native receipts list items and works; theme B returns empty listings. PAID alone unlocks works. */
 export async function loadReceipt(publicToken: string): Promise<Receipt> {
   const { data: order, error } = await one<{
     order_number: string; status: string; currency: string; total_cents: number; created_at: string;
@@ -17,6 +17,18 @@ export async function loadReceipt(publicToken: string): Promise<Receipt> {
   `, true);
   if (error) throw new PaymentError("CONFIG_ERROR", "Order temporarily unavailable.");
   if (!order) throw new PaymentError("NOT_FOUND", "Order not found.");
+  if (order.origin_hhf) {
+    return {
+      orderNumber: order.order_number,
+      status: order.status,
+      currency: order.currency,
+      totalCents: order.total_cents,
+      createdAt: order.created_at,
+      hhf: true,
+      items: [],
+      works: [],
+    };
+  }
   const deliverables = await getOrderDeliverables(publicToken);
   return {
     orderNumber: order.order_number,
