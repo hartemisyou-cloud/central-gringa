@@ -54,6 +54,30 @@ function ReceiptPage() {
   useEffect(() => {
     if (paid) presence.send("PAYMENT_SUCCEEDED");
   }, [paid, presence]);
+  useEffect(() => {
+    if (receiptHhf) document.title = "Order confirmation";
+  }, [receiptHhf]);
+
+  if (receiptHhf) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="w-full max-w-md px-5">
+          <div className="surface-card p-8 text-center">
+            {isPending ? <Loader2 className="mx-auto size-9 animate-spin text-muted-foreground" />
+              : paid ? <CheckCircle2 className="mx-auto size-10 text-primary" />
+              : failed ? <XCircle className="mx-auto size-10 text-destructive" />
+              : <Clock className="mx-auto size-9 text-muted-foreground" />}
+            <h1 className="mt-4 font-display text-2xl font-semibold">
+              {data && !data.ok ? "Order not found" : paid ? "Thank you for your support" : failed ? "Payment not completed" : "Confirming your support…"}
+            </h1>
+            {receipt ? (
+              <p className="mt-2 text-sm text-muted-foreground">{formatMoney(receipt.totalCents, receipt.currency)}</p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">

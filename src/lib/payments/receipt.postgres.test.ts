@@ -38,29 +38,29 @@ beforeEach(async () => {
 });
 
 describe("product receipts for both persisted origins", () => {
-  it("exposes HHF items before payment while keeping files locked", async () => {
+  it("returns empty listings for an unpaid theme B receipt while keeping files locked", async () => {
     const receipt = await loadReceipt(TOKEN);
-    expect(receipt).toMatchObject({ hhf: true, status: "PENDING_PAYMENT",
-      items: [{ name: "The Adventures of Tom Sawyer — Mark Twain", quantity: 1, totalCents: 2000 }], works: [] });
+    expect(receipt).toMatchObject({ hhf: true, status: "PENDING_PAYMENT", items: [], works: [] });
     await expect(downloadWork(TOKEN, "the-adventures-of-tom-sawyer")).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(H.get).not.toHaveBeenCalled();
   });
 
-  it("exposes the identical purchased items and works for paid HHF and native receipts", async () => {
+  it("keeps theme B listings empty on payment while native receipts show purchased items and works", async () => {
     await H.current!.client`UPDATE orders SET status='PAID' WHERE id=${ORDER}`;
     const hhf = await loadReceipt(TOKEN);
     expect(hhf.hhf).toBe(true);
-    expect(hhf.items).toEqual([{ name: "The Adventures of Tom Sawyer — Mark Twain", quantity: 1, totalCents: 2000 }]);
-    expect(hhf.works).toEqual([expect.objectContaining({ title: "The Adventures of Tom Sawyer", author: "Mark Twain",
-      downloadPath: `/api/public/v1/downloads/${TOKEN}/the-adventures-of-tom-sawyer` })]);
+    expect(hhf.items).toEqual([]);
+    expect(hhf.works).toEqual([]);
     await H.current!.client`UPDATE orders SET origin_hhf=false WHERE id=${ORDER}`;
     const native = await loadReceipt(TOKEN);
     expect(native.hhf).toBe(false);
-    expect({ ...native, hhf: null }).toEqual({ ...hhf, hhf: null });
+    expect(native.items).toEqual([{ name: "The Adventures of Tom Sawyer — Mark Twain", quantity: 1, totalCents: 2000 }]);
+    expect(native.works).toEqual([expect.objectContaining({ title: "The Adventures of Tom Sawyer", author: "Mark Twain",
+      downloadPath: `/api/public/v1/downloads/${TOKEN}/the-adventures-of-tom-sawyer` })]);
   });
 
-  it("streams the purchased file from a paid HHF receipt", async () => {
-    await H.current!.client`UPDATE orders SET status='PAID' WHERE id=${ORDER}`;
+  it("streams the purchased file from a paid native receipt", async () => {
+    await H.current!.client`UPDATE orders SET origin_hhf=false, status='PAID' WHERE id=${ORDER}`;
     const receipt = await loadReceipt(TOKEN);
     H.get.mockResolvedValue({ statusCode: 200, stream: new Blob(["purchased ebook"]).stream() });
     const response = await downloadWork(TOKEN, receipt.works[0]!.workId);
@@ -69,11 +69,11 @@ describe("product receipts for both persisted origins", () => {
     expect(H.get).toHaveBeenCalledExactlyOnceWith("v1/the-adventures-of-tom-sawyer.txt", { access: "private" });
   });
 
-  it.each(["CANCELLED", "REFUNDED"])("keeps items but revokes works for a %s HHF receipt", async status => {
+  it.each(["CANCELLED", "REFUNDED"])("keeps empty listings for a %s theme B receipt", async status => {
     await H.current!.client`UPDATE orders SET status=${status} WHERE id=${ORDER}`;
     const receipt = await loadReceipt(TOKEN);
     expect(receipt.hhf).toBe(true);
-    expect(receipt.items).toHaveLength(1);
+    expect(receipt.items).toEqual([]);
     expect(receipt.works).toEqual([]);
   });
 
