@@ -196,7 +196,7 @@ export async function applyEvent(
           sendDeliveryEmailForOrder(payment.order_id, payment.store_id)),
       ]);
       if (metaResult.status === "rejected") console.error("[meta-capi] purchase dispatch failed", (metaResult.reason as Error).message);
-      if (metaResult.status === "fulfilled" && !metaResult.value?.ok) {
+      if (metaResult.status === "fulfilled" && metaResult.value?.ok === false) {
         console.error("[meta-capi] purchase delivery unresolved", { orderId: payment.order_id, storeId: payment.store_id,
           httpStatus: metaResult.value?.httpStatus ?? null });
       }

@@ -32,8 +32,8 @@ beforeEach(async () => {
   const q = client();
   await q`TRUNCATE stores CASCADE`;
   await q`INSERT INTO stores (id,name,slug,environment,currency,status,domain) VALUES (${STORE},'Fixture','fixture','live','USD','ACTIVE','example.com')`;
-  await q`INSERT INTO orders (id,store_id,order_number,environment,status,currency,total_cents,paid_at)
-    VALUES (${ORDER},${STORE},'ORD-FIXTURE','live','PAID','USD',10000,'2026-10-24T12:00:00Z')`;
+  await q`INSERT INTO orders (id,store_id,public_token,order_number,environment,status,currency,total_cents,paid_at)
+    VALUES (${ORDER},${STORE},'fixture-public-token','ORD-FIXTURE','live','PAID','USD',10000,'2026-10-24T12:00:00Z')`;
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
