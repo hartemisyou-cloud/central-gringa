@@ -196,6 +196,10 @@ export async function applyEvent(
           sendDeliveryEmailForOrder(payment.order_id, payment.store_id)),
       ]);
       if (metaResult.status === "rejected") console.error("[meta-capi] purchase dispatch failed", (metaResult.reason as Error).message);
+      if (metaResult.status === "fulfilled" && !metaResult.value?.ok) {
+        console.error("[meta-capi] purchase delivery unresolved", { orderId: payment.order_id, storeId: payment.store_id,
+          httpStatus: metaResult.value?.httpStatus ?? null });
+      }
       if (saleResult.status === "rejected") console.error("[utmify] sale dispatch failed", (saleResult.reason as Error).message);
       // Preserve the existing Stripe retry mechanism for a configured mail
       // transport failure, after both trackers have had their own attempt.

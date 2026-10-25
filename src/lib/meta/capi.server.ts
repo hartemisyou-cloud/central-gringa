@@ -32,8 +32,36 @@ export function purchaseEventId(orderId: string): string {
 }
 
 export type MetaSendResult =
-  | { ok: true; skipped?: string; httpStatus?: number; metaEventId?: string | null }
-  | { ok: false; error: string; httpStatus?: number; permanent?: boolean };
+  | { ok: true; skipped?: string; httpStatus?: number; metaEventId?: string | null; eventsReceived?: number; messages?: string }
+  | { ok: false; error: string; httpStatus?: number; permanent?: boolean; metaEventId?: string | null; eventsReceived?: number; messages?: string };
+
+/** HTTP success is not an acknowledgement: Meta must accept the full batch. */
+export function validateMetaResponse(httpStatus: number, text: string, expectedEvents = 1): MetaSendResult {
+  let parsed: Record<string, unknown>;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid response");
+    parsed = value as Record<string, unknown>;
+  } catch {
+    return { ok: false, httpStatus, error: "Meta returned an invalid acknowledgement.", permanent: httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429 };
+  }
+  const error = parsed["error"] as { is_transient?: boolean } | undefined;
+  const evidence = {
+    httpStatus,
+    metaEventId: typeof parsed["fbtrace_id"] === "string" ? parsed["fbtrace_id"] : null,
+    eventsReceived: typeof parsed["events_received"] === "number" ? parsed["events_received"] : undefined,
+    messages: parsed["messages"] === undefined ? undefined : sanitizeError(JSON.stringify(parsed["messages"])),
+  };
+  if (httpStatus >= 200 && httpStatus < 300 && !error && evidence.eventsReceived === expectedEvents) {
+    return { ok: true, ...evidence };
+  }
+  return {
+    ok: false, ...evidence,
+    error: sanitizeError(JSON.stringify(parsed)),
+    permanent: Boolean(error) && error?.is_transient !== true && httpStatus !== 429 && httpStatus < 500
+      || httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429 && error?.is_transient !== true,
+  };
+}
 
 export function sanitizeError(message: string): string {
   return message
@@ -152,9 +180,9 @@ function eventSourceUrl(
   attribution: OrderAttributionRecord,
 ): string | undefined {
   const captured = attribution.event_source_url;
-  if (isPublicPageUrl(captured)) return captured!;
+  if (captured && isPublicPageUrl(captured)) return captured;
   const landing = attribution.landing_page;
-  if (isPublicPageUrl(landing)) return landing!;
+  if (landing && isPublicPageUrl(landing)) return landing;
   if (context.storeDomain) {
     const base = context.storeDomain.startsWith("http")
       ? context.storeDomain
@@ -260,7 +288,6 @@ async function postToMeta(
 ): Promise<MetaSendResult> {
   let response: Response;
   let text: string;
-  console.debug(`[meta-capi] token_suffix=${accessToken.slice(-4).replace(/[^A-Za-z0-9_-]/g, "")}`);
   try {
     response = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`, {
       method: "POST",
@@ -276,23 +303,8 @@ async function postToMeta(
     return { ok: false, error: sanitizeError((error as Error).message) };
   }
 
-  if (response.ok) {
-    let metaEventId: string | null = null;
-    try {
-      metaEventId = (JSON.parse(text) as { fbtrace_id?: string }).fbtrace_id ?? null;
-    } catch {
-      metaEventId = null;
-    }
-    return { ok: true, httpStatus: response.status, metaEventId };
-  }
-  // 4xx (exceto 429) = erro permanente: configuração/payload inválido.
-  const permanent = response.status >= 400 && response.status < 500 && response.status !== 429;
-  return {
-    ok: false,
-    error: sanitizeError(text || `HTTP ${response.status}`),
-    httpStatus: response.status,
-    permanent,
-  };
+  const events = body["data"];
+  return validateMetaResponse(response.status, text, Array.isArray(events) ? events.length : 1);
 }
 
 /** Purchase server-side idempotente. Nunca lança. */
@@ -306,7 +318,7 @@ export async function sendPurchaseForOrder(input: {
     if (!settings) return { ok: true, skipped: "meta_disabled" };
 
     const context = await loadOrderContext(input.orderId, input.storeId);
-    if (!context) return { ok: true, skipped: "order_not_found" };
+    if (!context) return { ok: false, error: "Order not found in the selected store.", permanent: true };
     // PAID é a única fonte de verdade para Purchase.
     if (context.status !== "PAID") return { ok: true, skipped: "order_not_paid" };
     const testEventCode =
@@ -317,15 +329,14 @@ export async function sendPurchaseForOrder(input: {
 
     // Idempotência: uma linha por (store_id, order_id, event_name = Purchase).
     const { data: existing } = await one<Row<"meta_conversion_events">>(
-      sql`SELECT id, status, attempt_count FROM meta_conversion_events WHERE store_id = ${input.storeId} AND order_id = ${input.orderId} AND event_name = ${"Purchase"}`,
+      sql`SELECT id, status, attempt_count, event_id FROM meta_conversion_events WHERE store_id = ${input.storeId} AND order_id = ${input.orderId} AND event_name = ${"Purchase"}`,
       true,
     );
 
     if (existing?.status === "SENT") return { ok: true, skipped: "already_sent" };
     if (
       existing &&
-      existing.attempt_count >= MAX_ATTEMPTS &&
-      existing.status === "FAILED_PERMANENT"
+      (existing.status === "FAILED_PERMANENT" || existing.attempt_count >= MAX_ATTEMPTS)
     ) {
       return { ok: true, skipped: "permanent_failure" };
     }
@@ -339,27 +350,46 @@ export async function sendPurchaseForOrder(input: {
         true,
       );
       if (error || !inserted) {
-        // corrida com outro worker: outro processo já está enviando.
-        return { ok: true, skipped: "in_flight" };
+        if (error?.code === "23505") return { ok: true, skipped: "in_flight" };
+        return { ok: false, error: "Purchase delivery could not be persisted." };
       }
       rowId = inserted.id;
     }
 
-    const payload = await buildPayload(context, {
+    // Atomic lease and attempt fencing use the existing durable delivery row.
+    // A crashed claimant is recoverable after two minutes; stale completion
+    // cannot overwrite a newer attempt or a SENT acknowledgement.
+    const { data: claim, error: claimError } = await one<{ attempt_count: number; event_id: string }>(sql`
+      UPDATE meta_conversion_events SET status = 'SENDING', attempt_count = attempt_count + 1, updated_at = now()
+      WHERE id = ${rowId} AND attempt_count < ${MAX_ATTEMPTS}
+        AND (status IN ('PENDING', 'FAILED') OR (status = 'SENDING' AND updated_at < now() - interval '2 minutes'))
+        AND (attempt_count = 0 OR updated_at <= now() - interval '30 seconds')
+      RETURNING attempt_count, event_id`, true);
+    if (claimError) return { ok: false, error: "Purchase delivery claim failed." };
+    if (!claim) return { ok: true, skipped: "in_flight_or_backoff" };
+    const attempt = claim.attempt_count;
+    let result: MetaSendResult;
+    try {
+      const payload = await buildPayload(context, {
       userAgent: input.userAgent ?? null,
+      eventIdOverride: claim.event_id,
       testEventCode,
-    });
-    const result = await postToMeta(settings.pixelId!, settings.accessToken, payload);
+      });
+      if (!settings.pixelId) throw new Error("Pixel destination missing.");
+      result = await postToMeta(settings.pixelId, settings.accessToken, payload);
+    } catch (error) {
+      result = { ok: false, error: sanitizeError((error as Error).message) };
+    }
 
-    const attempt = (existing?.attempt_count ?? 0) + 1;
     const status = result.ok
       ? "SENT"
-      : result.permanent || attempt >= MAX_ATTEMPTS
+      : result.permanent
         ? "FAILED_PERMANENT"
-        : "FAILED";
-    await exec(sql`UPDATE meta_conversion_events SET status = ${status}, attempt_count = ${attempt},
-      http_status = ${result.httpStatus ?? null}, meta_event_id = ${result.ok ? (result.metaEventId ?? null) : null},
-      last_error = ${result.ok ? null : result.error} WHERE id = ${rowId}`);
+        : attempt >= MAX_ATTEMPTS ? "FAILED_EXHAUSTED" : "FAILED";
+    const saved = await exec(sql`UPDATE meta_conversion_events SET status = ${status}, updated_at = now(),
+      http_status = ${result.httpStatus ?? null}, meta_event_id = ${result.metaEventId ?? null},
+      last_error = ${result.ok ? null : result.error} WHERE id = ${rowId} AND status = 'SENDING' AND attempt_count = ${attempt}`);
+    if (saved.error) return { ok: false, error: "Meta response received but delivery acknowledgement could not be persisted.", httpStatus: result.httpStatus };
 
     await recordMetaHealth(input.storeId, {
       ok: result.ok,
@@ -375,7 +405,8 @@ export async function sendPurchaseForOrder(input: {
       orderId: input.orderId,
       currency: context.currency,
       amountCents: context.valueCents,
-      metadata: { attempt, http_status: result.httpStatus ?? 0 },
+      metadata: { attempt, http_status: result.httpStatus ?? 0, events_received: result.eventsReceived ?? null,
+        messages: result.messages ?? null, fbtrace_id: result.metaEventId ?? null },
     }).catch(() => undefined);
 
     console.log(
@@ -620,7 +651,9 @@ export async function findLatestPaidOrder(storeId: string): Promise<{
 /** Reenvio manual dos eventos pendentes/falhos de uma loja (backoff administrativo). */
 export async function retryFailedMetaEvents(storeId: string): Promise<{ retried: number }> {
   const { data: pendingRows } = await rows<Row<"meta_conversion_events">>(
-    sql`SELECT order_id, attempt_count FROM meta_conversion_events WHERE store_id = ${storeId} AND status IN (${"PENDING"}, ${"FAILED"}) ORDER BY created_at ASC LIMIT 20`,
+    sql`SELECT order_id, attempt_count FROM meta_conversion_events WHERE store_id = ${storeId}
+      AND (status IN ('PENDING', 'FAILED') OR (status = 'SENDING' AND updated_at < now() - interval '2 minutes'))
+      AND attempt_count < ${MAX_ATTEMPTS} ORDER BY created_at ASC LIMIT 20`,
   );
 
   let retried = 0;
@@ -837,7 +870,7 @@ export async function sendTestPurchaseFromAttributedOrder(
     );
     httpStatus = response.status;
     metaResponse = sanitizeError(await response.text());
-    ok = response.ok;
+    ok = validateMetaResponse(response.status, metaResponse).ok;
   } catch (error) {
     metaResponse = sanitizeError((error as Error).message);
   }
