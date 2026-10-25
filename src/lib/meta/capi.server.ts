@@ -374,7 +374,7 @@ export async function sendPurchaseForOrder(input: {
           return { ok: false, error: "Original Purchase occurrence is unavailable." };
         }
         const payload = await buildPayload({ ...context, paidAt: new Date(occurrence * 1000).toISOString() }, {
-          userAgent: input.userAgent, testEventCode,
+          userAgent: input.userAgent ?? null, testEventCode,
         });
         encryptedSnapshot = await encryptSecret(JSON.stringify(payload));
       }
