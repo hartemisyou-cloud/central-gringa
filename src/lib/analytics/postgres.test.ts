@@ -254,8 +254,9 @@ describe("PostgreSQL integration configuration", () => {
     await H.current!
       .client`UPDATE orders SET status = 'PAID', paid_at = now() WHERE id = ${ORDER_A}`;
     expect(await sendPurchaseForOrder({ storeId: STORE_B, orderId: ORDER_A })).toEqual({
-      ok: true,
-      skipped: "order_not_found",
+      ok: false,
+      error: "Order not found in the selected store.",
+      permanent: true,
     });
     expect(await sendSaleForOrder({ storeId: STORE_B, orderId: ORDER_A })).toEqual({
       ok: true,
@@ -528,7 +529,7 @@ describe("PostgreSQL integration configuration", () => {
       expect(await q`SELECT status,http_status,attempt_count FROM meta_conversion_events`).toEqual([expect.objectContaining({ status: "SENT", http_status: 200, attempt_count: 1 })]);
       expect(await q`SELECT status,http_status,attempt_count FROM utmify_events`).toEqual([expect.objectContaining({ status: "SENT", http_status: 200, attempt_count: 1 })]);
       const debugText = JSON.stringify(debug.mock.calls);
-      expect(debugText).toContain("token_suffix=ab12");
+      expect(debugText).not.toContain("token_suffix=ab12");
       expect(debugText).not.toContain("private-meta-token");
     } finally {
       debug.mockRestore();
