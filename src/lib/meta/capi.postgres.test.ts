@@ -56,7 +56,8 @@ describe("Meta acceptance contract", () => {
 
 describe("durable Purchase dispatch", () => {
   it("uses paid value, USD, original time and a stable event identity; repeated dispatch skips", async () => {
-    expect(await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE })).toMatchObject({ ok: true });
+    const result = await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
     const body = JSON.parse(H.fetch.mock.calls[0]?.[1].body);
     expect(body.data[0]).toMatchObject({ event_name: "Purchase", event_id: `purchase_${ORDER}`, event_time: 1792843200, custom_data: { value: 100, currency: "USD" } });
     expect(body.test_event_code).toBeUndefined();
