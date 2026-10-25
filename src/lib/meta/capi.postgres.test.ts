@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { readFile } from "node:fs/promises";
 import { createTestClient } from "@/lib/db/test-client";
 
-const H = vi.hoisted(() => ({ current: null as Awaited<ReturnType<typeof createTestClient>> | null, fetch: vi.fn() }));
+const H = vi.hoisted(() => ({ current: null as Awaited<ReturnType<typeof createTestClient>> | null, fetch: vi.fn(), pixel: "111", enabled: true }));
 vi.mock("@/lib/db/client.server", async (original) => {
   const actual = await original<typeof import("@/lib/db/client.server")>();
   const getClient = () => { if (!H.current) throw new Error("Test client unavailable"); return H.current.client; };
@@ -11,22 +11,26 @@ vi.mock("@/lib/db/client.server", async (original) => {
   }, { get(_target, key) { const client = getClient(); const value = Reflect.get(client, key); return typeof value === "function" ? value.bind(client) : value; } }) };
 });
 vi.mock("./config.server", () => ({
-  getMetaSettingsWithToken: async (storeId: string) => ({ storeId, pixelId: storeId === STORE ? "111" : "222", accessToken: "fixture-private-token", testEventCode: "TEST_FIXTURE" }),
+  getMetaSettingsWithToken: async (storeId: string) => H.enabled ? ({ storeId, pixelId: storeId === STORE ? H.pixel : "222", accessToken: "fixture-private-token", testEventCode: "TEST_FIXTURE" }) : null,
   recordMetaHealth: vi.fn(),
 }));
 vi.mock("@/lib/analytics/ingest.server", () => ({ recordServerEvent: vi.fn(async () => undefined) }));
-import { retryFailedMetaEvents, sendPurchaseForOrder, validateMetaResponse } from "./capi.server";
+import { recoverNewMetaPurchases, retryFailedMetaEvents, sendPurchaseForOrder, validateMetaResponse } from "./capi.server";
 const STORE = "10000000-0000-4000-8000-000000000001";
 const ORDER = "20000000-0000-4000-8000-000000000001";
 function client() { if (!H.current) throw new Error("Test client unavailable"); return H.current.client; }
 beforeAll(async () => {
   H.current = await createTestClient();
   await H.current.db.exec(await readFile(new URL("../db/test-schema.sql", import.meta.url), "utf8"));
+  await H.current.db.exec(await readFile(new URL("../../../migrations/007_meta_purchase_recovery.sql", import.meta.url), "utf8"));
 });
 afterAll(async () => { await H.current?.close(); });
 beforeEach(async () => {
   vi.clearAllMocks();
   H.fetch.mockReset();
+  H.pixel = "111"; H.enabled = true;
+  vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "false");
+  vi.stubEnv("PAYMENTS_ENCRYPTION_KEY", "fixture-encryption-only-at-least-32-characters");
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.stubGlobal("fetch", H.fetch);
   H.fetch.mockResolvedValue(Response.json({ events_received: 1, messages: [], fbtrace_id: "trace-fixture" }));
@@ -36,7 +40,7 @@ beforeEach(async () => {
   await q`INSERT INTO orders (id,store_id,public_token,order_number,environment,status,currency,total_cents,paid_at)
     VALUES (${ORDER},${STORE},'fixture-public-token','ORD-FIXTURE','live','PAID','USD',10000,'2026-10-24T12:00:00Z')`;
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("Meta acceptance contract", () => {
   it.each(["not json", "{}", '{"events_received":0}', '{"events_received":2}', '{"events_received":1,"error":{"code":200}}'])("does not accept HTTP 200 without a valid acknowledgement: %s", text => {
@@ -55,6 +59,62 @@ describe("Meta acceptance contract", () => {
 });
 
 describe("durable Purchase dispatch", () => {
+  it("automatically retries only new snapshots and preserves the complete original event", async () => {
+    vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");
+    H.fetch.mockResolvedValueOnce(Response.json({ error: { is_transient: true } }, { status: 503 }));
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE, occurredAt: 1792843200 });
+    const original = JSON.parse(H.fetch.mock.calls[0]?.[1].body);
+    await client()`UPDATE orders SET total_cents=99900, currency='EUR', paid_at='2026-10-25T00:00:00Z' WHERE id=${ORDER}`;
+    await client()`UPDATE meta_conversion_events SET updated_at=now()-interval '31 seconds'`;
+    expect(await recoverNewMetaPurchases()).toEqual({ processed: 1 });
+    expect(JSON.parse(H.fetch.mock.calls[1]?.[1].body)).toEqual(original);
+    expect(H.fetch.mock.calls[1]?.[0]).toBe("https://graph.facebook.com/v21.0/111/events");
+    expect(await recoverNewMetaPurchases()).toEqual({ processed: 0 });
+    expect(await client()`SELECT status,attempt_count FROM meta_conversion_events`).toEqual([expect.objectContaining({ status: "SENT", attempt_count: 2 })]);
+  });
+  it("does not enroll historical events or reset their counters", async () => {
+    await client()`INSERT INTO meta_conversion_events (store_id,order_id,event_name,event_id,status,attempt_count)
+      VALUES (${STORE},${ORDER},'Purchase','historical-only','FAILED',2)`;
+    expect(await recoverNewMetaPurchases()).toEqual({ processed: 0 });
+    expect(H.fetch).not.toHaveBeenCalled();
+    expect(await client()`SELECT event_id,attempt_count FROM meta_conversion_events`).toEqual([expect.objectContaining({ event_id: "historical-only", attempt_count: 2 })]);
+  });
+  it("never redirects a recovered purchase to a changed dataset", async () => {
+    vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");
+    H.fetch.mockRejectedValueOnce(new Error("response lost"));
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE, occurredAt: 1792843200 });
+    H.pixel = "333";
+    await client()`UPDATE meta_conversion_events SET updated_at=now()-interval '31 seconds'`;
+    await recoverNewMetaPurchases();
+    expect(H.fetch).toHaveBeenCalledTimes(1);
+    expect(await client()`SELECT status,remote_acceptance_unknown FROM meta_conversion_events`).toEqual([expect.objectContaining({ status: "FAILED_PERMANENT", remote_acceptance_unknown: true })]);
+  });
+  it("rechecks the existing enabled gate before an automatic retry", async () => {
+    vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");
+    H.fetch.mockRejectedValueOnce(new Error("response lost"));
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE, occurredAt: 1792843200 });
+    H.enabled = false;
+    await client()`UPDATE meta_conversion_events SET updated_at=now()-interval '31 seconds'`;
+    await recoverNewMetaPurchases();
+    expect(H.fetch).toHaveBeenCalledTimes(1);
+    expect(await client()`SELECT attempt_count FROM meta_conversion_events`).toEqual([expect.objectContaining({ attempt_count: 1 })]);
+  });
+  it("enforces immutable encrypted snapshots in PostgreSQL", async () => {
+    vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE, occurredAt: 1792843200 });
+    await expect(client()`UPDATE meta_conversion_events SET destination_pixel_id='999'`).rejects.toThrow("immutable");
+    await expect(client()`UPDATE meta_conversion_events SET event_id='replacement'`).rejects.toThrow("immutable");
+    await expect(client()`UPDATE meta_conversion_events SET purchase_snapshot_ciphertext='replacement'`).rejects.toThrow("immutable");
+  });
+  it("automatic recovery clears a crashed final new lease but leaves historical leases untouched", async () => {
+    vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");
+    H.fetch.mockRejectedValueOnce(new Error("response lost"));
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE, occurredAt: 1792843200 });
+    await client()`UPDATE meta_conversion_events SET status='SENDING',attempt_count=4,updated_at=now()-interval '3 minutes'`;
+    expect(await recoverNewMetaPurchases()).toEqual({ processed: 0 });
+    expect(await client()`SELECT status,remote_acceptance_unknown FROM meta_conversion_events`).toEqual([expect.objectContaining({ status: "FAILED_EXHAUSTED", remote_acceptance_unknown: true })]);
+    expect(H.fetch).toHaveBeenCalledTimes(1);
+  });
   it("recovers an expired interrupted lease with the original identity and purchase time", async () => {
     const q = client();
     await q`INSERT INTO meta_conversion_events (store_id,order_id,event_name,event_id,status,attempt_count,updated_at)

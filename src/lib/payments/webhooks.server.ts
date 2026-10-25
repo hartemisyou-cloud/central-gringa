@@ -189,7 +189,7 @@ export async function applyEvent(
       // after PAID; a slow tracker cannot prevent the e-mail from being tried.
       const [metaResult, saleResult, emailResult] = await Promise.allSettled([
         import("@/lib/meta/capi.server").then(({ sendPurchaseForOrder }) =>
-          sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id })),
+          sendPurchaseForOrder({ orderId: payment.order_id, storeId: payment.store_id, occurredAt: event.created })),
         import("@/lib/utmify/api.server").then(({ sendSaleForOrder }) =>
           sendSaleForOrder({ orderId: payment.order_id, storeId: payment.store_id })),
         import("./delivery-email.server").then(({ sendDeliveryEmailForOrder }) =>

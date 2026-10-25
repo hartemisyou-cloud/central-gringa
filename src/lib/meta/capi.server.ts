@@ -45,7 +45,7 @@ export function purchaseEventId(orderId: string): string {
 
 export type MetaSendResult =
   | { ok: true; skipped?: string; httpStatus?: number | undefined; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined }
-  | { ok: false; error: string; httpStatus?: number | undefined; permanent?: boolean; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined };
+  | { ok: false; error: string; remoteAcceptanceUnknown?: boolean; httpStatus?: number | undefined; permanent?: boolean; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined };
 
 /** HTTP success is not an acknowledgement: Meta must accept the full batch. */
 export function validateMetaResponse(httpStatus: number, text: string, expectedEvents = 1): MetaSendResult {
@@ -411,7 +411,12 @@ export async function sendPurchaseForOrder(input: {
       testEventCode,
       });
       if (!settings.pixelId) throw new Error("Pixel destination missing.");
-      if (claim.destination_pixel_id && claim.destination_pixel_id !== settings.pixelId) {
+      const savedEvent = Array.isArray(payload["data"]) ? payload["data"][0] as Record<string, unknown> | undefined : undefined;
+      const expiredSnapshot = claim.purchase_snapshot_ciphertext && typeof savedEvent?.["event_time"] === "number"
+        && Math.floor(Date.now() / 1000) - savedEvent["event_time"] > 7 * 24 * 60 * 60;
+      if (expiredSnapshot) {
+        result = { ok: false, permanent: true, error: "Original Purchase is outside the Meta event-time window; reconciliation required." };
+      } else if (claim.destination_pixel_id && claim.destination_pixel_id !== settings.pixelId) {
         result = { ok: false, permanent: true, error: "Original Purchase dataset no longer matches the enabled store destination." };
       } else {
         result = await postToMeta(claim.destination_pixel_id ?? settings.pixelId, settings.accessToken, payload,
