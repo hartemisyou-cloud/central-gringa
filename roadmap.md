@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Prepare immutable new-Purchase snapshots and authenticated Vercel automatic recovery; validate paid Checkout dispatch without historical replay
+- [ ] Deploy Purchase correction to verified Vercel production branch — blocked on Vercel project/deployment access, not historical sales exports
 - [x] Explain production evidence paths and prior correction revisions; reproduce and fix exhausted-lease/stale-completion recovery locally without real sends — 421/421 tests pass
 - [ ] Reconcile six payments from 2026-10-24 against production orders/webhooks/CAPI — blocked on production PostgreSQL and matching Stripe/Meta access
 - [x] Correct Meta acknowledgement validation, delivery claims, preserved event IDs, failure visibility and token-derived logging; 416 tests pass

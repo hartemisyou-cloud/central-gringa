@@ -2,5 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "tanstack-start",
   "buildCommand": "vite build",
-  "installCommand": "bun install --frozen-lockfile"
+  "installCommand": "bun install --frozen-lockfile",
+  "crons": [{ "path": "/api/public/hooks/meta-purchase-recovery", "schedule": "*/5 * * * *" }]
 }
