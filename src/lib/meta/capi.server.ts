@@ -32,8 +32,8 @@ export function purchaseEventId(orderId: string): string {
 }
 
 export type MetaSendResult =
-  | { ok: true; skipped?: string; httpStatus?: number; metaEventId?: string | null; eventsReceived?: number; messages?: string }
-  | { ok: false; error: string; httpStatus?: number; permanent?: boolean; metaEventId?: string | null; eventsReceived?: number; messages?: string };
+  | { ok: true; skipped?: string; httpStatus?: number | undefined; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined }
+  | { ok: false; error: string; httpStatus?: number | undefined; permanent?: boolean; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined };
 
 /** HTTP success is not an acknowledgement: Meta must accept the full batch. */
 export function validateMetaResponse(httpStatus: number, text: string, expectedEvents = 1): MetaSendResult {
