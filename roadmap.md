@@ -1,7 +1,8 @@
 # Roadmap
 
 - [ ] Reconcile six payments from 2026-10-24 against production orders/webhooks/CAPI — blocked on production PostgreSQL and matching Stripe/Meta access
-- [ ] Audit and correct observable tracking delivery defects with isolated tests
+- [x] Correct Meta acknowledgement validation, delivery claims, preserved event IDs, failure visibility and token-derived logging; 416 tests pass
+- [ ] Complete automatic durable retry scheduling, immutable occurrence evidence and consent-gated collection — blocked on production architecture/consent evidence; not installed or deployed here
 - [ ] Verify permitted live tracking and recover only evidenced eligible failed events — blocked on production records and advertising consent evidence
 
 - [x] Fix storefront crash from placeholder PAYMENTS_API_BASE_URL
