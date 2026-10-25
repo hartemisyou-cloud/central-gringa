@@ -15,7 +15,7 @@ vi.mock("./config.server", () => ({
   recordMetaHealth: vi.fn(),
 }));
 vi.mock("@/lib/analytics/ingest.server", () => ({ recordServerEvent: vi.fn(async () => undefined) }));
-import { sendPurchaseForOrder, validateMetaResponse } from "./capi.server";
+import { retryFailedMetaEvents, sendPurchaseForOrder, validateMetaResponse } from "./capi.server";
 const STORE = "10000000-0000-4000-8000-000000000001";
 const ORDER = "20000000-0000-4000-8000-000000000001";
 function client() { if (!H.current) throw new Error("Test client unavailable"); return H.current.client; }
@@ -55,6 +55,62 @@ describe("Meta acceptance contract", () => {
 });
 
 describe("durable Purchase dispatch", () => {
+  it("recovers an expired interrupted lease with the original identity and purchase time", async () => {
+    const q = client();
+    await q`INSERT INTO meta_conversion_events (store_id,order_id,event_name,event_id,status,attempt_count,updated_at)
+      VALUES (${STORE},${ORDER},'Purchase','interrupted-original-id','SENDING',2,now()-interval '3 minutes')`;
+    expect(await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE })).toMatchObject({ ok: true });
+    expect(JSON.parse(H.fetch.mock.calls[0]?.[1].body).data[0]).toMatchObject({ event_id: 'interrupted-original-id', event_time: 1792843200 });
+    expect(await q`SELECT status,attempt_count,event_id FROM meta_conversion_events`).toEqual([
+      expect.objectContaining({ status: 'SENT', attempt_count: 3, event_id: 'interrupted-original-id' }),
+    ]);
+  });
+  it("settles an interrupted fourth attempt without claiming rejection or resending", async () => {
+    const q = client();
+    await q`INSERT INTO meta_conversion_events (store_id,order_id,event_name,event_id,status,attempt_count,updated_at)
+      VALUES (${STORE},${ORDER},'Purchase','final-original-id','SENDING',4,now()-interval '3 minutes')`;
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE });
+    expect(await q`SELECT status,attempt_count,event_id,last_error FROM meta_conversion_events`).toEqual([
+      expect.objectContaining({ status: 'FAILED_EXHAUSTED', attempt_count: 4, event_id: 'final-original-id', last_error: 'Final delivery lease expired; remote acceptance is unknown. Reconcile before any resend.' }),
+    ]);
+    expect(H.fetch).not.toHaveBeenCalled();
+    expect(await q`SELECT status FROM orders WHERE id=${ORDER}`).toEqual([expect.objectContaining({ status: 'PAID' })]);
+  });
+  it("administrative recovery settles an expired fourth lease without sending an event", async () => {
+    const q = client();
+    await q`INSERT INTO meta_conversion_events (store_id,order_id,event_name,event_id,status,attempt_count,updated_at)
+      VALUES (${STORE},${ORDER},'Purchase','admin-original-id','SENDING',4,now()-interval '3 minutes')`;
+    expect(await retryFailedMetaEvents(STORE)).toEqual({ retried: 0 });
+    expect(await q`SELECT status,attempt_count FROM meta_conversion_events`).toEqual([expect.objectContaining({ status: 'FAILED_EXHAUSTED', attempt_count: 4 })]);
+    expect(H.fetch).not.toHaveBeenCalled();
+  });
+  it("does not expire an active fourth lease or a different store's lease", async () => {
+    const q = client();
+    await q`INSERT INTO meta_conversion_events (store_id,order_id,event_name,event_id,status,attempt_count,updated_at)
+      VALUES (${STORE},${ORDER},'Purchase','active-original-id','SENDING',4,now())`;
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE });
+    await q`UPDATE meta_conversion_events SET updated_at=now()-interval '3 minutes'`;
+    await retryFailedMetaEvents('10000000-0000-4000-8000-000000000002');
+    expect(await q`SELECT status,attempt_count FROM meta_conversion_events`).toEqual([expect.objectContaining({ status: 'SENDING', attempt_count: 4 })]);
+    expect(H.fetch).not.toHaveBeenCalled();
+  });
+  it("does not report an obsolete acknowledgement as a persisted success", async () => {
+    const q = client();
+    await q`INSERT INTO meta_conversion_events (store_id,order_id,event_name,event_id) VALUES (${STORE},${ORDER},'Purchase','fenced-original-id')`;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    H.fetch.mockImplementationOnce(async () => { await gate; return Response.json({ events_received: 1 }); });
+    const interrupted = sendPurchaseForOrder({ orderId: ORDER, storeId: STORE });
+    await vi.waitFor(() => expect(H.fetch).toHaveBeenCalledTimes(1));
+    await q`UPDATE meta_conversion_events SET updated_at=now()-interval '3 minutes'`;
+    expect(await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE })).toMatchObject({ ok: true });
+    release?.();
+    expect(await interrupted).toMatchObject({ ok: false, error: 'Meta response received but delivery lease is no longer owned by this attempt.' });
+    expect(await q`SELECT status,attempt_count,event_id FROM meta_conversion_events`).toEqual([expect.objectContaining({ status: 'SENT', attempt_count: 2, event_id: 'fenced-original-id' })]);
+    const events = H.fetch.mock.calls.map(call => JSON.parse(call[1].body).data[0]);
+    expect(events[0].event_id).toBe(events[1].event_id);
+    expect(events[0].event_time).toBe(events[1].event_time);
+  });
   it("uses paid value, USD, original time and a stable event identity; repeated dispatch skips", async () => {
     const result = await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE });
     expect(result.ok, JSON.stringify(result)).toBe(true);

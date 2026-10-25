@@ -22,6 +22,17 @@ import { normalizeCheckoutCustomerDetails } from "@/lib/payments/checkout-custom
 export const GRAPH_VERSION = "v21.0";
 const MAX_ATTEMPTS = 4;
 
+/** Settle crashed final claims without implying that the remote event was rejected. */
+async function settleExpiredFinalLeases(storeId: string, orderId?: string): Promise<boolean> {
+  const result = await exec(sql`
+    UPDATE meta_conversion_events SET status = 'FAILED_EXHAUSTED', updated_at = now(),
+      last_error = 'Final delivery lease expired; remote acceptance is unknown. Reconcile before any resend.'
+    WHERE store_id = ${storeId} ${orderId ? sql`AND order_id = ${orderId}` : sql``}
+      AND status = 'SENDING' AND attempt_count >= ${MAX_ATTEMPTS}
+      AND updated_at < now() - interval '2 minutes'`);
+  return !result.error;
+}
+
 /**
  * event_id determinístico do Purchase: `purchase_{order_id}`.
  * O mesmo valor é reutilizado em TODOS os retries e seria o mesmo usado por um
@@ -327,6 +338,10 @@ export async function sendPurchaseForOrder(input: {
       return { ok: true, skipped: "test_event_code_missing" };
     }
 
+    if (!await settleExpiredFinalLeases(input.storeId, input.orderId)) {
+      return { ok: false, error: "Expired delivery lease could not be settled." };
+    }
+
     // Idempotência: uma linha por (store_id, order_id, event_name = Purchase).
     const { data: existing } = await one<Row<"meta_conversion_events">>(
       sql`SELECT id, status, attempt_count, event_id FROM meta_conversion_events WHERE store_id = ${input.storeId} AND order_id = ${input.orderId} AND event_name = ${"Purchase"}`,
@@ -386,10 +401,12 @@ export async function sendPurchaseForOrder(input: {
       : result.permanent
         ? "FAILED_PERMANENT"
         : attempt >= MAX_ATTEMPTS ? "FAILED_EXHAUSTED" : "FAILED";
-    const saved = await exec(sql`UPDATE meta_conversion_events SET status = ${status}, updated_at = now(),
+    const saved = await one<{ id: string }>(sql`UPDATE meta_conversion_events SET status = ${status}, updated_at = now(),
       http_status = ${result.httpStatus ?? null}, meta_event_id = ${result.metaEventId ?? null},
-      last_error = ${result.ok ? null : result.error} WHERE id = ${rowId} AND status = 'SENDING' AND attempt_count = ${attempt}`);
+      last_error = ${result.ok ? null : result.error} WHERE id = ${rowId} AND status = 'SENDING' AND attempt_count = ${attempt}
+      RETURNING id`, true);
     if (saved.error) return { ok: false, error: "Meta response received but delivery acknowledgement could not be persisted.", httpStatus: result.httpStatus };
+    if (!saved.data) return { ok: false, error: "Meta response received but delivery lease is no longer owned by this attempt.", httpStatus: result.httpStatus };
 
     await recordMetaHealth(input.storeId, {
       ok: result.ok,
@@ -650,6 +667,7 @@ export async function findLatestPaidOrder(storeId: string): Promise<{
 
 /** Reenvio manual dos eventos pendentes/falhos de uma loja (backoff administrativo). */
 export async function retryFailedMetaEvents(storeId: string): Promise<{ retried: number }> {
+  if (!await settleExpiredFinalLeases(storeId)) throw new Error("Expired delivery leases could not be settled.");
   const { data: pendingRows } = await rows<Row<"meta_conversion_events">>(
     sql`SELECT order_id, attempt_count FROM meta_conversion_events WHERE store_id = ${storeId}
       AND (status IN ('PENDING', 'FAILED') OR (status = 'SENDING' AND updated_at < now() - interval '2 minutes'))
