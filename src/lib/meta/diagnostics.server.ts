@@ -1,7 +1,7 @@
 import { sql, rows, one } from "@/lib/db/client.server";
 import type { Row } from "@/lib/db/types";
 import { getMetaSettingsWithToken } from "./config.server";
-import { GRAPH_VERSION, buildPayload, loadOrderContext, sanitizeError } from "./capi.server";
+import { GRAPH_VERSION, buildPayload, loadOrderContext, sanitizeError, validateMetaResponse } from "./capi.server";
 
 /**
  * Ferramenta ADMIN de diagnóstico (somente leitura).
@@ -235,7 +235,7 @@ export async function sendDiagnosticTestPurchase(input: {
     );
     httpStatus = response.status;
     metaResponse = sanitizeError(await response.text());
-    ok = response.ok;
+    ok = validateMetaResponse(response.status, metaResponse).ok;
   } catch (error) {
     metaResponse = sanitizeError((error as Error).message);
   }
