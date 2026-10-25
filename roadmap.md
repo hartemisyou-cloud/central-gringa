@@ -1,11 +1,11 @@
 # Roadmap
 
-- [ ] Prepare immutable new-Purchase snapshots and authenticated Vercel automatic recovery; validate paid Checkout dispatch without historical replay
+- [x] Prepare immutable new-Purchase snapshots and authenticated Vercel automatic recovery; validate paid Checkout dispatch without historical replay — 430/430 tests pass; unauthenticated scheduler returns 401
 - [ ] Deploy Purchase correction to verified Vercel production branch — blocked on Vercel project/deployment access, not historical sales exports
 - [x] Explain production evidence paths and prior correction revisions; reproduce and fix exhausted-lease/stale-completion recovery locally without real sends — 421/421 tests pass
 - [ ] Reconcile six payments from 2026-10-24 against production orders/webhooks/CAPI — blocked on production PostgreSQL and matching Stripe/Meta access
 - [x] Correct Meta acknowledgement validation, delivery claims, preserved event IDs, failure visibility and token-derived logging; 416 tests pass
-- [ ] Complete automatic durable retry scheduling, immutable occurrence evidence and consent-gated collection — blocked on production architecture/consent evidence; not installed or deployed here
+- [ ] Activate prepared automatic recovery in production and verify existing consent gates — blocked on verified Vercel deployment access and existing permission evidence; no new consent flow installed
 - [ ] Verify permitted live tracking and recover only evidenced eligible failed events — blocked on production records and advertising consent evidence
 
 - [x] Fix storefront crash from placeholder PAYMENTS_API_BASE_URL
