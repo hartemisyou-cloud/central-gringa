@@ -8,6 +8,7 @@ import { isPublicPageUrl, type Attribution } from "@/lib/payments/attribution";
 import { getMetaSettingsWithToken, recordMetaHealth } from "./config.server";
 import { hashCountry, hashEmail, hashName, hashPhone, hashZip } from "./hash";
 import { normalizeCheckoutCustomerDetails } from "@/lib/payments/checkout-customer.server";
+import { decryptSecret, encryptSecret } from "@/lib/payments/crypto.server";
 
 /**
  * Meta Conversions API — Purchase server-side.
@@ -25,7 +26,7 @@ const MAX_ATTEMPTS = 4;
 /** Settle crashed final claims without implying that the remote event was rejected. */
 async function settleExpiredFinalLeases(storeId: string, orderId?: string): Promise<boolean> {
   const result = await exec(sql`
-    UPDATE meta_conversion_events SET status = 'FAILED_EXHAUSTED', updated_at = now(),
+    UPDATE meta_conversion_events SET status = 'FAILED_EXHAUSTED', updated_at = now(), remote_acceptance_unknown = true,
       last_error = 'Final delivery lease expired; remote acceptance is unknown. Reconcile before any resend.'
     WHERE store_id = ${storeId} ${orderId ? sql`AND order_id = ${orderId}` : sql``}
       AND status = 'SENDING' AND attempt_count >= ${MAX_ATTEMPTS}
@@ -296,11 +297,12 @@ async function postToMeta(
   pixelId: string,
   accessToken: string,
   body: Record<string, unknown>,
+  graphVersion = GRAPH_VERSION,
 ): Promise<MetaSendResult> {
   let response: Response;
   let text: string;
   try {
-    response = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`, {
+    response = await fetch(`https://graph.facebook.com/${graphVersion}/${pixelId}/events`, {
       method: "POST",
       signal: AbortSignal.timeout(10000),
       headers: {
@@ -311,7 +313,7 @@ async function postToMeta(
     });
     text = await response.text();
   } catch (error) {
-    return { ok: false, error: sanitizeError((error as Error).message) };
+    return { ok: false, error: sanitizeError((error as Error).message), remoteAcceptanceUnknown: true };
   }
 
   const events = body["data"];
@@ -323,6 +325,7 @@ export async function sendPurchaseForOrder(input: {
   orderId: string;
   storeId: string;
   userAgent?: string | null;
+  occurredAt?: number;
 }): Promise<MetaSendResult> {
   try {
     const settings = await getMetaSettingsWithToken(input.storeId);
@@ -358,10 +361,24 @@ export async function sendPurchaseForOrder(input: {
 
     let rowId = existing?.id ?? null;
     if (!rowId) {
+      const snapshotEnabled = process.env["META_PURCHASE_RECOVERY_ENABLED"] === "true";
+      let encryptedSnapshot: string | null = null;
+      if (snapshotEnabled) {
+        const occurrence = input.occurredAt ?? (context.paidAt ? Math.floor(new Date(context.paidAt).getTime() / 1000) : NaN);
+        if (!Number.isSafeInteger(occurrence) || occurrence <= 0 || occurrence > Math.floor(Date.now() / 1000)) {
+          return { ok: false, error: "Original Purchase occurrence is unavailable." };
+        }
+        const payload = await buildPayload({ ...context, paidAt: new Date(occurrence * 1000).toISOString() }, {
+          userAgent: input.userAgent, testEventCode,
+        });
+        encryptedSnapshot = await encryptSecret(JSON.stringify(payload));
+      }
       const { data: inserted, error } = await one<{ id: string }>(
         sql`
-        INSERT INTO meta_conversion_events (store_id, order_id, event_name, event_id, status)
-        VALUES (${input.storeId}, ${input.orderId}, ${"Purchase"}, ${purchaseEventId(input.orderId)}, ${"PENDING"}) RETURNING id`,
+        INSERT INTO meta_conversion_events (store_id, order_id, event_name, event_id, status,
+          purchase_snapshot_ciphertext, destination_pixel_id, destination_graph_version, automatic_recovery)
+        VALUES (${input.storeId}, ${input.orderId}, ${"Purchase"}, ${purchaseEventId(input.orderId)}, ${"PENDING"},
+          ${encryptedSnapshot}, ${snapshotEnabled ? settings.pixelId : null}, ${snapshotEnabled ? GRAPH_VERSION : null}, ${snapshotEnabled}) RETURNING id`,
         true,
       );
       if (error || !inserted) {
@@ -374,24 +391,32 @@ export async function sendPurchaseForOrder(input: {
     // Atomic lease and attempt fencing use the existing durable delivery row.
     // A crashed claimant is recoverable after two minutes; stale completion
     // cannot overwrite a newer attempt or a SENT acknowledgement.
-    const { data: claim, error: claimError } = await one<{ attempt_count: number; event_id: string }>(sql`
-      UPDATE meta_conversion_events SET status = 'SENDING', attempt_count = attempt_count + 1, updated_at = now()
+    const { data: claim, error: claimError } = await one<{ attempt_count: number; event_id: string; purchase_snapshot_ciphertext: string | null; destination_pixel_id: string | null; destination_graph_version: string | null }>(sql`
+      UPDATE meta_conversion_events SET remote_acceptance_unknown = remote_acceptance_unknown OR status = 'SENDING',
+        status = 'SENDING', attempt_count = attempt_count + 1, updated_at = now()
       WHERE id = ${rowId} AND attempt_count < ${MAX_ATTEMPTS}
         AND (status IN ('PENDING', 'FAILED') OR (status = 'SENDING' AND updated_at < now() - interval '2 minutes'))
         AND (attempt_count = 0 OR updated_at <= now() - interval '30 seconds')
-      RETURNING attempt_count, event_id`, true);
+      RETURNING attempt_count, event_id, purchase_snapshot_ciphertext, destination_pixel_id, destination_graph_version`, true);
     if (claimError) return { ok: false, error: "Purchase delivery claim failed." };
     if (!claim) return { ok: true, skipped: "in_flight_or_backoff" };
     const attempt = claim.attempt_count;
     let result: MetaSendResult;
     try {
-      const payload = await buildPayload(context, {
+      const payload = claim.purchase_snapshot_ciphertext
+        ? JSON.parse(await decryptSecret(claim.purchase_snapshot_ciphertext)) as Record<string, unknown>
+        : await buildPayload(context, {
       userAgent: input.userAgent ?? null,
       eventIdOverride: claim.event_id,
       testEventCode,
       });
       if (!settings.pixelId) throw new Error("Pixel destination missing.");
-      result = await postToMeta(settings.pixelId, settings.accessToken, payload);
+      if (claim.destination_pixel_id && claim.destination_pixel_id !== settings.pixelId) {
+        result = { ok: false, permanent: true, error: "Original Purchase dataset no longer matches the enabled store destination." };
+      } else {
+        result = await postToMeta(claim.destination_pixel_id ?? settings.pixelId, settings.accessToken, payload,
+          claim.destination_graph_version ?? GRAPH_VERSION);
+      }
     } catch (error) {
       result = { ok: false, error: sanitizeError((error as Error).message) };
     }
@@ -403,6 +428,7 @@ export async function sendPurchaseForOrder(input: {
         : attempt >= MAX_ATTEMPTS ? "FAILED_EXHAUSTED" : "FAILED";
     const saved = await one<{ id: string }>(sql`UPDATE meta_conversion_events SET status = ${status}, updated_at = now(),
       http_status = ${result.httpStatus ?? null}, meta_event_id = ${result.metaEventId ?? null},
+      remote_acceptance_unknown = CASE WHEN ${result.ok} THEN false ELSE remote_acceptance_unknown OR ${!result.ok && result.remoteAcceptanceUnknown === true} END,
       last_error = ${result.ok ? null : result.error} WHERE id = ${rowId} AND status = 'SENDING' AND attempt_count = ${attempt}
       RETURNING id`, true);
     if (saved.error) return { ok: false, error: "Meta response received but delivery acknowledgement could not be persisted.", httpStatus: result.httpStatus };
@@ -683,6 +709,29 @@ export async function retryFailedMetaEvents(storeId: string): Promise<{ retried:
     retried += 1;
   }
   return { retried };
+}
+
+/** Bounded Vercel tick: only explicitly enrolled new snapshots, never historical rows. */
+export async function recoverNewMetaPurchases(): Promise<{ processed: number }> {
+  const settled = await exec(sql`UPDATE meta_conversion_events SET status = 'FAILED_EXHAUSTED',
+    remote_acceptance_unknown = true, updated_at = now(),
+    last_error = 'Final delivery lease expired; remote acceptance is unknown. Reconcile before any resend.'
+    WHERE automatic_recovery AND status = 'SENDING' AND attempt_count >= ${MAX_ATTEMPTS}
+      AND updated_at < now() - interval '2 minutes'`);
+  if (settled.error) throw new Error("Purchase recovery settlement failed.");
+  const pending = await rows<{ order_id: string; store_id: string }>(sql`
+    SELECT order_id, store_id FROM meta_conversion_events WHERE automatic_recovery
+      AND purchase_snapshot_ciphertext IS NOT NULL AND order_id IS NOT NULL AND attempt_count < ${MAX_ATTEMPTS}
+      AND (status IN ('PENDING','FAILED') OR (status = 'SENDING' AND updated_at < now() - interval '2 minutes'))
+      AND (attempt_count = 0 OR updated_at < now() - interval '30 seconds')
+    ORDER BY created_at LIMIT 5`);
+  if (pending.error) throw new Error("Purchase recovery selection failed.");
+  let processed = 0;
+  for (const row of pending.data ?? []) {
+    await sendPurchaseForOrder({ orderId: row.order_id, storeId: row.store_id });
+    processed += 1;
+  }
+  return { processed };
 }
 
 /**

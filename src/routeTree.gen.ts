@@ -28,6 +28,7 @@ import { Route as OrderTokenRouteImport } from './routes/order.$token'
 import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as DonationsPayTokenRouteImport } from './routes/donations.pay.$token'
 import { Route as DonationsReceiptTokenRouteImport } from './routes/donations.receipt.$token'
+import { Route as ApiPublicHooksMetaPurchaseRecoveryRouteImport } from './routes/api/public/hooks/meta-purchase-recovery'
 import { Route as ApiPublicV1DonationsRouteImport } from './routes/api/public/v1/donations'
 import { Route as ApiPublicV1OrdersRouteImport } from './routes/api/public/v1/orders'
 import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/products'
@@ -141,6 +142,12 @@ const DonationsReceiptTokenRoute = DonationsReceiptTokenRouteImport.update({
   path: '/donations/receipt/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksMetaPurchaseRecoveryRoute =
+  ApiPublicHooksMetaPurchaseRecoveryRouteImport.update({
+    id: '/api/public/hooks/meta-purchase-recovery',
+    path: '/api/public/hooks/meta-purchase-recovery',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicV1DonationsRoute = ApiPublicV1DonationsRouteImport.update({
   id: '/api/public/v1/donations',
   path: '/api/public/v1/donations',
@@ -260,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
   '/donations/receipt/$token': typeof DonationsReceiptTokenRoute
+  '/api/public/hooks/meta-purchase-recovery': typeof ApiPublicHooksMetaPurchaseRecoveryRoute
   '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -298,6 +306,7 @@ export interface FileRoutesByTo {
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
   '/donations/receipt/$token': typeof DonationsReceiptTokenRoute
+  '/api/public/hooks/meta-purchase-recovery': typeof ApiPublicHooksMetaPurchaseRecoveryRoute
   '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -337,6 +346,7 @@ export interface FileRoutesById {
   '/pay/$token': typeof PayTokenRoute
   '/donations/pay/$token': typeof DonationsPayTokenRoute
   '/donations/receipt/$token': typeof DonationsReceiptTokenRoute
+  '/api/public/hooks/meta-purchase-recovery': typeof ApiPublicHooksMetaPurchaseRecoveryRoute
   '/api/public/v1/donations': typeof ApiPublicV1DonationsRouteWithChildren
   '/api/public/v1/orders': typeof ApiPublicV1OrdersRouteWithChildren
   '/api/public/v1/products': typeof ApiPublicV1ProductsRoute
@@ -377,6 +387,7 @@ export interface FileRouteTypes {
     | '/pay/$token'
     | '/donations/pay/$token'
     | '/donations/receipt/$token'
+    | '/api/public/hooks/meta-purchase-recovery'
     | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -415,6 +426,7 @@ export interface FileRouteTypes {
     | '/pay/$token'
     | '/donations/pay/$token'
     | '/donations/receipt/$token'
+    | '/api/public/hooks/meta-purchase-recovery'
     | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -453,6 +465,7 @@ export interface FileRouteTypes {
     | '/pay/$token'
     | '/donations/pay/$token'
     | '/donations/receipt/$token'
+    | '/api/public/hooks/meta-purchase-recovery'
     | '/api/public/v1/donations'
     | '/api/public/v1/orders'
     | '/api/public/v1/products'
@@ -492,6 +505,7 @@ export interface RootRouteChildren {
   PayTokenRoute: typeof PayTokenRoute
   DonationsPayTokenRoute: typeof DonationsPayTokenRoute
   DonationsReceiptTokenRoute: typeof DonationsReceiptTokenRoute
+  ApiPublicHooksMetaPurchaseRecoveryRoute: typeof ApiPublicHooksMetaPurchaseRecoveryRoute
   ApiPublicV1DonationsRoute: typeof ApiPublicV1DonationsRouteWithChildren
   ApiPublicV1OrdersRoute: typeof ApiPublicV1OrdersRouteWithChildren
   ApiPublicV1ProductsRoute: typeof ApiPublicV1ProductsRoute
@@ -639,6 +653,13 @@ declare module '@tanstack/react-router' {
       path: '/donations/receipt/$token'
       fullPath: '/donations/receipt/$token'
       preLoaderRoute: typeof DonationsReceiptTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/meta-purchase-recovery': {
+      id: '/api/public/hooks/meta-purchase-recovery'
+      path: '/api/public/hooks/meta-purchase-recovery'
+      fullPath: '/api/public/hooks/meta-purchase-recovery'
+      preLoaderRoute: typeof ApiPublicHooksMetaPurchaseRecoveryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/donations': {
@@ -814,6 +835,8 @@ const rootRouteChildren: RootRouteChildren = {
   PayTokenRoute: PayTokenRoute,
   DonationsPayTokenRoute: DonationsPayTokenRoute,
   DonationsReceiptTokenRoute: DonationsReceiptTokenRoute,
+  ApiPublicHooksMetaPurchaseRecoveryRoute:
+    ApiPublicHooksMetaPurchaseRecoveryRoute,
   ApiPublicV1DonationsRoute: ApiPublicV1DonationsRouteWithChildren,
   ApiPublicV1OrdersRoute: ApiPublicV1OrdersRouteWithChildren,
   ApiPublicV1ProductsRoute: ApiPublicV1ProductsRoute,
