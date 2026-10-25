@@ -63,6 +63,7 @@ afterAll(async () => {
   vi.unstubAllGlobals();
 });
 beforeEach(async () => {
+  vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "false");
   H.delivery.mockClear();
   await H.current!.db.exec(
     "TRUNCATE stores CASCADE; TRUNCATE rate_limit_counters; TRUNCATE audit_logs;",
@@ -590,6 +591,8 @@ describe("PostgreSQL integration configuration", () => {
   });
 
   it("signed HHF Checkout webhook persists customer details before both real analytics dispatches", async () => {
+    vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");
+    vi.stubEnv("META_PURCHASE_RECOVERY_FROM", "2026-10-24T00:00:00Z");
     const q = H.current!.client;
     const integrationId = "50000000-0000-4000-8000-000000000001";
     const paymentId = "60000000-0000-4000-8000-000000000001";
@@ -639,7 +642,7 @@ describe("PostgreSQL integration configuration", () => {
       client_ip_address: "203.0.113.45", country: [createHash("sha256").update("us").digest("hex")],
     });
     expect(meta.data[0].user_data).not.toHaveProperty("ct");
-    expect(meta.data[0]).toMatchObject({ event_id: `purchase_${ORDER_A}`, custom_data: { currency: "USD", value: 20 } });
+    expect(meta.data[0]).toMatchObject({ event_id: `purchase_${ORDER_A}`, event_time: timestamp, custom_data: { currency: "USD", value: 20 } });
     expect(meta.test_event_code).toBe("TEST83586");
     const sale = JSON.parse(String(saleRequest![1]!.body));
     expect(sale.customer).toMatchObject({ name: "Hope Human", email: "hope.human@example.com", ip: "203.0.113.45", country: "us" });

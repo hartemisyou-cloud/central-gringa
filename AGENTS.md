@@ -11,6 +11,7 @@
 
 ## Architecture rules
 - Meta Purchase delivery uses the existing durable conversion row as an atomic lease with attempt fencing and a returned-row completion check; expired final leases settle as exhausted with remote acceptance explicitly unknown, never auto-resend. Why: concurrent workers, interrupted final attempts and HTTP success alone must not fabricate delivery success.
+- New automatic Purchase recovery uses encrypted immutable payload/destination snapshots, an explicit occurrence cutoff, and a secret-authenticated bounded Vercel cron; current store gates are rechecked, historical rows are never enrolled. Why: recovery must preserve the original purchase without redirecting datasets or replaying historical sales.
 - Ebook downloads are authorized only by orders.status = PAID (set solely by the verified Stripe webhook); files live at `v1/` in a private Vercel Blob store and are streamed by `/api/public/v1/downloads/...`. Why: URL flags or client claims must never unlock paid files.
 - Digital-only carts (all products weight 0) skip address, phone and shipping; physical carts still require address and phone. Why: no invented customer data for ebooks.
 - SKU → file mapping lives in `src/lib/catalog/hhb.ts`, generated from the provenance manifest in `docs/catalog/`. Why: bundles must map to real, verifiable files.

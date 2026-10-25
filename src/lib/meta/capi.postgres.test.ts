@@ -30,6 +30,7 @@ beforeEach(async () => {
   H.fetch.mockReset();
   H.pixel = "111"; H.enabled = true;
   vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "false");
+  vi.stubEnv("META_PURCHASE_RECOVERY_FROM", "2026-10-24T00:00:00Z");
   vi.stubEnv("PAYMENTS_ENCRYPTION_KEY", "fixture-encryption-only-at-least-32-characters");
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.stubGlobal("fetch", H.fetch);
@@ -78,6 +79,14 @@ describe("durable Purchase dispatch", () => {
     expect(await recoverNewMetaPurchases()).toEqual({ processed: 0 });
     expect(H.fetch).not.toHaveBeenCalled();
     expect(await client()`SELECT event_id,attempt_count FROM meta_conversion_events`).toEqual([expect.objectContaining({ event_id: "historical-only", attempt_count: 2 })]);
+  });
+  it("never enrolls a newly encountered historical payment before the activation cutoff", async () => {
+    vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");
+    vi.stubEnv("META_PURCHASE_RECOVERY_FROM", "2026-10-25T00:00:00Z");
+    await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE, occurredAt: 1792843200 });
+    expect(await client()`SELECT automatic_recovery,purchase_snapshot_ciphertext FROM meta_conversion_events`).toEqual([
+      expect.objectContaining({ automatic_recovery: false, purchase_snapshot_ciphertext: null }),
+    ]);
   });
   it("never redirects a recovered purchase to a changed dataset", async () => {
     vi.stubEnv("META_PURCHASE_RECOVERY_ENABLED", "true");

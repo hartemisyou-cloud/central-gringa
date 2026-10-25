@@ -204,6 +204,12 @@ export async function applyEvent(
       // Preserve the existing Stripe retry mechanism for a configured mail
       // transport failure, after both trackers have had their own attempt.
       if (emailResult.status === "rejected") throw emailResult.reason;
+      // Before the durable tracking row exists, retain Stripe's delivery retry.
+      // A persisted transient CAPI failure is recovered by the Purchase worker.
+      if (process.env["META_PURCHASE_RECOVERY_ENABLED"] === "true"
+        && metaResult.status === "fulfilled" && !metaResult.value.ok && metaResult.value.retryWebhook) {
+        throw new Error("Purchase dispatch could not be durably queued; retry webhook.");
+      }
       return "Payment confirmed.";
     }
     case "payment_intent.payment_failed": {

@@ -45,7 +45,7 @@ export function purchaseEventId(orderId: string): string {
 
 export type MetaSendResult =
   | { ok: true; skipped?: string; httpStatus?: number | undefined; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined }
-  | { ok: false; error: string; remoteAcceptanceUnknown?: boolean; httpStatus?: number | undefined; permanent?: boolean; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined };
+  | { ok: false; error: string; retryWebhook?: boolean; remoteAcceptanceUnknown?: boolean; httpStatus?: number | undefined; permanent?: boolean; metaEventId?: string | null; eventsReceived?: number | undefined; messages?: string | undefined };
 
 /** HTTP success is not an acknowledgement: Meta must accept the full batch. */
 export function validateMetaResponse(httpStatus: number, text: string, expectedEvents = 1): MetaSendResult {
@@ -361,10 +361,15 @@ export async function sendPurchaseForOrder(input: {
 
     let rowId = existing?.id ?? null;
     if (!rowId) {
-      const snapshotEnabled = process.env["META_PURCHASE_RECOVERY_ENABLED"] === "true";
+      const recoveryEnabled = process.env["META_PURCHASE_RECOVERY_ENABLED"] === "true";
+      const recoveryFrom = Date.parse(process.env["META_PURCHASE_RECOVERY_FROM"] ?? "");
+      if (recoveryEnabled && !Number.isFinite(recoveryFrom)) {
+        return { ok: false, retryWebhook: true, error: "Purchase recovery activation cutoff is not configured." };
+      }
+      const occurrence = input.occurredAt ?? (context.paidAt ? Math.floor(new Date(context.paidAt).getTime() / 1000) : NaN);
+      const snapshotEnabled = recoveryEnabled && occurrence * 1000 >= recoveryFrom;
       let encryptedSnapshot: string | null = null;
       if (snapshotEnabled) {
-        const occurrence = input.occurredAt ?? (context.paidAt ? Math.floor(new Date(context.paidAt).getTime() / 1000) : NaN);
         if (!Number.isSafeInteger(occurrence) || occurrence <= 0 || occurrence > Math.floor(Date.now() / 1000)) {
           return { ok: false, error: "Original Purchase occurrence is unavailable." };
         }
@@ -383,7 +388,7 @@ export async function sendPurchaseForOrder(input: {
       );
       if (error || !inserted) {
         if (error?.code === "23505") return { ok: true, skipped: "in_flight" };
-        return { ok: false, error: "Purchase delivery could not be persisted." };
+        return { ok: false, retryWebhook: true, error: "Purchase delivery could not be persisted." };
       }
       rowId = inserted.id;
     }
@@ -463,7 +468,7 @@ export async function sendPurchaseForOrder(input: {
 
     return result;
   } catch (error) {
-    return { ok: false, error: sanitizeError((error as Error).message) };
+    return { ok: false, retryWebhook: true, error: sanitizeError((error as Error).message) };
   }
 }
 
@@ -731,12 +736,8 @@ export async function recoverNewMetaPurchases(): Promise<{ processed: number }> 
       AND (attempt_count = 0 OR updated_at < now() - interval '30 seconds')
     ORDER BY created_at LIMIT 5`);
   if (pending.error) throw new Error("Purchase recovery selection failed.");
-  let processed = 0;
-  for (const row of pending.data ?? []) {
-    await sendPurchaseForOrder({ orderId: row.order_id, storeId: row.store_id });
-    processed += 1;
-  }
-  return { processed };
+  await Promise.all((pending.data ?? []).map(row => sendPurchaseForOrder({ orderId: row.order_id, storeId: row.store_id })));
+  return { processed: pending.data?.length ?? 0 };
 }
 
 /**
