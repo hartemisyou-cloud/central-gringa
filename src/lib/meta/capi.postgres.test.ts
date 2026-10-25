@@ -14,7 +14,7 @@ vi.mock("./config.server", () => ({
   getMetaSettingsWithToken: async (storeId: string) => ({ storeId, pixelId: storeId === STORE ? "111" : "222", accessToken: "fixture-private-token", testEventCode: "TEST_FIXTURE" }),
   recordMetaHealth: vi.fn(),
 }));
-vi.mock("@/lib/analytics/ingest.server", () => ({ recordServerEvent: vi.fn() }));
+vi.mock("@/lib/analytics/ingest.server", () => ({ recordServerEvent: vi.fn(async () => undefined) }));
 import { sendPurchaseForOrder, validateMetaResponse } from "./capi.server";
 const STORE = "10000000-0000-4000-8000-000000000001";
 const ORDER = "20000000-0000-4000-8000-000000000001";
@@ -101,7 +101,7 @@ describe("durable Purchase dispatch", () => {
     await sendPurchaseForOrder({ orderId: ORDER, storeId: STORE });
     expect(H.fetch).toHaveBeenCalledTimes(1);
     const [row] = await client()`SELECT status FROM meta_conversion_events`;
-    expect(row?.status).toBe("FAILED_PERMANENT");
+    expect(row?.["status"]).toBe("FAILED_PERMANENT");
   });
   it("does not mark a zero-event acknowledgement SENT", async () => {
     H.fetch.mockResolvedValue(Response.json({ events_received: 0, messages: ["not accepted"] }));
