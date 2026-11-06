@@ -340,7 +340,8 @@ describe("GET /comprar marketing attribution (registry overrides query)", () => 
     await seedCode();
     const response = await handlePurchaseEntry(entry("?utm_source=&utm_medium=%20%20&utm_campaign=%09&utm_content=&utm_term=%20&gclid=%20"), "little-women", await defaultPurchaseEntryDeps());
     expect(response.status).toBe(302);
-    expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
+    const rowsOut = await H.current!.client`SELECT client_ip, utm_source, utm_medium, gclid FROM order_attribution`;
+    expect(rowsOut).toEqual([{ client_ip: "1.2.3.4", utm_source: null, utm_medium: null, gclid: null }]);
   });
 
   it("never fails the order when the code lookup throws", async () => {
@@ -486,6 +487,79 @@ describe("query UTM pass-through and downstream payloads", () => {
     const payload = buildSalePayload({ orderId: record["order_id"], storeId: HHB_STORE_ID, orderNumber: "ORD-FIXTURE", currency: "USD", totalCents: 3000, status: "PAID", createdAt: "2026-10-18T21:00:00Z", paidAt: "2026-10-18T21:01:00Z", customerName: null, email: null, phone: null, document: null, country: null, paymentMethod: "card", items: [{ id: product.id, name: product.name, quantity: 1, priceInCents: 3000 }] }, record as Attribution, { isTest: true });
     expect(payload.trackingParameters).toMatchObject({ ...utms, ...registryUtms, src: CODE, gclid: "GOOGLE1", fbclid: "META1", fbc: record["fbc"] });
     expect(payload.commission).toMatchObject({ totalPriceInCents: 3000, currency: "USD" });
+  });
+  it("persists browser-captured fbp/fbc from the bridge query, with a real fbc winning over derivation", async () => {
+    const db = await seed();
+    const response = await handlePurchaseEntry(
+      entry({ fbclid: "META1", fbp: "fb.1.1700000000000.1234567890", fbc: "fb.1.1700000000001.REALCOOKIE" }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT fbclid, fbp, fbc FROM order_attribution`;
+    expect(record).toMatchObject({ fbclid: "META1", fbp: "fb.1.1700000000000.1234567890", fbc: "fb.1.1700000000001.REALCOOKIE" });
+  });
+  it("derives fbc from fbclid only when no explicit fbc arrives", async () => {
+    const db = await seed();
+    await handlePurchaseEntry(entry({ fbclid: "META1" }), "little-women", await defaultPurchaseEntryDeps());
+    const [record] = await db.client`SELECT fbc FROM order_attribution`;
+    expect(record?.["fbc"]).toMatch(/^fb\.1\.\d+\.META1$/);
+  });
+  it("falls back to the first-party _fbp/_fbc Cookie header when the bridge query is absent", async () => {
+    const db = await seed();
+    const incoming = new Request("https://hopehumanbooks.com/comprar/little-women?c=1", {
+      headers: { "x-forwarded-for": "1.2.3.4", cookie: "_fbp=fb.1.1700000000000.999; other=1; _fbc=fb.1.1700000000002.COOKIEFBC" },
+    });
+    const response = await handlePurchaseEntry(incoming, "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT fbp, fbc FROM order_attribution`;
+    expect(record).toMatchObject({ fbp: "fb.1.1700000000000.999", fbc: "fb.1.1700000000002.COOKIEFBC" });
+  });
+  it("persists the bridge esrc as event_source_url and marks origin_hhf from it", async () => {
+    const db = await seed();
+    const incoming = new Request(
+      `https://hopehumanbooks.com/comprar/little-women?c=1&esrc=${encodeURIComponent("https://hopehumanfoundation.org/donate?amount=20")}`,
+      { headers: { "x-forwarded-for": "1.2.3.4", referer: "https://hopehumanbooks.com/", "user-agent": "Mozilla/5.0 TestBrowser" } },
+    );
+    const response = await handlePurchaseEntry(incoming, "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT event_source_url, client_user_agent, client_ip FROM order_attribution`;
+    expect(record).toMatchObject({
+      event_source_url: "https://hopehumanfoundation.org/donate?amount=20",
+      client_user_agent: "Mozilla/5.0 TestBrowser",
+      client_ip: "1.2.3.4",
+    });
+    const [order] = await db.client`SELECT origin_hhf FROM orders`;
+    expect(order!["origin_hhf"]).toBe(true);
+  });
+  it("ignores a same-origin Referer as event_source_url but keeps a cross-origin one", async () => {
+    const db = await seed();
+    await handlePurchaseEntry(
+      new Request("https://hopehumanbooks.com/comprar/little-women?c=1", { headers: { "x-forwarded-for": "1.2.3.4", referer: "https://hopehumanbooks.com/comprar/little-women" } }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    const [sameOrigin] = await db.client`SELECT event_source_url FROM order_attribution`;
+    expect(sameOrigin!["event_source_url"]).toBeNull();
+    await handlePurchaseEntry(
+      new Request("https://hopehumanbooks.com/comprar/little-women?c=1", { headers: { "x-forwarded-for": "1.2.3.4", referer: "https://hopehumanfoundation.org/" } }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    const rows = await db.client`SELECT event_source_url FROM order_attribution ORDER BY created_at`;
+    expect(rows[1]!["event_source_url"]).toBe("https://hopehumanfoundation.org/");
+  });
+  it("truncates an overlong esrc like other attribution URLs and never blocks the order", async () => {
+    const db = await seed();
+    const longUrl = `https://hopehumanfoundation.org/${"a".repeat(3000)}`;
+    const response = await handlePurchaseEntry(
+      new Request(`https://hopehumanbooks.com/comprar/little-women?c=1&esrc=${encodeURIComponent(longUrl)}`, { headers: { "x-forwarded-for": "1.2.3.4" } }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT event_source_url FROM order_attribution`;
+    expect(record!["event_source_url"]).toHaveLength(2000);
   });
   it("buildPayload reads saved UTMs into Meta custom_data and fbc into user_data", async () => {
     const db = await seed();
