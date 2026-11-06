@@ -102,10 +102,24 @@ describe("ebook payment description and metadata audit", () => {
 });
 
 describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
+  it("starts the fixed-store quota check while the store lookup is still pending", async () => {
+    const deps = await defaultPurchaseEntryDeps();
+    const store = await deps.loadStore();
+    let releaseStore: (value: StoreRow | null) => void = () => {};
+    deps.loadStore = vi.fn(() => new Promise<StoreRow | null>(resolve => { releaseStore = resolve; }));
+    deps.rateLimit = vi.fn().mockResolvedValue(undefined);
+    const pending = handlePurchaseEntry(request("little-women"), "little-women", deps);
+    expect(deps.loadStore).toHaveBeenCalledOnce();
+    expect(deps.rateLimit).toHaveBeenCalledExactlyOnceWith(`orders:${HHB_STORE_ID}:1.2.3.4`, 20, 60);
+    expect(H.fetch).not.toHaveBeenCalled();
+    releaseStore(store);
+    expect((await pending).status).toBe(302);
+  });
   it.each([undefined, "https://hopehumanbooks.com/", "https://example.com/", "https://hopehumanfoundation.org/", "https://www.hopehumanfoundation.org/campaign"])("302 directly to Stripe without a local marker for Referer %s", async (referer) => {
     const response = await handlePurchaseEntry(request("little-women", referer), "little-women", await defaultPurchaseEntryDeps());
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://checkout.stripe.com/c/pay/cs_test_Entry123");
+    expect(response.headers.get("referrer-policy")).toBe("origin");
     const body = String(H.fetch.mock.calls[0]![1].body);
     const form = new URLSearchParams(body);
     const [order] = await H.current!.client`SELECT public_token FROM orders`;
