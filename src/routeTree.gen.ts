@@ -20,6 +20,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin_.analytics'
 import { Route as AdminHealthCheckoutRouteImport } from './routes/admin_.health-checkout'
 import { Route as ComprarSlugRouteImport } from './routes/comprar.$slug'
+import { Route as ConfirmarTokenRouteImport } from './routes/confirmar.$token'
 import { Route as DonationsPrivacyRouteImport } from './routes/donations.privacy'
 import { Route as DonationsRefundsRouteImport } from './routes/donations.refunds'
 import { Route as DonationsStartRouteImport } from './routes/donations.start'
@@ -35,6 +36,7 @@ import { Route as ApiPublicV1ProductsRouteImport } from './routes/api/public/v1/
 import { Route as ApiPublicV1QuoteRouteImport } from './routes/api/public/v1/quote'
 import { Route as ApiPublicV1AnalyticsEventsRouteImport } from './routes/api/public/v1/analytics.events'
 import { Route as ApiPublicV1AnalyticsPresenceRouteImport } from './routes/api/public/v1/analytics.presence'
+import { Route as ApiPublicV1ConfirmTokenRouteImport } from './routes/api/public/v1/confirm.$token'
 import { Route as ApiPublicV1DonationsCatalogRouteImport } from './routes/api/public/v1/donations.catalog'
 import { Route as ApiPublicV2CheckoutBootstrapRouteImport } from './routes/api/public/v2/checkout.bootstrap'
 import { Route as ApiPublicWebhooksStripeIntegrationIdRouteImport } from './routes/api/public/webhooks/stripe.$integrationId'
@@ -100,6 +102,11 @@ const AdminHealthCheckoutRoute = AdminHealthCheckoutRouteImport.update({
 const ComprarSlugRoute = ComprarSlugRouteImport.update({
   id: '/comprar/$slug',
   path: '/comprar/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfirmarTokenRoute = ConfirmarTokenRouteImport.update({
+  id: '/confirmar/$token',
+  path: '/confirmar/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DonationsPrivacyRoute = DonationsPrivacyRouteImport.update({
@@ -180,6 +187,11 @@ const ApiPublicV1AnalyticsPresenceRoute =
     path: '/api/public/v1/analytics/presence',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicV1ConfirmTokenRoute = ApiPublicV1ConfirmTokenRouteImport.update({
+  id: '/api/public/v1/confirm/$token',
+  path: '/api/public/v1/confirm/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicV1DonationsCatalogRoute =
   ApiPublicV1DonationsCatalogRouteImport.update({
     id: '/catalog',
@@ -259,6 +271,7 @@ export interface FileRoutesByFullPath {
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/health-checkout': typeof AdminHealthCheckoutRoute
   '/comprar/$slug': typeof ComprarSlugRoute
+  '/confirmar/$token': typeof ConfirmarTokenRoute
   '/donations/privacy': typeof DonationsPrivacyRoute
   '/donations/refunds': typeof DonationsRefundsRoute
   '/donations/start': typeof DonationsStartRoute
@@ -274,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v1/confirm/$token': typeof ApiPublicV1ConfirmTokenRoute
   '/api/public/v1/donations/catalog': typeof ApiPublicV1DonationsCatalogRoute
   '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
@@ -298,6 +312,7 @@ export interface FileRoutesByTo {
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/health-checkout': typeof AdminHealthCheckoutRoute
   '/comprar/$slug': typeof ComprarSlugRoute
+  '/confirmar/$token': typeof ConfirmarTokenRoute
   '/donations/privacy': typeof DonationsPrivacyRoute
   '/donations/refunds': typeof DonationsRefundsRoute
   '/donations/start': typeof DonationsStartRoute
@@ -313,6 +328,7 @@ export interface FileRoutesByTo {
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v1/confirm/$token': typeof ApiPublicV1ConfirmTokenRoute
   '/api/public/v1/donations/catalog': typeof ApiPublicV1DonationsCatalogRoute
   '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
@@ -338,6 +354,7 @@ export interface FileRoutesById {
   '/admin_/analytics': typeof AdminAnalyticsRoute
   '/admin_/health-checkout': typeof AdminHealthCheckoutRoute
   '/comprar/$slug': typeof ComprarSlugRoute
+  '/confirmar/$token': typeof ConfirmarTokenRoute
   '/donations/privacy': typeof DonationsPrivacyRoute
   '/donations/refunds': typeof DonationsRefundsRoute
   '/donations/start': typeof DonationsStartRoute
@@ -353,6 +370,7 @@ export interface FileRoutesById {
   '/api/public/v1/quote': typeof ApiPublicV1QuoteRoute
   '/api/public/v1/analytics/events': typeof ApiPublicV1AnalyticsEventsRoute
   '/api/public/v1/analytics/presence': typeof ApiPublicV1AnalyticsPresenceRoute
+  '/api/public/v1/confirm/$token': typeof ApiPublicV1ConfirmTokenRoute
   '/api/public/v1/donations/catalog': typeof ApiPublicV1DonationsCatalogRoute
   '/api/public/v2/checkout/bootstrap': typeof ApiPublicV2CheckoutBootstrapRoute
   '/api/public/webhooks/stripe/$integrationId': typeof ApiPublicWebhooksStripeIntegrationIdRoute
@@ -379,6 +397,7 @@ export interface FileRouteTypes {
     | '/admin/analytics'
     | '/admin/health-checkout'
     | '/comprar/$slug'
+    | '/confirmar/$token'
     | '/donations/privacy'
     | '/donations/refunds'
     | '/donations/start'
@@ -394,6 +413,7 @@ export interface FileRouteTypes {
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v1/confirm/$token'
     | '/api/public/v1/donations/catalog'
     | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
@@ -418,6 +438,7 @@ export interface FileRouteTypes {
     | '/admin/analytics'
     | '/admin/health-checkout'
     | '/comprar/$slug'
+    | '/confirmar/$token'
     | '/donations/privacy'
     | '/donations/refunds'
     | '/donations/start'
@@ -433,6 +454,7 @@ export interface FileRouteTypes {
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v1/confirm/$token'
     | '/api/public/v1/donations/catalog'
     | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
@@ -457,6 +479,7 @@ export interface FileRouteTypes {
     | '/admin_/analytics'
     | '/admin_/health-checkout'
     | '/comprar/$slug'
+    | '/confirmar/$token'
     | '/donations/privacy'
     | '/donations/refunds'
     | '/donations/start'
@@ -472,6 +495,7 @@ export interface FileRouteTypes {
     | '/api/public/v1/quote'
     | '/api/public/v1/analytics/events'
     | '/api/public/v1/analytics/presence'
+    | '/api/public/v1/confirm/$token'
     | '/api/public/v1/donations/catalog'
     | '/api/public/v2/checkout/bootstrap'
     | '/api/public/webhooks/stripe/$integrationId'
@@ -497,6 +521,7 @@ export interface RootRouteChildren {
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   AdminHealthCheckoutRoute: typeof AdminHealthCheckoutRoute
   ComprarSlugRoute: typeof ComprarSlugRoute
+  ConfirmarTokenRoute: typeof ConfirmarTokenRoute
   DonationsPrivacyRoute: typeof DonationsPrivacyRoute
   DonationsRefundsRoute: typeof DonationsRefundsRoute
   DonationsStartRoute: typeof DonationsStartRoute
@@ -512,6 +537,7 @@ export interface RootRouteChildren {
   ApiPublicV1QuoteRoute: typeof ApiPublicV1QuoteRoute
   ApiPublicV1AnalyticsEventsRoute: typeof ApiPublicV1AnalyticsEventsRoute
   ApiPublicV1AnalyticsPresenceRoute: typeof ApiPublicV1AnalyticsPresenceRoute
+  ApiPublicV1ConfirmTokenRoute: typeof ApiPublicV1ConfirmTokenRoute
   ApiPublicV2CheckoutBootstrapRoute: typeof ApiPublicV2CheckoutBootstrapRoute
   ApiPublicWebhooksStripeIntegrationIdRoute: typeof ApiPublicWebhooksStripeIntegrationIdRoute
   ApiPublicV1CheckoutSessionPublicTokenRoute: typeof ApiPublicV1CheckoutSessionPublicTokenRoute
@@ -597,6 +623,13 @@ declare module '@tanstack/react-router' {
       path: '/comprar/$slug'
       fullPath: '/comprar/$slug'
       preLoaderRoute: typeof ComprarSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/confirmar/$token': {
+      id: '/confirmar/$token'
+      path: '/confirmar/$token'
+      fullPath: '/confirmar/$token'
+      preLoaderRoute: typeof ConfirmarTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/donations/privacy': {
@@ -702,6 +735,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/v1/analytics/presence'
       fullPath: '/api/public/v1/analytics/presence'
       preLoaderRoute: typeof ApiPublicV1AnalyticsPresenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/confirm/$token': {
+      id: '/api/public/v1/confirm/$token'
+      path: '/api/public/v1/confirm/$token'
+      fullPath: '/api/public/v1/confirm/$token'
+      preLoaderRoute: typeof ApiPublicV1ConfirmTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/donations/catalog': {
@@ -827,6 +867,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminAnalyticsRoute: AdminAnalyticsRoute,
   AdminHealthCheckoutRoute: AdminHealthCheckoutRoute,
   ComprarSlugRoute: ComprarSlugRoute,
+  ConfirmarTokenRoute: ConfirmarTokenRoute,
   DonationsPrivacyRoute: DonationsPrivacyRoute,
   DonationsRefundsRoute: DonationsRefundsRoute,
   DonationsStartRoute: DonationsStartRoute,
@@ -843,6 +884,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicV1QuoteRoute: ApiPublicV1QuoteRoute,
   ApiPublicV1AnalyticsEventsRoute: ApiPublicV1AnalyticsEventsRoute,
   ApiPublicV1AnalyticsPresenceRoute: ApiPublicV1AnalyticsPresenceRoute,
+  ApiPublicV1ConfirmTokenRoute: ApiPublicV1ConfirmTokenRoute,
   ApiPublicV2CheckoutBootstrapRoute: ApiPublicV2CheckoutBootstrapRoute,
   ApiPublicWebhooksStripeIntegrationIdRoute:
     ApiPublicWebhooksStripeIntegrationIdRoute,
