@@ -33,7 +33,7 @@ export const Route = createFileRoute("/api/public/v1/confirm/$token")({
             await confirmPaidReceiptFromProvider(token).catch(() => undefined);
             receipt = await loadReceipt(token);
           }
-          return json({ ok: true, status: receipt.status, totalCents: receipt.totalCents, hhf: receipt.hhf });
+          return json({ ok: true, status: receipt.status, totalCents: receipt.totalCents, hhf: receipt.hhf }, 200);
         } catch (error) {
           const { PaymentError } = await import("@/lib/payments/errors");
           if (error instanceof PaymentError) {
