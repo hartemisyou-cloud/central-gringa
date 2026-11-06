@@ -140,7 +140,16 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(response.status).toBe(302);
     const [order] = await H.current!.client`SELECT client_ip FROM orders`;
     expect(order!["client_ip"]).toBe(expectedIp);
-    expect(await H.current!.client`SELECT * FROM order_attribution`).toHaveLength(0);
+    // order_attribution.client_ip usa a fonte do rate limit (cf-connecting-ip
+    // primeiro); só existe linha quando há IP ou outro contexto a persistir.
+    const expectedAttributionIp = "cf-connecting-ip" in headers ? headers["cf-connecting-ip"] : null;
+    const attributionRows = await H.current!.client`SELECT client_ip, client_user_agent, event_source_url FROM order_attribution`;
+    if (expectedAttributionIp) {
+      expect(attributionRows).toHaveLength(1);
+      expect(attributionRows[0]).toEqual({ client_ip: expectedAttributionIp, client_user_agent: null, event_source_url: null });
+    } else {
+      expect(attributionRows).toHaveLength(0);
+    }
     const form = new URLSearchParams(String(H.fetch.mock.calls[0]![1].body));
     const serialized = JSON.stringify(Object.fromEntries(form));
     expect(serialized).not.toMatch(/client_ip|ip_address|x-forwarded-for|x-real-ip/i);
@@ -162,7 +171,9 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(item).toMatchObject({ product_id: product.id, sku: product.sku, quantity: 1, unit_price_cents: 3210, total_cents: 3210 });
     expect(await q`SELECT * FROM customers`).toHaveLength(0);
     expect(await q`SELECT * FROM addresses`).toHaveLength(0);
-    expect(await q`SELECT * FROM order_attribution`).toHaveLength(0);
+    // Sem atribuição de marketing, a linha guarda só o contexto do navegador.
+    expect(await q`SELECT client_ip, client_user_agent, event_source_url, utm_source, fbclid FROM order_attribution`)
+      .toEqual([{ client_ip: "1.2.3.4", client_user_agent: null, event_source_url: "https://www.hopehumanfoundation.org/?campaign=ignored", utm_source: null, fbclid: null }]);
     const [bucket] = await q`SELECT bucket,count FROM rate_limit_counters`;
     expect(bucket).toMatchObject({ bucket: `orders:${HHB_STORE_ID}:1.2.3.4`, count: 1 });
     const [stock] = await q`SELECT reserved_stock FROM products WHERE id = ${product.id}`;
@@ -316,19 +327,21 @@ describe("GET /comprar marketing attribution (registry overrides query)", () => 
     for (const row of rowsOut) expect(row).toMatchObject({ utm_source: null, utm_medium: null, utm_campaign: null, fbclid: "CLICK1" });
   });
 
-  it("(c) no query creates the order without an attribution row", async () => {
+  it("(c) no query creates the order with a context-only attribution row", async () => {
     await seedCode();
     const response = await handlePurchaseEntry(entry(""), "little-women", await defaultPurchaseEntryDeps());
     expect(response.status).toBe(302);
     expect(await H.current!.client`SELECT count(*)::int AS n FROM orders`).toEqual([{ n: 1 }]);
-    expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
+    const rowsOut = await H.current!.client`SELECT client_ip, utm_source, fbclid, fbc, fbp FROM order_attribution`;
+    expect(rowsOut).toEqual([{ client_ip: "1.2.3.4", utm_source: null, fbclid: null, fbc: null, fbp: null }]);
   });
 
   it("(d) empty and whitespace query attribution is ignored", async () => {
     await seedCode();
     const response = await handlePurchaseEntry(entry("?utm_source=&utm_medium=%20%20&utm_campaign=%09&utm_content=&utm_term=%20&gclid=%20"), "little-women", await defaultPurchaseEntryDeps());
     expect(response.status).toBe(302);
-    expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
+    const rowsOut = await H.current!.client`SELECT client_ip, utm_source, utm_medium, gclid FROM order_attribution`;
+    expect(rowsOut).toEqual([{ client_ip: "1.2.3.4", utm_source: null, utm_medium: null, gclid: null }]);
   });
 
   it("never fails the order when the code lookup throws", async () => {
@@ -474,6 +487,79 @@ describe("query UTM pass-through and downstream payloads", () => {
     const payload = buildSalePayload({ orderId: record["order_id"], storeId: HHB_STORE_ID, orderNumber: "ORD-FIXTURE", currency: "USD", totalCents: 3000, status: "PAID", createdAt: "2026-10-18T21:00:00Z", paidAt: "2026-10-18T21:01:00Z", customerName: null, email: null, phone: null, document: null, country: null, paymentMethod: "card", items: [{ id: product.id, name: product.name, quantity: 1, priceInCents: 3000 }] }, record as Attribution, { isTest: true });
     expect(payload.trackingParameters).toMatchObject({ ...utms, ...registryUtms, src: CODE, gclid: "GOOGLE1", fbclid: "META1", fbc: record["fbc"] });
     expect(payload.commission).toMatchObject({ totalPriceInCents: 3000, currency: "USD" });
+  });
+  it("persists browser-captured fbp/fbc from the bridge query, with a real fbc winning over derivation", async () => {
+    const db = await seed();
+    const response = await handlePurchaseEntry(
+      entry({ fbclid: "META1", fbp: "fb.1.1700000000000.1234567890", fbc: "fb.1.1700000000001.REALCOOKIE" }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT fbclid, fbp, fbc FROM order_attribution`;
+    expect(record).toMatchObject({ fbclid: "META1", fbp: "fb.1.1700000000000.1234567890", fbc: "fb.1.1700000000001.REALCOOKIE" });
+  });
+  it("derives fbc from fbclid only when no explicit fbc arrives", async () => {
+    const db = await seed();
+    await handlePurchaseEntry(entry({ fbclid: "META1" }), "little-women", await defaultPurchaseEntryDeps());
+    const [record] = await db.client`SELECT fbc FROM order_attribution`;
+    expect(record?.["fbc"]).toMatch(/^fb\.1\.\d+\.META1$/);
+  });
+  it("falls back to the first-party _fbp/_fbc Cookie header when the bridge query is absent", async () => {
+    const db = await seed();
+    const incoming = new Request("https://hopehumanbooks.com/comprar/little-women?c=1", {
+      headers: { "x-forwarded-for": "1.2.3.4", cookie: "_fbp=fb.1.1700000000000.999; other=1; _fbc=fb.1.1700000000002.COOKIEFBC" },
+    });
+    const response = await handlePurchaseEntry(incoming, "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT fbp, fbc FROM order_attribution`;
+    expect(record).toMatchObject({ fbp: "fb.1.1700000000000.999", fbc: "fb.1.1700000000002.COOKIEFBC" });
+  });
+  it("persists the bridge esrc as event_source_url and marks origin_hhf from it", async () => {
+    const db = await seed();
+    const incoming = new Request(
+      `https://hopehumanbooks.com/comprar/little-women?c=1&esrc=${encodeURIComponent("https://hopehumanfoundation.org/donate?amount=20")}`,
+      { headers: { "x-forwarded-for": "1.2.3.4", referer: "https://hopehumanbooks.com/", "user-agent": "Mozilla/5.0 TestBrowser" } },
+    );
+    const response = await handlePurchaseEntry(incoming, "little-women", await defaultPurchaseEntryDeps());
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT event_source_url, client_user_agent, client_ip FROM order_attribution`;
+    expect(record).toMatchObject({
+      event_source_url: "https://hopehumanfoundation.org/donate?amount=20",
+      client_user_agent: "Mozilla/5.0 TestBrowser",
+      client_ip: "1.2.3.4",
+    });
+    const [order] = await db.client`SELECT origin_hhf FROM orders`;
+    expect(order!["origin_hhf"]).toBe(true);
+  });
+  it("ignores a same-origin Referer as event_source_url but keeps a cross-origin one", async () => {
+    const db = await seed();
+    await handlePurchaseEntry(
+      new Request("https://hopehumanbooks.com/comprar/little-women?c=1", { headers: { "x-forwarded-for": "1.2.3.4", referer: "https://hopehumanbooks.com/comprar/little-women" } }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    const [sameOrigin] = await db.client`SELECT event_source_url FROM order_attribution`;
+    expect(sameOrigin!["event_source_url"]).toBeNull();
+    await handlePurchaseEntry(
+      new Request("https://hopehumanbooks.com/comprar/little-women?c=1", { headers: { "x-forwarded-for": "1.2.3.4", referer: "https://hopehumanfoundation.org/" } }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    const rows = await db.client`SELECT event_source_url FROM order_attribution ORDER BY created_at`;
+    expect(rows[1]!["event_source_url"]).toBe("https://hopehumanfoundation.org/");
+  });
+  it("truncates an overlong esrc like other attribution URLs and never blocks the order", async () => {
+    const db = await seed();
+    const longUrl = `https://hopehumanfoundation.org/${"a".repeat(3000)}`;
+    const response = await handlePurchaseEntry(
+      new Request(`https://hopehumanbooks.com/comprar/little-women?c=1&esrc=${encodeURIComponent(longUrl)}`, { headers: { "x-forwarded-for": "1.2.3.4" } }),
+      "little-women",
+      await defaultPurchaseEntryDeps(),
+    );
+    expect(response.status).toBe(302);
+    const [record] = await db.client`SELECT event_source_url FROM order_attribution`;
+    expect(record!["event_source_url"]).toHaveLength(2000);
   });
   it("buildPayload reads saved UTMs into Meta custom_data and fbc into user_data", async () => {
     const db = await seed();

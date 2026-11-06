@@ -149,6 +149,13 @@ async function loadOrderContext(orderId: string, storeId: string): Promise<Order
   };
 }
 
+/** UTMify exige um país ISO-3166 alpha-2 válido. Pedidos de eBook não têm
+ *  endereço de entrega, então o fallback é o mercado-base da loja (US). */
+function normalizeIsoCountry(country: string | null): string {
+  const code = (country ?? "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : "US";
+}
+
 /**
  * Mapeia pedido + order_attribution para o formato da UTMify.
  * Campos ausentes ficam `null` — nada é inventado nem preenchido com falsos.
@@ -194,7 +201,7 @@ export function buildSalePayload(
       email: context.email,
       phone: context.phone,
       document: context.document,
-      country: context.country,
+      country: normalizeIsoCountry(context.country),
       ip: context.clientIp ?? options.clientIp ?? null,
     },
     products: context.items.map((item) => ({
