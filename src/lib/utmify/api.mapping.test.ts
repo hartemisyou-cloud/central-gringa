@@ -87,4 +87,18 @@ describe("buildSalePayload", () => {
     expect(payload.commission.currency).toBe("EUR");
     expect(serialized).not.toMatch(/client_secret|cvc|cvv|sk_live|x-api-token/i);
   });
+
+  it.each([
+    [null, "US"],
+    ["", "US"],
+    ["   ", "US"],
+    ["usa", "US"],
+    ["br", "BR"],
+    [" us ", "US"],
+    ["PT", "PT"],
+    ["1S", "US"],
+  ] as const)("customer.country %j vira ISO alpha-2 %s (eBook sem endereço cai em US)", (country, expectedCountry) => {
+    const payload = buildSalePayload(order({ country }), {}, opts);
+    expect(payload.customer.country).toBe(expectedCountry);
+  });
 });

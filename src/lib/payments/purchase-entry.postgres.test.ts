@@ -140,7 +140,16 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(response.status).toBe(302);
     const [order] = await H.current!.client`SELECT client_ip FROM orders`;
     expect(order!["client_ip"]).toBe(expectedIp);
-    expect(await H.current!.client`SELECT * FROM order_attribution`).toHaveLength(0);
+    // order_attribution.client_ip usa a fonte do rate limit (cf-connecting-ip
+    // primeiro); só existe linha quando há IP ou outro contexto a persistir.
+    const expectedAttributionIp = headers["cf-connecting-ip"] ?? null;
+    const attributionRows = await H.current!.client`SELECT client_ip, client_user_agent, event_source_url FROM order_attribution`;
+    if (expectedAttributionIp) {
+      expect(attributionRows).toHaveLength(1);
+      expect(attributionRows[0]).toEqual({ client_ip: expectedAttributionIp, client_user_agent: null, event_source_url: null });
+    } else {
+      expect(attributionRows).toHaveLength(0);
+    }
     const form = new URLSearchParams(String(H.fetch.mock.calls[0]![1].body));
     const serialized = JSON.stringify(Object.fromEntries(form));
     expect(serialized).not.toMatch(/client_ip|ip_address|x-forwarded-for|x-real-ip/i);
@@ -162,7 +171,9 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(item).toMatchObject({ product_id: product.id, sku: product.sku, quantity: 1, unit_price_cents: 3210, total_cents: 3210 });
     expect(await q`SELECT * FROM customers`).toHaveLength(0);
     expect(await q`SELECT * FROM addresses`).toHaveLength(0);
-    expect(await q`SELECT * FROM order_attribution`).toHaveLength(0);
+    // Sem atribuição de marketing, a linha guarda só o contexto do navegador.
+    expect(await q`SELECT client_ip, client_user_agent, event_source_url, utm_source, fbclid FROM order_attribution`)
+      .toEqual([{ client_ip: "1.2.3.4", client_user_agent: null, event_source_url: "https://www.hopehumanfoundation.org/?campaign=ignored", utm_source: null, fbclid: null }]);
     const [bucket] = await q`SELECT bucket,count FROM rate_limit_counters`;
     expect(bucket).toMatchObject({ bucket: `orders:${HHB_STORE_ID}:1.2.3.4`, count: 1 });
     const [stock] = await q`SELECT reserved_stock FROM products WHERE id = ${product.id}`;
@@ -316,12 +327,13 @@ describe("GET /comprar marketing attribution (registry overrides query)", () => 
     for (const row of rowsOut) expect(row).toMatchObject({ utm_source: null, utm_medium: null, utm_campaign: null, fbclid: "CLICK1" });
   });
 
-  it("(c) no query creates the order without an attribution row", async () => {
+  it("(c) no query creates the order with a context-only attribution row", async () => {
     await seedCode();
     const response = await handlePurchaseEntry(entry(""), "little-women", await defaultPurchaseEntryDeps());
     expect(response.status).toBe(302);
     expect(await H.current!.client`SELECT count(*)::int AS n FROM orders`).toEqual([{ n: 1 }]);
-    expect(await H.current!.client`SELECT count(*)::int AS n FROM order_attribution`).toEqual([{ n: 0 }]);
+    const rowsOut = await H.current!.client`SELECT client_ip, utm_source, fbclid, fbc, fbp FROM order_attribution`;
+    expect(rowsOut).toEqual([{ client_ip: "1.2.3.4", utm_source: null, fbclid: null, fbc: null, fbp: null }]);
   });
 
   it("(d) empty and whitespace query attribution is ignored", async () => {
