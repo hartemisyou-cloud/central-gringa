@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Speed up /comprar bridge bypass, concurrent store/quota checks, origin-only Stripe redirect and HHF polling/paid return; verify tests
+- [x] Speed up /comprar bridge bypass, concurrent store/quota checks, origin-only Stripe redirect and HHF polling/paid return — 118 targeted tests pass; full suite 449/453 passes with the same 4 previously recorded Meta recovery failures; automatic build OK
 - [ ] Deploy redirect changes on vercel-migration — blocked on external commit/push and Vercel deployment controls
 - [x] Prepare immutable new-Purchase snapshots and authenticated Vercel automatic recovery; validate paid Checkout dispatch without historical replay — 430/430 tests pass; unauthenticated scheduler returns 401
 - [ ] Deploy Purchase correction to verified Vercel production branch — blocked on Vercel project/deployment access, not historical sales exports
