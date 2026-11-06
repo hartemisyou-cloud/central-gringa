@@ -10,7 +10,8 @@ export const Route = createFileRoute("/comprar/$slug")({
         // Primeira visita: serve o documento de captura (cookies Meta _fbp/_fbc
         // e document.referrer), que reentra na mesma rota com c=1. A requisição
         // com c=1 executa a entrada de compra real no servidor.
-        if (!url.searchParams.has(CAPTURE_PARAM) && purchaseEntryProduct(params.slug)) {
+        const hasEsrc = (url.searchParams.get("esrc") ?? "").trim().length > 0;
+        if (!url.searchParams.has(CAPTURE_PARAM) && !hasEsrc && purchaseEntryProduct(params.slug)) {
           return purchaseBridgeResponse(url);
         }
         const { handlePurchaseEntry, defaultPurchaseEntryDeps } = await import("@/lib/payments/purchase-entry.server");

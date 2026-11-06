@@ -37,7 +37,8 @@ function ReceiptPage() {
     queryFn: () => fetchReceipt({ data: { token } }),
     refetchInterval: (q) => {
       const r = q.state.data;
-      return r?.ok && FINAL.includes(r.receipt.status) ? false : 3000;
+      if (r?.ok && FINAL.includes(r.receipt.status)) return false;
+      return r?.ok && r.receipt.hhf === true ? 500 : 3000;
     },
   });
   const receipt = data?.ok ? data.receipt : null;

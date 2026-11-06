@@ -46,7 +46,7 @@ export function scheduleHhfPaidReturn(
     url.searchParams.delete("ret");
     window.history.replaceState(window.history.state, "", url.toString());
     window.location.replace(hhfThankYouUrl(totalCents));
-  }, 600);
+  }, 250);
 
   return () => window.clearTimeout(timer);
 }

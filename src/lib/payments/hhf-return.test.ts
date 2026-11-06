@@ -142,14 +142,14 @@ describe("marked paid receipt return", () => {
     // Old local state is deliberately present in every combination; it cannot authorize a return.
     current.stored.set(HHF_RETURN_STORAGE_KEY, "1");
     scheduleHhfPaidReturn(status, 3000, hhf);
-    vi.advanceTimersByTime(600);
+    vi.advanceTimersByTime(250);
     expect(current.location.replace).toHaveBeenCalledTimes(returns ? 1 : 0);
   });
 
-  it("shows the purchase for 600 ms, consumes only ret, then replaces with the correct destination", () => {
+  it("shows the purchase for 250 ms, consumes only ret, then replaces with the correct destination", () => {
     const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1&view=receipt#downloads");
     scheduleHhfPaidReturn("PAID", 3000, true);
-    vi.advanceTimersByTime(599);
+    vi.advanceTimersByTime(249);
     expect(current.location.replace).not.toHaveBeenCalled();
     expect(new URL(current.location.href).searchParams.get("ret")).toBe("1");
     vi.advanceTimersByTime(1);
@@ -205,7 +205,7 @@ describe("marked paid receipt return", () => {
     const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
     scheduleHhfPaidReturn("PAID", 3000, true);
     current.location.href = "https://hopehumanbooks.com/order/receipt-token";
-    vi.advanceTimersByTime(600);
+    vi.advanceTimersByTime(250);
     expect(current.location.replace).not.toHaveBeenCalled();
   });
 
@@ -213,7 +213,7 @@ describe("marked paid receipt return", () => {
     const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
     scheduleHhfPaidReturn("PAID", 3000, true);
     scheduleHhfPaidReturn("PAID", 3000, true);
-    vi.advanceTimersByTime(600);
+    vi.advanceTimersByTime(250);
     expect(current.location.replace).toHaveBeenCalledTimes(1);
   });
 
@@ -221,7 +221,7 @@ describe("marked paid receipt return", () => {
     const current = browser("https://hopehumanbooks.com/order/receipt-token?ret=1");
     Object.defineProperty(window, "sessionStorage", { get: () => { throw new Error("SecurityError"); } });
     expect(() => scheduleHhfPaidReturn("PAID", 3000, true)).not.toThrow();
-    vi.advanceTimersByTime(600);
+    vi.advanceTimersByTime(250);
     expect(current.location.replace).toHaveBeenCalledOnce();
   });
 

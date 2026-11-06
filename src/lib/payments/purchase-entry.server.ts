@@ -59,7 +59,7 @@ export async function entryAttribution(
   return Object.keys(out).length ? out : undefined;
 }
 
-const headers = { "cache-control": "no-store", "x-robots-tag": "noindex" };
+const headers = { "cache-control": "no-store", "x-robots-tag": "noindex", "referrer-policy": "origin" };
 
 /** Server-only entry: no customer data or prices from the URL; only allowlisted tracking fields feed attribution. */
 export async function handlePurchaseEntry(
@@ -73,12 +73,14 @@ export async function handlePurchaseEntry(
   const product = purchaseEntryProduct(slug);
   if (!product) return new Response("Not Found", { status: 404, headers });
   try {
-    const store = await deps.loadStore();
+    const rateLimitIp = deps.clientIp(request);
+    const [store] = await Promise.all([
+      deps.loadStore(),
+      deps.rateLimit(`orders:${HHB_STORE_ID}:${rateLimitIp}`, 20, 60),
+    ]);
     if (!store || store.status !== "ACTIVE") {
       throw new PaymentError("CONFIG_ERROR", "The store is not set up yet.");
     }
-    const rateLimitIp = deps.clientIp(request);
-    await deps.rateLimit(`orders:${store.id}:${rateLimitIp}`, 20, 60);
     const url = new URL(request.url);
     const attribution = await entryAttribution(url, deps);
     // Fallback sem o documento-ponte (ex.: noscript): os cookies first-party
