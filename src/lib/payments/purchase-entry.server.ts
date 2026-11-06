@@ -36,11 +36,17 @@ export async function entryAttribution(
     gclid: url.searchParams.get("gclid") ?? undefined,
     click_id: url.searchParams.get("ref") ?? undefined,
     fbclid: url.searchParams.get("fbclid") ?? undefined,
+    // Capturados no navegador pelo documento-ponte de /comprar (cookies Meta).
+    fbp: url.searchParams.get("fbp") ?? undefined,
+    fbc: url.searchParams.get("fbc") ?? undefined,
   });
   const out: Attribution = { ...raw };
   if (raw.fbclid) {
     out.fbclid = raw.fbclid;
-    out.fbc = normalizeAttribution({ fbc: `fb.1.${(deps.now ?? Date.now)()}.${raw.fbclid}` }).fbc;
+    // Um _fbc real do navegador sempre vence a derivação a partir do fbclid.
+    if (!out.fbc) {
+      out.fbc = normalizeAttribution({ fbc: `fb.1.${(deps.now ?? Date.now)()}.${raw.fbclid}` }).fbc;
+    }
   }
   if (raw.click_id) {
     try {
@@ -71,18 +77,53 @@ export async function handlePurchaseEntry(
     if (!store || store.status !== "ACTIVE") {
       throw new PaymentError("CONFIG_ERROR", "The store is not set up yet.");
     }
-    await deps.rateLimit(`orders:${store.id}:${deps.clientIp(request)}`, 20, 60);
-    const attribution = await entryAttribution(new URL(request.url), deps);
-    const hhf = isHhfEntryReferer(request.headers.get("referer"));
+    const rateLimitIp = deps.clientIp(request);
+    await deps.rateLimit(`orders:${store.id}:${rateLimitIp}`, 20, 60);
+    const url = new URL(request.url);
+    const attribution = await entryAttribution(url, deps);
+    // Fallback sem o documento-ponte (ex.: noscript): os cookies first-party
+    // do Meta também chegam no header Cookie da própria requisição.
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const cookieValue = (name: string): string | undefined => {
+      const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
+      return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+    };
+    const merged: Attribution = { ...(attribution ?? {}) };
+    if (!merged.fbp) {
+      const value = normalizeAttribution({ fbp: cookieValue("_fbp") }).fbp;
+      if (value) merged.fbp = value;
+    }
+    if (!merged.fbc) {
+      const value = normalizeAttribution({ fbc: cookieValue("_fbc") }).fbc;
+      if (value) merged.fbc = value;
+    }
+    const finalAttribution = Object.keys(merged).length ? merged : undefined;
+    const referer = request.headers.get("referer");
+    // A página de origem da conversão: parâmetro esrc do documento-ponte
+    // (document.referrer da primeira requisição) ou o Referer cross-origin
+    // direto. Um Referer same-origin é o próprio /comprar e nunca é a página
+    // da conversão.
+    const esrc = url.searchParams.get("esrc");
+    const eventSourceUrl =
+      esrc ?? (referer && referer !== url.origin && !referer.startsWith(`${url.origin}/`) ? referer : null);
+    const hhf = isHhfEntryReferer(referer) || isHhfEntryReferer(esrc);
     const order = await deps.createOrder({
       store,
       items: [{ productId: product.id, quantity: 1 }],
       shippingOptionId: "no-shipping",
-      ...(attribution ? { attribution } : {}),
+      ...(finalAttribution ? { attribution: finalAttribution } : {}),
       originHhf: hhf,
       clientIp: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
         || request.headers.get("x-real-ip")?.trim()
         || null,
+      // Telemetria do navegador em order_attribution (best effort, nunca
+      // bloqueia o pedido): IP da mesma fonte do rate limit, User-Agent e a
+      // página de origem da conversão.
+      clientContext: {
+        clientIp: rateLimitIp !== "unknown" ? rateLimitIp : null,
+        clientUserAgent: request.headers.get("user-agent"),
+        eventSourceUrl,
+      },
     });
     const checkout = await deps.createCheckout({
       store,
