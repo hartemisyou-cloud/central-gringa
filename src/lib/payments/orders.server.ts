@@ -236,9 +236,14 @@ export async function createOrder(input: {
       throw new PaymentError("OUT_OF_STOCK", `Insufficient stock for "${item.productName}".`);
     }
   }
-  await orderWrite(sql`update public.orders set stock_reserved = true where id = ${order.id}`, "orders.mark-reserved");
-  await orderWrite(sql`insert into public.payment_events (order_id, type, message, metadata)
-    values (${order.id}, 'ORDER_CREATED', 'Order created', ${sql.json({ total_cents: totals.totalCents })})`, "orders.record-created");
+  // Uma única ida e volta faz as duas escritas dependentes: marca o pedido
+  // como reservado e registra o evento de criação na mesma instrução.
+  await orderWrite(sql`with marked as (
+      update public.orders set stock_reserved = true where id = ${order.id} returning id
+    ), recorded as (
+      insert into public.payment_events (order_id, type, message, metadata)
+      select id, 'ORDER_CREATED', 'Order created', ${sql.json({ total_cents: totals.totalCents })} from marked
+    ) select id from marked`, "orders.mark-reserved");
 
   const { saveOrderAttribution } = await import("./attribution.server");
   const attribution = await saveOrderAttribution(order.id, input.attribution, input.clientContext);
