@@ -521,7 +521,7 @@ describe("PostgreSQL integration configuration", () => {
       const sale = JSON.parse(String(saleRequest![1]!.body));
       expect(sale).toMatchObject({
         status: "paid", isTest: true,
-        customer: { name: "Hope Human", email: "hope.human@example.com", ip: "203.0.113.77", country: "br" },
+        customer: { name: "Hope Human", email: "hope.human@example.com", ip: "203.0.113.77", country: "BR" },
         trackingParameters: { utm_source: "test", utm_medium: "manual", utm_campaign: "livecheck-fix1", fbclid: "IwARlivecheck" },
         commission: { totalPriceInCents: 2000, currency: "USD" },
       });
@@ -537,7 +537,7 @@ describe("PostgreSQL integration configuration", () => {
     }
   });
 
-  it("missing HHF customer fields remain absent for Meta and null for a still-attempted UTMify push", async () => {
+  it("missing HHF customer fields remain absent for Meta and fall back to the US market for a still-attempted UTMify push", async () => {
     const q = H.current!.client;
     await q`UPDATE orders SET status='PAID', paid_at=now(), origin_hhf=true, client_ip=NULL,
       checkout_customer_details=${q.json({ name: null, email: null, address: { country: null, city: null } })}
@@ -554,8 +554,8 @@ describe("PostgreSQL integration configuration", () => {
       const meta = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body));
       for (const field of ["em", "client_ip_address", "country", "ct"]) expect(meta.data[0].user_data).not.toHaveProperty(field);
       const sale = JSON.parse(String(vi.mocked(fetch).mock.calls[1]![1]!.body));
-      expect(sale.customer).toMatchObject({ name: null, email: null, ip: null, country: null });
-      expect(JSON.stringify(warning.mock.calls)).toContain("missing_customer_fields=name,email,ip,country");
+      expect(sale.customer).toMatchObject({ name: null, email: null, ip: null, country: "US" });
+      expect(JSON.stringify(warning.mock.calls)).toContain("missing_customer_fields=name,email,ip");
       expect(await q`SELECT status,attempt_count FROM utmify_events`).toEqual([expect.objectContaining({ status: "SENT", attempt_count: 1 })]);
     } finally {
       warning.mockRestore();
@@ -645,7 +645,7 @@ describe("PostgreSQL integration configuration", () => {
     expect(meta.data[0]).toMatchObject({ event_id: `purchase_${ORDER_A}`, event_time: timestamp, custom_data: { currency: "USD", value: 20 } });
     expect(meta.test_event_code).toBe("TEST83586");
     const sale = JSON.parse(String(saleRequest![1]!.body));
-    expect(sale.customer).toMatchObject({ name: "Hope Human", email: "hope.human@example.com", ip: "203.0.113.45", country: "us" });
+    expect(sale.customer).toMatchObject({ name: "Hope Human", email: "hope.human@example.com", ip: "203.0.113.45", country: "US" });
     expect(H.delivery).toHaveBeenCalledExactlyOnceWith(ORDER_A, STORE_A);
     expect(await q`SELECT processing_status,processed FROM webhook_events WHERE stripe_event_id='evt_hhf_paid_fixture'`).toEqual([
       expect.objectContaining({ processing_status: "PROCESSED", processed: true }),
