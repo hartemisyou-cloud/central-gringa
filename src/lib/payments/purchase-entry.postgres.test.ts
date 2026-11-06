@@ -142,7 +142,7 @@ describe("GET /comprar with real PostgreSQL order pricing and stock", () => {
     expect(order!["client_ip"]).toBe(expectedIp);
     // order_attribution.client_ip usa a fonte do rate limit (cf-connecting-ip
     // primeiro); só existe linha quando há IP ou outro contexto a persistir.
-    const expectedAttributionIp = headers["cf-connecting-ip"] ?? null;
+    const expectedAttributionIp = "cf-connecting-ip" in headers ? headers["cf-connecting-ip"] : null;
     const attributionRows = await H.current!.client`SELECT client_ip, client_user_agent, event_source_url FROM order_attribution`;
     if (expectedAttributionIp) {
       expect(attributionRows).toHaveLength(1);
