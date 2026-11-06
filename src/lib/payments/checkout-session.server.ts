@@ -54,7 +54,7 @@ export function buildEbookCheckoutSessionParams(input: {
     submit_type: "pay" as const,
     // Approved return destination: the receipt alone decides whether to return.
     success_url: input.hhf
-      ? `https://hopehumanbooks.com/order/${encodeURIComponent(order.public_token)}?ret=1`
+      ? `https://hopehumanbooks.com/confirmar/${encodeURIComponent(order.public_token)}?ret=1`
       : `${origin.origin}/order/${encodeURIComponent(order.public_token)}`,
     cancel_url: `${origin.origin}/comprar/${encodeURIComponent(input.slug)}`,
     // Stripe requires at least 30 minutes remaining when it receives the request.
@@ -103,7 +103,14 @@ function failure(stage: ConstructorParameters<typeof CheckoutFailure>[0], operat
 export async function createEbookCheckoutSession(input: { store: StoreRow; orderId: string; slug: string; origin: string; hhf?: boolean }) {
   const [orderResult, itemResult, integrationResult, pendingResult] = await Promise.all([
     one<Order>(sql`select * from public.orders where id = ${input.orderId} and store_id = ${input.store.id}`, true),
-    rows<EbookCheckoutItem>(sql`select product_id, product_name, sku, quantity, unit_price_cents, total_cents from public.order_items where order_id = ${input.orderId}`),
+    // Itens levam os fatos do produto num left join único: a consulta separada
+    // de produtos sai do caminho crítico junto com este lote.
+    rows<EbookCheckoutItem & { category: string | null; weight_grams: number | null }>(sql`
+      select oi.product_id, oi.product_name, oi.sku, oi.quantity, oi.unit_price_cents, oi.total_cents,
+        p.category, p.weight_grams
+      from public.order_items oi
+      left join public.products p on p.store_id = ${input.store.id} and p.id = oi.product_id
+      where oi.order_id = ${input.orderId}`),
     input.store.stripe_integration_id
       ? one<Integration>(sql`select * from public.stripe_integrations where id = ${input.store.stripe_integration_id}`, true)
       : Promise.resolve({ data: null, error: null }),
@@ -127,11 +134,15 @@ export async function createEbookCheckoutSession(input: { store: StoreRow; order
     failure("no_stripe_integration", "checkout.resolve-integration", new Error("The database credential has an invalid format or mode."));
   }
   const items = itemResult.data ?? [];
-  const productIds = [...new Set(items.map(item => item.product_id))];
-  const productsResult = productIds.length
-    ? await rows<EbookCheckoutProduct>(sql`select id, category, weight_grams from public.products where store_id = ${order.store_id} and id in ${sql(productIds)}`)
-    : { data: [], error: null };
-  if (productsResult.error) failure("db_unreachable", "checkout.load-products", productsResult.error);
+  // Lista de produtos reconstruída das linhas já unidas: item sem registro de
+  // produto some aqui, exatamente como entrava faltando na busca antiga.
+  const seenProductIds = new Set<string>();
+  const products: EbookCheckoutProduct[] = [];
+  for (const item of items) {
+    if (item.weight_grams === null || seenProductIds.has(item.product_id)) continue;
+    seenProductIds.add(item.product_id);
+    products.push({ id: item.product_id, category: item.category, weight_grams: item.weight_grams });
+  }
 
   let payment = pendingResult.data;
   if (payment && (payment.integration_id !== integration.id || (payment.provider_payment_id && !payment.provider_payment_id.startsWith("cs_")) ||
@@ -140,17 +151,20 @@ export async function createEbookCheckoutSession(input: { store: StoreRow; order
     throw new PaymentError("INVALID_STATE", "A different payment is already in progress for this order.");
   }
   if (!payment) {
-    const attemptResult = await one<{ attempt: number }>(sql`select coalesce(max(attempt), 0)::integer + 1 as attempt from public.payments where order_id = ${order.id}`);
-    if (attemptResult.error || !attemptResult.data) failure("db_unreachable", "checkout.next-attempt", attemptResult.error);
-    const attempt = attemptResult.data.attempt;
-    const idempotencyKey = checkoutIdempotencyKey(order.id, attempt);
+    // Contador e inserção num único round trip: o próximo número de tentativa é
+    // o mesmo subselect que o par ler-e-escrever antigo usava, e a chave
+    // idempotente deriva do mesmo valor — a semântica de concorrência não muda.
+    const attemptPrefix = `checkout:create:${order.id}:`;
     const created = await one<Payment>(sql`insert into public.payments
       (store_id, order_id, integration_id, amount_cents, currency, environment, attempt, idempotency_key)
-      values (${order.store_id}, ${order.id}, ${integration.id}, ${order.total_cents}, ${order.currency}, ${order.environment}, ${attempt}, ${idempotencyKey}) returning *`);
+      select ${order.store_id}, ${order.id}, ${integration.id}, ${order.total_cents}, ${order.currency}, ${order.environment},
+        coalesce((select max(attempt) from public.payments where order_id = ${order.id}), 0)::integer + 1,
+        ${attemptPrefix} || (coalesce((select max(attempt) from public.payments where order_id = ${order.id}), 0)::integer + 1)
+      returning *`);
     if (created.error || !created.data) failure("db_unreachable", "checkout.create-attempt", created.error);
     payment = created.data;
   }
-  const params = buildEbookCheckoutSessionParams({ order, items, products: productsResult.data ?? [], slug: input.slug, origin: input.origin, createdAt: payment.created_at,
+  const params = buildEbookCheckoutSessionParams({ order, items, products, slug: input.slug, origin: input.origin, createdAt: payment.created_at,
     hhf: order.origin_hhf,
   });
   let session: StripeCheckoutSession;

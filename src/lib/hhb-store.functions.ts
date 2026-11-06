@@ -169,7 +169,22 @@ export const getReceipt = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<{ ok: true; receipt: Receipt } | { ok: false; message: string }> => {
     try {
       const { loadReceipt } = await import("@/lib/payments/receipt.server");
-      return { ok: true, receipt: await loadReceipt(data.token) };
+      let receipt = await loadReceipt(data.token);
+      // Só o fluxo de doação (cloaker): a Stripe já conhece o resultado assim
+      // que o pagamento assenta, bem antes do webhook assinado chegar. Confirma
+      // direto no provedor para o retorno ao site de doação não esperar pela
+      // entrega do webhook. A linha payments continua intocada: o webhook segue
+      // sendo o finalizador canônico (ignora o que já estiver PAID).
+      if (receipt.hhf && !["PAID", "REFUNDED", "PARTIALLY_REFUNDED", "CANCELLED", "PAYMENT_FAILED"].includes(receipt.status)) {
+        try {
+          const { confirmPaidReceiptFromProvider } = await import("@/lib/payments/receipt-refresh.server");
+          await confirmPaidReceiptFromProvider(data.token);
+          receipt = await loadReceipt(data.token);
+        } catch {
+          // Confirmação do provedor é best effort; mantém a visão do banco.
+        }
+      }
+      return { ok: true, receipt };
     } catch (error) {
       return { ok: false, message: (error as Error).message };
     }
