@@ -7,17 +7,23 @@ import { createServerFn } from "@tanstack/react-start";
  */
 export const getStorefrontTracking = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ pixelId: string | null }> => {
-    const { HHB_STORE_SLUG: slug } = await import("@/lib/catalog/hhb");
-    const { sql, one } = await import("@/lib/db/client.server");
+    // Tracking é best effort: sem banco configurado (preview) ou qualquer
+    // falha de leitura, a vitrine continua sem pixel — nunca 500.
+    try {
+      const { HHB_STORE_SLUG: slug } = await import("@/lib/catalog/hhb");
+      const { sql, one } = await import("@/lib/db/client.server");
 
-    const { data: store } = await one<{ id: string }>(
-      sql`SELECT id FROM stores WHERE slug = ${slug}`,
-      true,
-    );
-    if (!store) return { pixelId: null };
+      const { data: store } = await one<{ id: string }>(
+        sql`SELECT id FROM stores WHERE slug = ${slug}`,
+        true,
+      );
+      if (!store) return { pixelId: null };
 
-    const { getPublicMetaConfig } = await import("@/lib/meta/config.server");
-    const config = await getPublicMetaConfig(store.id);
-    return { pixelId: config.enabled ? config.pixelId : null };
+      const { getPublicMetaConfig } = await import("@/lib/meta/config.server");
+      const config = await getPublicMetaConfig(store.id);
+      return { pixelId: config.enabled ? config.pixelId : null };
+    } catch {
+      return { pixelId: null };
+    }
   },
 );
