@@ -202,7 +202,7 @@ export function buildSalePayload(
       phone: context.phone,
       document: context.document,
       country: normalizeIsoCountry(context.country),
-      ip: context.clientIp ?? options.clientIp ?? null,
+      ip: context.clientIp ?? options.clientIp ?? "0.0.0.0",
     },
     products: context.items.map((item) => ({
       id: item.id,
