@@ -197,7 +197,7 @@ export function buildSalePayload(
     approvedDate: utcDate(context.paidAt ?? context.createdAt),
     refundedAt: null,
     customer: {
-      name: context.customerName,
+      name: context.customerName || context.email || "Customer",
       email: context.email,
       phone: context.phone,
       document: context.document,
