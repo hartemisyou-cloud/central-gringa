@@ -19,12 +19,17 @@ describe("GET /comprar capture decision", () => {
     server: { handlers: { GET: (context: { request: Request; params: { slug: string } }) => Promise<Response> } };
   }).server.handlers.GET;
 
-  it("bypasses capture HTML when esrc is non-empty", async () => {
+  it("serves capture HTML even when esrc is present, preserving it on re-entry", async () => {
     const request = new Request(url("?esrc=https%3A%2F%2Fpartner.example%2Fpage"));
     const response = await get({ request, params: { slug: "little-women" } });
-    expect(response.status).toBe(302);
-    expect(entry.handle).toHaveBeenCalledExactlyOnceWith(request, "little-women", {});
-    expect(await response.text()).toBe("");
+    expect(response.status).toBe(200);
+    expect(entry.handle).not.toHaveBeenCalled();
+    expect(entry.deps).not.toHaveBeenCalled();
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    // The existing esrc query must survive into the c=1 re-entry.
+    const html = await response.text();
+    expect(html).toContain("esrc=https%3A%2F%2Fpartner.example%2Fpage");
+    expect(html).toContain(`${CAPTURE_PARAM}=1`);
   });
 
   it.each(["", "?esrc=", "?esrc=%20%20"])("keeps capture without a non-empty esrc (%s)", async query => {
