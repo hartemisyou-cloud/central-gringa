@@ -9,6 +9,7 @@ import { z } from "zod";
 const Body = z.object({
   orderNumber: z.string().trim().min(1).max(120).optional(),
   storeId: z.string().uuid().optional(),
+  recentOrders: z.number().int().min(1).max(100).optional(),
 });
 
 function utcStamp(d: Date): string {
@@ -35,6 +36,50 @@ export const Route = createFileRoute("/api/admin/utmify/probe")({
           return Response.json(await resendUtmifySaleForOrderNumber(body.orderNumber), { headers });
         }
         const storeId = body.storeId ?? "b0b5e000-4848-4b00-8000-000000000001";
+        if (body.recentOrders) {
+          // Read-only: SELECTs only, no writes anywhere in this branch.
+          const { sql, rows, one } = await import("@/lib/db/client.server");
+          const { getOrderAttributionRecord } = await import("@/lib/payments/attribution.server");
+          const { sanitizeError } = await import("@/lib/meta/capi.server");
+          const { data: orderRows, error } = await rows<{ id: string; order_number: string; status: string; created_at: string | Date; total_cents: number; currency: string }>(sql`
+            select id, order_number, status, created_at, total_cents, currency
+            from public.orders where store_id = ${storeId}
+            order by created_at desc limit ${body.recentOrders}
+          `);
+          if (error) {
+            return Response.json({ ok: false, error: sanitizeError(error.message) }, { headers });
+          }
+          const iso = (v: string | Date | null | undefined) => (v == null ? null : new Date(v).toISOString());
+          const orders = [];
+          for (const o of orderRows ?? []) {
+            const { data: ev } = await one<{ status: string | null; attempt_count: number | null; http_status: number | null; last_error: string | null; updated_at: string | Date | null }>(sql`
+              select status, attempt_count, http_status, last_error, updated_at
+              from public.utmify_events
+              where store_id = ${storeId} and order_id = ${o.id} and event_status = 'paid'
+              limit 1
+            `, true);
+            const attribution = await getOrderAttributionRecord(o.id);
+            orders.push({
+              orderId: o.id,
+              orderNumber: o.order_number,
+              status: o.status,
+              createdAt: iso(o.created_at),
+              totalCents: o.total_cents,
+              currency: o.currency,
+              utmify: {
+                status: ev?.status ?? null,
+                attemptCount: ev?.attempt_count ?? null,
+                httpStatus: ev?.http_status ?? null,
+                lastError: ev?.last_error ? sanitizeError(ev.last_error) : null,
+                updatedAt: iso(ev?.updated_at),
+              },
+              hasClientIp: Boolean(attribution.client_ip),
+              hasUtmSource: Boolean(attribution.utm_source),
+              hasUtmCampaign: Boolean(attribution.utm_campaign),
+            });
+          }
+          return Response.json({ ok: true, orders }, { headers });
+        }
         const { getUtmifySettingsWithToken } = await import("@/lib/utmify/config.server");
         const settings = await getUtmifySettingsWithToken(storeId);
         if (!settings) {
