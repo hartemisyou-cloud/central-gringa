@@ -5,8 +5,9 @@
 export const POLICY_STORE = {
   brandName: "Hope Human Books",
   siteUrl: "https://hopehumanbooks.com",
-  legalName: null as string | null,
-  address: null as string | null,
+  legalName: "Infinite Endeavors LLC",
+  address: "106 Brainard St, Lone Rock, WI 53556, United States",
+  ein: "93-1522915",
   supportEmail: null as string | null,
   revisionDate: "October 14, 2026",
   revisionDateISO: "2026-10-14",

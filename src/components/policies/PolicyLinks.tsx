@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
-import { POLICY_PAGES } from "@/lib/policies";
+import { POLICY_PAGES, POLICY_STORE } from "@/lib/policies";
 import { cn } from "@/lib/utils";
 
 export function BrandMark() {
@@ -39,6 +39,9 @@ export function StoreFooter() {
         <p className="mx-auto max-w-2xl text-xs">
           Hope Human Books sells curated digital editions of works that are in the public domain in
           the United States. Source texts are freely available elsewhere.
+        </p>
+        <p className="text-xs">
+          Operated by {POLICY_STORE.legalName} · {POLICY_STORE.address} · EIN {POLICY_STORE.ein}
         </p>
         <p className="text-xs">© {new Date().getFullYear()} Hope Human Books</p>
       </div>
