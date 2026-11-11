@@ -128,10 +128,6 @@ function Storefront() {
           <h1 className="mt-4 max-w-3xl font-display text-4xl leading-tight font-semibold md:text-5xl">
             Literature, fiction, adventure, children&rsquo;s titles and more.
           </h1>
-          <p className="mt-5 max-w-2xl text-muted-foreground">
-            Price and file availability are validated on the server. Every checkout is processed by
-            the central payments API: the browser never sets amounts and never sees provider keys.
-          </p>
           <div className="mt-8 flex flex-wrap gap-6 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4 text-primary" /> Payment with Stripe</span>
             <span className="inline-flex items-center gap-2"><Download className="size-4 text-primary" /> Instant download, no physical shipping</span>
