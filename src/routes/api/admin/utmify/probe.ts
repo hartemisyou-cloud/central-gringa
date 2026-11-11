@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 /**
- * TEMPORARY diagnostic probe (remove after UTMify investigation).
+ * TEMPORARY diagnostic probe v2 (remove after UTMify investigation).
  * Admin-session only. Creates no DB rows, orders or Meta events in probe mode;
  * with orderNumber it delegates to the existing admin resend action.
  */
